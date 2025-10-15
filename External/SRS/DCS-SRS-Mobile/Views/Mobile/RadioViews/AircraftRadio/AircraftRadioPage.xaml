@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:statusBar="clr-namespace:Ciribob.DCS.SimpleRadio.Standalone.Client.Mobile.Views.Mobile.StatusBar"
+             xmlns:orientationHelper="clr-namespace:Ciribob.DCS.SimpleRadio.Standalone.Client.Mobile.Utility.OrientationHelper"
+             xmlns:aircraftRadio1="clr-namespace:Ciribob.DCS.SimpleRadio.Standalone.Client.Mobile.Views.Mobile.RadioViews.AircraftRadio"
+             xmlns:radioViews="clr-namespace:Ciribob.DCS.SimpleRadio.Standalone.Client.Mobile.Views.Mobile.RadioViews"
+             x:Class="Ciribob.DCS.SimpleRadio.Standalone.Client.Mobile.Views.Mobile.RadioViews.AircraftRadio.AircraftRadioPage">
+    <Shell.TitleView>
+        <statusBar:StatusView />
+    </Shell.TitleView>
+    <ContentPage.Content>
+
+
+        <ScrollView Orientation="Vertical">
+
+            <!-- https://www.cayas.de/de/blog/responsive-layouts-for-dotnet-maui -->
+            <Grid
+                ColumnDefinitions="{orientationHelper:OnOrientation Default='*,*', Landscape='*,*,*,*', TypeConverter={x:Type ColumnDefinitionCollectionTypeConverter}}"
+                RowDefinitions="{orientationHelper:OnOrientation Default='*,*,*,*,*,*', Landscape='*,*,*,*', TypeConverter={x:Type RowDefinitionCollectionTypeConverter}}">
+                <aircraftRadio1:AircraftRadioView Grid.Row="{orientationHelper:OnOrientation Portrait=0, Landscape=0}"
+                                                 Grid.Column="{orientationHelper:OnOrientation Portrait=0, Landscape=0}"
+                                                 x:Name="Radio1">
+                    <ContentView.BindingContext>
+                        <radioViews:RadioViewModel>
+                            <x:Arguments>
+                                <x:Int32>1</x:Int32>
+                            </x:Arguments>
+                        </radioViews:RadioViewModel>
+                    </ContentView.BindingContext>
+                </aircraftRadio1:AircraftRadioView>
+                <aircraftRadio1:AircraftRadioView Grid.Row="{orientationHelper:OnOrientation Portrait=0, Landscape=0}"
+                                                 Grid.Column="{orientationHelper:OnOrientation Portrait=1, Landscape=1}"
+                                                 x:Name="Radio2">
+                    <ContentView.BindingContext>
+                        <radioViews:RadioViewModel>
+                            <x:Arguments>
+                                <x:Int32>2</x:Int32>
+                            </x:Arguments>
+                        </radioViews:RadioViewModel>
+                    </ContentView.BindingContext>
+                </aircraftRadio1:AircraftRadioView>
+                <aircraftRadio1:AircraftRadioView Grid.Row="{orientationHelper:OnOrientation Portrait=1, Landscape=0}"
+                                                 Grid.Column="{orientationHelper:OnOrientation Portrait=0, Landscape=2}"
+                                                 x:Name="Radio3">
+                    <ContentView.BindingContext>
+                        <radioViews:RadioViewModel>
+                            <x:Arguments>
+                                <x:Int32>3</x:Int32>
+                            </x:Arguments>
+                        </radioViews:RadioViewModel>
+                    </ContentView.BindingContext>
+                </aircraftRadio1:AircraftRadioView>
+                <aircraftRadio1:AircraftRadioView Grid.Row="{orientationHelper:OnOrientation Portrait=1, Landscape=0}"
+                                                 Grid.Column="{orientationHelper:OnOrientation Portrait=1, Landscape=3}"
+                                                 x:Name="Radio4">
+                    <ContentView.BindingContext>
+                        <radioViews:RadioViewModel>
+                            <x:Arguments>
+                                <x:Int32>4</x:Int32>
+                            </x:Arguments>
+                        </radioViews:RadioViewModel>
+                    </ContentView.BindingContext>
+                </aircraftRadio1:AircraftRadioView>
+                <aircraftRadio1:AircraftRadioView Grid.Row="{orientationHelper:OnOrientation Portrait=2, Landscape=1}"
+                                                 Grid.Column="{orientationHelper:OnOrientation Portrait=0, Landscape=0}"
+                                                 x:Name="Radio5">
+                    <ContentView.BindingContext>
+                        <radioViews:RadioViewModel>
+                            <x:Arguments>
+                                <x:Int32>5</x:Int32>
+                            </x:Arguments>
+                        </radioViews:RadioViewModel>
+                    </ContentView.BindingContext>
+                </aircraftRadio1:AircraftRadioView>
+                <aircraftRadio1:AircraftRadioView Grid.Row="{orientationHelper:OnOrientation Portrait=2, Landscape=1}"
+                                                 Grid.Column="{orientationHelper:OnOrientation Portrait=1, Landscape=1}"
+                                                 x:Name="Radio6">
+                    <ContentView.BindingContext>
+                        <radioViews:RadioViewModel>
+                            <x:Arguments>
+                                <x:Int32>6</x:Int32>
+                            </x:Arguments>
+                        </radioViews:RadioViewModel>
+                    </ContentView.BindingContext>
+                </aircraftRadio1:AircraftRadioView>
+                <aircraftRadio1:AircraftRadioView Grid.Row="{orientationHelper:OnOrientation Portrait=3, Landscape=1}"
+                                                 Grid.Column="{orientationHelper:OnOrientation Portrait=0, Landscape=2}"
+                                                 x:Name="Radio7">
+                    <ContentView.BindingContext>
+                        <radioViews:RadioViewModel>
+                            <x:Arguments>
+                                <x:Int32>7</x:Int32>
+                            </x:Arguments>
+                        </radioViews:RadioViewModel>
+                    </ContentView.BindingContext>
+                </aircraftRadio1:AircraftRadioView>
+                <aircraftRadio1:AircraftRadioView Grid.Row="{orientationHelper:OnOrientation Portrait=3, Landscape=1}"
+                                                 Grid.Column="{orientationHelper:OnOrientation Portrait=1, Landscape=3}"
+                                                 x:Name="Radio8">
+                    <ContentView.BindingContext>
+                        <radioViews:RadioViewModel>
+                            <x:Arguments>
+                                <x:Int32>8</x:Int32>
+                            </x:Arguments>
+                        </radioViews:RadioViewModel>
+                    </ContentView.BindingContext>
+                </aircraftRadio1:AircraftRadioView>
+                <aircraftRadio1:AircraftRadioView Grid.Row="{orientationHelper:OnOrientation Portrait=4, Landscape=2}"
+                                                 Grid.Column="{orientationHelper:OnOrientation Portrait=0, Landscape=0}"
+                                                 x:Name="Radio9">
+                    <ContentView.BindingContext>
+                        <radioViews:RadioViewModel>
+                            <x:Arguments>
+                                <x:Int32>9</x:Int32>
+                            </x:Arguments>
+                        </radioViews:RadioViewModel>
+                    </ContentView.BindingContext>
+                </aircraftRadio1:AircraftRadioView>
+                <aircraftRadio1:AircraftRadioView Grid.Row="{orientationHelper:OnOrientation Portrait=4, Landscape=2}"
+                                                 Grid.Column="{orientationHelper:OnOrientation Portrait=1, Landscape=1}"
+                                                 x:Name="Radio10">
+                    <ContentView.BindingContext>
+                        <radioViews:RadioViewModel>
+                            <x:Arguments>
+                                <x:Int32>10</x:Int32>
+                            </x:Arguments>
+                        </radioViews:RadioViewModel>
+                    </ContentView.BindingContext>
+                </aircraftRadio1:AircraftRadioView>
+
+                <VerticalStackLayout Grid.Row="{orientationHelper:OnOrientation Portrait=5, Landscape=3}"
+                                     Grid.Column="0"
+                                     Grid.ColumnSpan="{orientationHelper:OnOrientation Portrait=2, Landscape=4}"
+                                     HorizontalOptions="Center" VerticalOptions="Start"
+                                     Padding="10" Spacing="10">
+                    <HorizontalStackLayout HorizontalOptions="Fill" VerticalOptions="Center" Spacing="5">
+                        <Ellipse
+                            WidthRequest="15"
+                            HeightRequest="15"
+                            Fill="{Binding RadioActiveFill}"
+                            VerticalOptions="Start" />
+                        <Label Padding="0">Intercom</Label>
+
+                        <Slider Margin="0,0,0,20" Maximum="100" Minimum="0" IsEnabled="{Binding VolumeEnabled}"
+                                Value="{Binding Volume}" Style="{StaticResource VolumeSlider}" WidthRequest="200" />
+                    </HorizontalStackLayout>
+                    <HorizontalStackLayout VerticalOptions="Center" HorizontalOptions="Center" Spacing="10">
+                        <Button Text="Select Intercom" FontFamily="RobotoMono" FontSize="12" BackgroundColor="#919191"
+                                TextColor="White" Command="{Binding RadioSelect}" />
+                        <Button Text="Hot Mic" FontFamily="RobotoMono" FontSize="12" BackgroundColor="#919191"
+                                TextColor="{Binding HotIntercomTextColour}"
+                                Command="{Binding Path=HotIntercomMicToggle, Mode=TwoWay}" />
+                    </HorizontalStackLayout>
+                    <!-- <Button Text="TRANSMIT" FontFamily="RobotoMono" FontSize="30" BackgroundColor="#919191" -->
+                    <!--         TextColor="White" Pressed="Transmit_OnPressed" Released="Transmit_OnReleased" /> -->
+                </VerticalStackLayout>
+
+            </Grid>
+        </ScrollView>
+
+    </ContentPage.Content>
+</ContentPage>

@@ -1,0 +1,73 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:statusBar="clr-namespace:Ciribob.DCS.SimpleRadio.Standalone.Client.Mobile.Views.Mobile.StatusBar"
+             x:Class="Ciribob.DCS.SimpleRadio.Standalone.Client.Mobile.Views.Mobile.RadioViews.SingleRadio.SingleRadioPage"
+             Title="Single Radio"
+             BackgroundColor="#444">
+        <ContentPage.Content>
+          <ScrollView Orientation="Vertical">
+        <VerticalStackLayout VerticalOptions="Start" Padding="20" Spacing="10">
+            <!-- <Grid ColumnSpacing="10" RowSpacing="10" Margin="2"> -->
+            <!--     <Grid.RowDefinitions> -->
+            <!--         <RowDefinition /> -->
+            <!--         <RowDefinition /> -->
+            <!--         <RowDefinition /> -->
+            <!--     </Grid.RowDefinitions> -->
+            <!--     <Grid.ColumnDefinitions> -->
+            <!--         <ColumnDefinition /> -->
+            <!--         <ColumnDefinition /> -->
+            <!--         <ColumnDefinition /> -->
+            <!--         <ColumnDefinition /> -->
+            <!--         <ColumnDefinition /> -->
+            <!--     </Grid.ColumnDefinitions> -->
+            <!-- -->
+            <!-- -->
+            <!--     <Button Grid.Row="0" Grid.Column="0" Text="+10.000" Style="{StaticResource RadioFrequencyButton}" -->
+            <!--             Command="{Binding UP10}" /> -->
+            <!--     <Button Grid.Row="0" Grid.Column="1" Text="+1.000" Style="{StaticResource RadioFrequencyButton}" -->
+            <!--             Command="{Binding UP1}" /> -->
+            <!--     <Button Grid.Row="0" Grid.Column="2" Text="+0.010" Style="{StaticResource RadioFrequencyButton}" -->
+            <!--             Command="{Binding UP01}" /> -->
+            <!--     <Button Grid.Row="0" Grid.Column="3" Text="+0.010" Style="{StaticResource RadioFrequencyButton}" -->
+            <!--             Command="{Binding UP001}" /> -->
+            <!--     <Button Grid.Row="0" Grid.Column="4" Text="+0.001" Style="{StaticResource RadioFrequencyButton}" -->
+            <!--             Command="{Binding UP0001}" /> -->
+            <!--     <Button Grid.Row="2" Grid.Column="0" Text="-10.000" Style="{StaticResource RadioFrequencyButton}" -->
+            <!--             Command="{Binding DOWN10}" /> -->
+            <!--     <Button Grid.Row="2" Grid.Column="1" Text="-1.000" Style="{StaticResource RadioFrequencyButton}" -->
+            <!--             Command="{Binding DOWN1}" /> -->
+            <!--     <Button Grid.Row="2" Grid.Column="2" Text="-0.10" Style="{StaticResource RadioFrequencyButton}" -->
+            <!--             Command="{Binding DOWN01}" /> -->
+            <!--     <Button Grid.Row="2" Grid.Column="3" Text="-0.010" Style="{StaticResource RadioFrequencyButton}" -->
+            <!--             Command="{Binding DOWN001}" /> -->
+            <!--     <Button Grid.Row="2" Grid.Column="4" Text="-0.001" Style="{StaticResource RadioFrequencyButton}" -->
+            <!--             Command="{Binding DOWN0001}" /> -->
+            <!-- -->
+            <!--     <Label Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="5" x:Name="Frequency" FontFamily="RobotoMono" -->
+            <!--            HorizontalTextAlignment="Center" HorizontalOptions="Fill" VerticalOptions="Start" -->
+            <!--            FontSize="30" BackgroundColor="{Binding BackgroundActiveFill}" -->
+            <!--            TextColor="{Binding FrequencyTextColour}" -->
+            <!--            Text="{Binding Frequency}" -->
+            <!--            MaxLines="1" LineBreakMode="TailTruncation" -->
+            <!--            Padding="0,0,10,0"> -->
+            <!--         <Label.GestureRecognizers> -->
+            <!--             <TapGestureRecognizer Command="{Binding ToggleGuard}" NumberOfTapsRequired="2" /> -->
+            <!--             <TapGestureRecognizer Command="{Binding RadioSelect}" NumberOfTapsRequired="1" /> -->
+            <!--         </Label.GestureRecognizers> -->
+            <!--     </Label> -->
+            <!-- </Grid> -->
+            <!--      -->
+            <!-- -->
+            <!-- <Label TextColor="White">Volume</Label> -->
+            <!-- <Slider Margin="0,0,0,20" Maximum="100" Minimum="0" IsEnabled="{Binding VolumeEnabled}" -->
+            <!--         Value="{Binding Volume}" Style="{StaticResource VolumeSlider}" /> -->
+            
+            <Button Text="TRANSMIT" FontFamily="RobotoMono" FontSize="30" BackgroundColor="#919191" TextColor="White"
+                    Pressed="Button_OnPressed" Released="Button_OnReleased" />
+
+        </VerticalStackLayout>
+    </ScrollView>
+    </ContentPage.Content>
+</ContentPage>

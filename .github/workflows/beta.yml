@@ -1,0 +1,72 @@
+name: AeroDebrief Beta Build
+
+
+on:
+    push:
+        branches: [ "beta" ]
+
+
+permissions:
+    contents: write
+    actions: read
+
+
+jobs:
+    beta-build:
+        name: Build & Publish Beta (.NET 9)
+        runs-on: windows-latest
+
+
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+
+
+            - name: Setup .NET 9
+              uses: actions/setup-dotnet@v4
+              with:
+                dotnet-version: '9.0.x'
+
+
+            - name: Restore dependencies
+              run: dotnet restore AeroDebrief.sln
+
+
+            - name: Build solution (Beta)
+              run: dotnet build AeroDebrief.sln --configuration Release --no-restore
+
+
+            - name: Run unit tests
+              run: dotnet test AeroDebrief.Tests/AeroDebrief.Tests.csproj --no-build --verbosity normal
+
+
+            - name: Publish CLI Artifact
+              run: dotnet publish AeroDebrief.CLI/AeroDebrief.CLI.csproj -c Release -o ./publish/cli
+
+
+            - name: Compress artifacts
+              run: |
+                cd publish
+                zip -r AeroDebrief_Beta_Build.zip cli
+                cd ..
+
+
+            - name: Generate beta tag
+              id: version
+              run: |
+                VERSION="beta-$(date +'%Y.%m.%d.%H%M')"
+                echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+
+            - name: Create GitHub Pre-Release
+              uses: softprops/action-gh-release@v2
+              with:
+                tag_name: ${{ steps.version.outputs.version }}
+                name: "AeroDebrief Beta ${{ steps.version.outputs.version }}"
+                body: |
+                    Beta build for internal validation.
+                    Generated automatically from **beta** branch.
+                draft: false
+                prerelease: true
+                files: |
+                    publish/AeroDebrief_Beta_Build.zip

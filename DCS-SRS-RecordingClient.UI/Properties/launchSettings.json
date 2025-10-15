@@ -1,0 +1,11 @@
+{
+  "profiles": {
+    "DCS-SRS-RecordingClient.UI": {
+      "commandName": "Project",
+      "environmentVariables": {
+        "AUTO_EXPORT_DEBUG": "1",
+        "DUMP_AUDIO_DEBUG": "1"
+      }
+    }
+  }
+}

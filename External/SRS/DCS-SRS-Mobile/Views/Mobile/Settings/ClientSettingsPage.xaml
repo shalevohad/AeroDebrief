@@ -1,0 +1,510 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
+             xmlns:settings="clr-namespace:Ciribob.DCS.SimpleRadio.Standalone.Client.Mobile.Views.Mobile.Settings"
+             Title="Settings"
+             x:Class="Ciribob.DCS.SimpleRadio.Standalone.Client.Mobile.Views.Mobile.Settings.ClientSettingsPage">
+
+    <ContentPage.BindingContext>
+        <settings:ClientSettingsViewModel />
+    </ContentPage.BindingContext>
+    <ContentPage.Resources>
+        <Style x:Key="InvalidEntryStyle" TargetType="Entry">
+            <Setter Property="TextColor" Value="Red" />
+        </Style>
+        <Style x:Key="ValidEntryStyle" TargetType="Entry">
+            <Setter Property="TextColor" Value="Green" />
+        </Style>
+    </ContentPage.Resources>
+    <ScrollView Orientation="Vertical" Padding="10">
+        <VerticalStackLayout Spacing="20">
+            <VerticalStackLayout>
+                <Label FontSize="30">Global Settings</Label>
+                <Grid Margin="0" RowSpacing="5">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition />
+                        <ColumnDefinition />
+
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition />
+                        <RowDefinition />
+                        <RowDefinition />
+                        <RowDefinition />
+                    </Grid.RowDefinitions>
+
+                    <!-- <Label Grid.Row="0" -->
+                    <!--        Grid.Column="0" -->
+                    <!--        HorizontalTextAlignment="Start" -->
+                    <!--        VerticalTextAlignment="Center" -->
+                    <!--        Text="Microphone Automatic Gain Control" /> -->
+                    <!-- -->
+                    <!-- <Switch -->
+                    <!--     Grid.Row="0" -->
+                    <!--     Grid.Column="1" -->
+                    <!--     IsToggled="{Binding MicAGC, Mode=TwoWay}" /> -->
+                    <!-- -->
+                    <!-- -->
+                    <!-- <Label Grid.Row="1" -->
+                    <!--        Grid.Column="0" -->
+                    <!--        HorizontalTextAlignment="Start" -->
+                    <!--        VerticalTextAlignment="Center" -->
+                    <!--        Text="Microphone Noise Suppression" /> -->
+                    <!-- -->
+                    <!-- <Switch -->
+                    <!--     Grid.Row="1" -->
+                    <!--     Grid.Column="1" -->
+                    <!--     IsToggled="{Binding MicDenoise, Mode=TwoWay}" /> -->
+                    <!-- -->
+                    <Label Grid.Row="0"
+                           Grid.Column="0"
+                           HorizontalTextAlignment="Start"
+                           VerticalTextAlignment="Center"
+                           Text="Client Name" />
+
+                    <Entry
+                        Grid.Row="0"
+                        Grid.Column="1"
+                        Text="{Binding PlayerName, Mode=TwoWay}" />
+
+                    <Label Grid.Row="1"
+                           Grid.Column="0"
+                           HorizontalTextAlignment="Start"
+                           VerticalTextAlignment="Center"
+                           Text="Aircraft ID - Must match for the intercom to function" />
+
+                    <Entry
+                        Grid.Row="1"
+                        Grid.Column="1"
+                        Keyboard="Numeric"
+                        Text="{Binding PlayerID, Mode=TwoWay}">
+                        <Entry.Behaviors>
+                            <toolkit:NumericValidationBehavior
+                                InvalidStyle="{StaticResource InvalidEntryStyle}"
+                                ValidStyle="{StaticResource ValidEntryStyle}"
+                                Flags="ValidateOnValueChanged"
+                                MinimumValue="1.0"
+                                MaximumValue="100.0"
+                                MaximumDecimalPlaces="3" />
+                        </Entry.Behaviors>
+                    </Entry>
+
+                    <Label Grid.Row="2"
+                           Grid.Column="0"
+                           HorizontalTextAlignment="Start"
+                           VerticalTextAlignment="Center"
+                           Text="Volume Up as PTT" />
+
+                    <Switch
+                        Grid.Row="2"
+                        Grid.Column="1"
+                        IsToggled="{Binding VolumeUpAsPTTToggle, Mode=TwoWay}" />
+                </Grid>
+
+            </VerticalStackLayout>
+
+            <!-- <VerticalStackLayout -->
+            <!--     > -->
+            <!--     <Label FontSize="30">Integration Settings</Label> -->
+            <!--     <Grid RowSpacing="5"> -->
+            <!--         <Grid.ColumnDefinitions> -->
+            <!--             <ColumnDefinition Width="2*" /> -->
+            <!--             <ColumnDefinition Width="2*" /> -->
+            <!--         </Grid.ColumnDefinitions> -->
+            <!--         <Grid.RowDefinitions> -->
+            <!--             <RowDefinition /> -->
+            <!--             <RowDefinition /> -->
+            <!--             <RowDefinition /> -->
+            <!--             <RowDefinition /> -->
+            <!--         </Grid.RowDefinitions> -->
+            <!-- -->
+            <!--         ~1~ @1@ -->
+            <!--         ~1~ <Label Grid.Row="0" @1@ -->
+            <!--         ~1~        Grid.Column="0" @1@ -->
+            <!--         ~1~        HorizontalTextAlignment="Start" @1@ -->
+            <!--         ~1~        VerticalTextAlignment="Center" @1@ -->
+            <!--         ~1~        Text="Push to Talk Release Delay (ms)" /> @1@ -->
+            <!--         ~1~ @1@ -->
+            <!--         ~1~ <VerticalStackLayout Grid.Row="0" @1@ -->
+            <!--         ~1~                      Grid.Column="1" Margin="10"> @1@ -->
+            <!--         ~1~     <Slider @1@ -->
+            <!--         ~1~         VerticalOptions="Start" @1@ -->
+            <!--         ~1~         Maximum="1000" @1@ -->
+            <!--         ~1~         Value="{Binding PTTReleaseDelay, Mode=TwoWay}" @1@ -->
+            <!--         ~1~         Minimum="0" @1@ -->
+            <!--         ~1~         IsEnabled="True" /> @1@ -->
+            <!--         ~1~     <Grid> @1@ -->
+            <!--         ~1~         <Grid.ColumnDefinitions> @1@ -->
+            <!--         ~1~             <ColumnDefinition Width="*" /> @1@ -->
+            <!--         ~1~             <ColumnDefinition Width="*" /> @1@ -->
+            <!--         ~1~             <ColumnDefinition Width="*" /> @1@ -->
+            <!--         ~1~         </Grid.ColumnDefinitions> @1@ -->
+            <!--         ~1~         <Label Grid.Column="0" FontSize="12" Text="0" HorizontalTextAlignment="Start" /> @1@ -->
+            <!--         ~1~         <Label Grid.Column="1" FontSize="12" Text="500" @1@ -->
+            <!--         ~1~                HorizontalTextAlignment="Center" /> @1@ -->
+            <!--         ~1~         <Label Grid.Column="2" FontSize="12" Text="1000" @1@ -->
+            <!--         ~1~                HorizontalTextAlignment="End" /> @1@ -->
+            <!--         ~1~     </Grid> @1@ -->
+            <!--         ~1~ @1@ -->
+            <!--         ~1~ </VerticalStackLayout> @1@ -->
+            <!--         ~1~ @1@ -->
+            <!--         ~1~ <Label Grid.Row="1" @1@ -->
+            <!--         ~1~        Grid.Column="0" @1@ -->
+            <!--         ~1~        HorizontalTextAlignment="Start" @1@ -->
+            <!--         ~1~        VerticalTextAlignment="Center" @1@ -->
+            <!--         ~1~        Text="Push to Talk Start Delay (ms)" /> @1@ -->
+            <!--         ~1~ @1@ -->
+            <!--         ~1~ <VerticalStackLayout Grid.Row="1" @1@ -->
+            <!--         ~1~                      Grid.Column="1" Margin="10"> @1@ -->
+            <!--         ~1~ @1@ -->
+            <!--         ~1~     <Slider Maximum="1000" @1@ -->
+            <!--         ~1~             Value="{Binding PTTStartDelay, Mode=TwoWay}" @1@ -->
+            <!--         ~1~             Minimum="0" @1@ -->
+            <!--         ~1~             IsEnabled="True" /> @1@ -->
+            <!--         ~1~     <Grid> @1@ -->
+            <!--         ~1~         <Grid.ColumnDefinitions> @1@ -->
+            <!--         ~1~             <ColumnDefinition Width="*" /> @1@ -->
+            <!--         ~1~             <ColumnDefinition Width="*" /> @1@ -->
+            <!--         ~1~             <ColumnDefinition Width="*" /> @1@ -->
+            <!--         ~1~         </Grid.ColumnDefinitions> @1@ -->
+            <!--         ~1~         <Label Grid.Column="0" FontSize="12" Text="0" HorizontalTextAlignment="Start" /> @1@ -->
+            <!--         ~1~         <Label Grid.Column="1" FontSize="12" Text="500 " @1@ -->
+            <!--         ~1~                HorizontalTextAlignment="Center" /> @1@ -->
+            <!--         ~1~         <Label Grid.Column="2" FontSize="12" Text="1000" @1@ -->
+            <!--         ~1~                HorizontalTextAlignment="End" /> @1@ -->
+            <!--         ~1~     </Grid> @1@ -->
+            <!--         ~1~ @1@ -->
+            <!--         ~1~ </VerticalStackLayout> @1@ -->
+            <!-- -->
+            <!--      -->
+            <!--     </Grid> -->
+            <!-- </VerticalStackLayout> -->
+
+            <VerticalStackLayout>
+
+                <Label FontSize="30">Radio Effect Settings</Label>
+
+                <Grid RowSpacing="5">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition />
+                        <ColumnDefinition />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition />
+                        <RowDefinition />
+                        <RowDefinition />
+                        <RowDefinition />
+                        <RowDefinition />
+                        <RowDefinition />
+                        <RowDefinition />
+                        <RowDefinition />
+                        <RowDefinition />
+                        <RowDefinition />
+                        <RowDefinition />
+                        <RowDefinition />
+                        <RowDefinition />
+                        <RowDefinition />
+                        <RowDefinition />
+                    </Grid.RowDefinitions>
+
+
+                    <Label Grid.Row="0"
+                           Grid.Column="0"
+                           HorizontalTextAlignment="Start"
+                           VerticalTextAlignment="Center"
+                           Text="Radio Rx Effects" />
+
+                    <HorizontalStackLayout Grid.Row="0"
+                                           Grid.Column="1" HorizontalOptions="End" VerticalOptions="Center">
+                        <Label HorizontalOptions="Center" VerticalOptions="Center" VerticalTextAlignment="Center">Start</Label>
+
+                        <Switch
+
+                            IsToggled="{Binding RadioRxStartToggle, Mode=TwoWay}" />
+
+                        <Label Text="End" HorizontalOptions="Center" VerticalOptions="Center"
+                               VerticalTextAlignment="Center" />
+                        <Switch
+
+                            IsToggled="{Binding RadioRxEndToggle, Mode=TwoWay}" />
+
+                    </HorizontalStackLayout>
+
+
+                    <Label Grid.Row="1"
+                           Grid.Column="0"
+
+                           HorizontalTextAlignment="Start"
+                           VerticalTextAlignment="Center"
+                           Text="Radio Tx Effects" />
+
+                    <VerticalStackLayout Grid.Row="1"
+                                         Grid.Column="1">
+                        <HorizontalStackLayout HorizontalOptions="End" VerticalOptions="Center">
+                            <Label HorizontalOptions="Center" VerticalOptions="Center" VerticalTextAlignment="Center">Start</Label>
+
+                            <Switch
+                                HorizontalOptions="Center"
+                                VerticalOptions="Center"
+                                IsToggled="{Binding RadioTxStartToggle, Mode=TwoWay}" />
+                            <Label Text="End" HorizontalOptions="Center" VerticalOptions="Center"
+                                   VerticalTextAlignment="Center" />
+                            <Switch
+
+                                IsToggled="{Binding RadioTxEndToggle, Mode=TwoWay}" />
+                        </HorizontalStackLayout>
+
+                    </VerticalStackLayout>
+
+                    <Label Grid.Row="4"
+                           Grid.Column="0"
+                           HorizontalTextAlignment="Start"
+                           VerticalTextAlignment="Center"
+                           Text="Enable Radio Voice Effect" />
+
+                    <Switch
+                        Grid.Row="4"
+                        Grid.Column="1"
+                        IsToggled="{Binding RadioSoundEffectsToggle, Mode=TwoWay}" />
+
+                    <Label Grid.Row="5"
+                           Grid.Column="0"
+                           HorizontalTextAlignment="Start"
+                           VerticalTextAlignment="Center"
+                           Text="Enable Clipping Effect (Requires Radio effects on!)" />
+
+                    <Switch
+                        Grid.Row="5"
+                        Grid.Column="1"
+                        IsToggled="{Binding RadioEffectsClippingToggle, Mode=TwoWay}" />
+
+
+                    <Label Grid.Row="6"
+                           Grid.Column="0"
+                           HorizontalTextAlignment="Start"
+                           VerticalTextAlignment="Center"
+                           Text="Enable FM Radio Tone" />
+
+
+                    <Switch Grid.Row="6"
+                            Grid.Column="1"
+                            HorizontalOptions="End"
+                            VerticalOptions="Center"
+                            IsToggled="{Binding FMRadioToneToggle, Mode=TwoWay}" />
+
+                    <Label Grid.Row="7"
+                           Grid.Column="0"
+                           HorizontalTextAlignment="Start"
+                           VerticalTextAlignment="Center"
+                           Text="Enable Background Radio Effects &#xD;&#xA;(UHF/VHF/HF/FM) " />
+
+                    <Switch
+                        Grid.Row="7"
+                        Grid.Column="1"
+                        IsToggled="{Binding BackgroundRadioNoiseToggle, Mode=TwoWay}" />
+
+                    <Label Grid.Row="8"
+                           Grid.Column="0"
+                           HorizontalTextAlignment="Start"
+                           VerticalTextAlignment="Center"
+                           Text="UHF Effect Volume" />
+
+                    <settings:BackgroundEffectVolumeControl
+                        Grid.Row="8"
+                        Grid.Column="1"
+                        Volume="{Binding UHFEffectVolume,Mode=TwoWay}" />
+
+                    <Label Grid.Row="9"
+                           Grid.Column="0"
+                           HorizontalTextAlignment="Start"
+                           VerticalTextAlignment="Center"
+                           Text="VHF Effect Volume" />
+
+                    <settings:BackgroundEffectVolumeControl
+                        Grid.Row="9"
+                        Grid.Column="1"
+                        Volume="{Binding VHFEffectVolume,Mode=TwoWay}" />
+
+                    <Label Grid.Row="10"
+                           Grid.Column="0"
+                           HorizontalTextAlignment="Start"
+                           VerticalTextAlignment="Center"
+                           Text="HF Effect Volume" />
+
+                    <settings:BackgroundEffectVolumeControl
+                        Grid.Row="10"
+                        Grid.Column="1"
+                        Volume="{Binding HFEffectVolume,Mode=TwoWay}" />
+
+                    <Label Grid.Row="11"
+                           Grid.Column="0"
+                           HorizontalTextAlignment="Start"
+                           VerticalTextAlignment="Center"
+                           Text="FM Effect Volume" />
+
+                    <settings:BackgroundEffectVolumeControl
+                        Grid.Row="11"
+                        Grid.Column="1"
+                        Volume="{Binding FMEffectVolume,Mode=TwoWay}" />
+
+                    <Label Grid.Row="12"
+                           Grid.Column="0"
+                           HorizontalTextAlignment="Start"
+                           VerticalTextAlignment="Center"
+                           Text="Aircraft Effect Volume" />
+
+                    <settings:BackgroundEffectVolumeControl
+                        Grid.Row="12"
+                        Grid.Column="1"
+                        Volume="{Binding AircraftEffectVolume,Mode=TwoWay}" />
+
+                    <Label Grid.Row="13"
+                           Grid.Column="0"
+                           HorizontalTextAlignment="Start"
+                           VerticalTextAlignment="Center"
+                           Text="Ground Effect Volume" />
+
+                    <settings:BackgroundEffectVolumeControl
+                        Grid.Row="13"
+                        Grid.Column="1"
+                        Volume="{Binding GroundEffectVolume,Mode=TwoWay}" />
+
+                </Grid>
+            </VerticalStackLayout>
+
+            <VerticalStackLayout>
+
+                <Label FontSize="30">Audio Balance Settings</Label>
+                <Grid RowSpacing="5">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="2*" />
+                        <ColumnDefinition Width="2*" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition />
+                        <RowDefinition />
+                        <RowDefinition />
+                        <RowDefinition />
+                        <RowDefinition />
+                        <RowDefinition />
+                        <RowDefinition />
+                        <RowDefinition />
+                        <RowDefinition />
+                        <RowDefinition />
+                        <RowDefinition />
+                        <RowDefinition />
+                        <RowDefinition />
+                        <RowDefinition />
+                        <RowDefinition />
+                        <RowDefinition />
+                    </Grid.RowDefinitions>
+
+
+                    <Label Grid.Row="0"
+                           Grid.Column="0"
+                           HorizontalTextAlignment="Start"
+                           VerticalTextAlignment="Center"
+                           Text="Radio 1 Audio Channel" />
+                    <settings:RadioChannelConfigUi x:Name="Radio1Config"
+                                                   Grid.Row="0"
+                                                   Grid.Column="1"
+                                                   Volume="{Binding RadioChannel1, Mode=TwoWay}" />
+
+                    <Label Grid.Row="1"
+                           Grid.Column="0"
+                           HorizontalTextAlignment="Start"
+                           VerticalTextAlignment="Center"
+                           Text="Radio 2 Audio Channel" />
+                    <settings:RadioChannelConfigUi x:Name="Radio2Config"
+                                                   Grid.Row="1"
+                                                   Grid.Column="1"
+                                                   Volume="{Binding RadioChannel2, Mode=TwoWay}" />
+
+                    <Label Grid.Row="2"
+                           Grid.Column="0"
+                           HorizontalTextAlignment="Start"
+                           VerticalTextAlignment="Center"
+                           Text="Radio 3 Audio Channel" />
+                    <settings:RadioChannelConfigUi x:Name="Radio3Config"
+                                                   Grid.Row="2"
+                                                   Grid.Column="1"
+                                                   Volume="{Binding RadioChannel3, Mode=TwoWay}" />
+                    <Label Grid.Row="3"
+                           Grid.Column="0"
+                           HorizontalTextAlignment="Start"
+                           VerticalTextAlignment="Center"
+                           Text="Radio 4 Audio Channel" />
+                    <settings:RadioChannelConfigUi x:Name="Radio4Config"
+                                                   Grid.Row="3"
+                                                   Grid.Column="1"
+                                                   Volume="{Binding RadioChannel4, Mode=TwoWay}" />
+                    <Label Grid.Row="4"
+                           Grid.Column="0"
+                           HorizontalTextAlignment="Start"
+                           VerticalTextAlignment="Center"
+                           Text="Radio 5 Audio Channel" />
+                    <settings:RadioChannelConfigUi x:Name="Radio5Config"
+                                                   Grid.Row="4"
+                                                   Grid.Column="1"
+                                                   Volume="{Binding RadioChannel5, Mode=TwoWay}" />
+                    <Label Grid.Row="5"
+                           Grid.Column="0"
+                           HorizontalTextAlignment="Start"
+                           VerticalTextAlignment="Center"
+                           Text="Radio 6 Audio Channel" />
+                    <settings:RadioChannelConfigUi x:Name="Radio6Config"
+                                                   Grid.Row="5"
+                                                   Grid.Column="1"
+                                                   Volume="{Binding RadioChannel6, Mode=TwoWay}" />
+                    <Label Grid.Row="6"
+                           Grid.Column="0"
+                           HorizontalTextAlignment="Start"
+                           VerticalTextAlignment="Center"
+                           Text="Radio 7 Audio Channel" />
+                    <settings:RadioChannelConfigUi x:Name="Radio7Config"
+                                                   Grid.Row="6"
+                                                   Grid.Column="1"
+                                                   Volume="{Binding RadioChannel7, Mode=TwoWay}" />
+                    <Label Grid.Row="7"
+                           Grid.Column="0"
+                           HorizontalTextAlignment="Start"
+                           VerticalTextAlignment="Center"
+                           Text="Radio 8 Audio Channel" />
+                    <settings:RadioChannelConfigUi x:Name="Radio8Config"
+                                                   Grid.Row="7"
+                                                   Grid.Column="1"
+                                                   Volume="{Binding RadioChannel8, Mode=TwoWay}" />
+                    <Label Grid.Row="8"
+                           Grid.Column="0"
+                           HorizontalTextAlignment="Start"
+                           VerticalTextAlignment="Center"
+                           Text="Radio 9 Audio Channel" />
+                    <settings:RadioChannelConfigUi x:Name="Radio9Config"
+                                                   Grid.Row="8"
+                                                   Grid.Column="1"
+                                                   Volume="{Binding RadioChannel9, Mode=TwoWay}" />
+                    <Label Grid.Row="9"
+                           Grid.Column="0"
+                           HorizontalTextAlignment="Start"
+                           VerticalTextAlignment="Center"
+                           Text="Radio 10 Audio Channel" />
+                    <settings:RadioChannelConfigUi x:Name="Radio10Config"
+                                                   Grid.Row="9"
+                                                   Grid.Column="1"
+                                                   Volume="{Binding RadioChannel10, Mode=TwoWay}" />
+                    <Label Grid.Row="10"
+                           Grid.Column="0"
+                           HorizontalTextAlignment="Start"
+                           VerticalTextAlignment="Center"
+                           Text="Intercom Audio Channel" />
+                    <settings:RadioChannelConfigUi x:Name="IntercomConfig"
+                                                   Grid.Row="10"
+                                                   Grid.Column="1"
+                                                   Volume="{Binding Intercom, Mode=TwoWay}" />
+                </Grid>
+            </VerticalStackLayout>
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

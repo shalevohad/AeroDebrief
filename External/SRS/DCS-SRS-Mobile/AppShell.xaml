@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<Shell
+    x:Class="Ciribob.DCS.SimpleRadio.Standalone.Client.Mobile.AppShell"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:home="clr-namespace:Ciribob.DCS.SimpleRadio.Standalone.Client.Mobile.Views.Mobile.Home"
+    Shell.FlyoutBehavior="Disabled"
+    Title="DCS_SRS_Mobile">
+
+    <ShellContent
+        Title="Home"
+        ContentTemplate="{DataTemplate home:HomePage}"
+        Route="MainPage" />
+
+</Shell>

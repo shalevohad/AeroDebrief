@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="Ciribob.DCS.SimpleRadio.Standalone.Client.Mobile.Views.Mobile.RadioViews.AircraftRadio.AircraftRadioView">
+    <VerticalStackLayout VerticalOptions="Start" Padding="5" Spacing="10">
+        <Grid ColumnSpacing="10" RowSpacing="10" Margin="2">
+            <Grid.RowDefinitions>
+                <RowDefinition />
+                <RowDefinition />
+                <RowDefinition />
+            </Grid.RowDefinitions>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition />
+                <ColumnDefinition />
+                <ColumnDefinition />
+                <ColumnDefinition />
+                <ColumnDefinition />
+            </Grid.ColumnDefinitions>
+
+
+            <Button Grid.Row="0" Grid.Column="0" ToolTipProperties.Text="+10.000"
+                    Style="{StaticResource RadioFrequencyButtonAircraft}" Command="{Binding UP10}" />
+            <Button Grid.Row="0" Grid.Column="1" ToolTipProperties.Text="+1.000"
+                    Style="{StaticResource RadioFrequencyButtonAircraft}" Command="{Binding UP1}" />
+            <Button Grid.Row="0" Grid.Column="2" ToolTipProperties.Text="+0.010"
+                    Style="{StaticResource RadioFrequencyButtonAircraft}" Command="{Binding UP01}" />
+            <Button Grid.Row="0" Grid.Column="3" ToolTipProperties.Text="+0.010"
+                    Style="{StaticResource RadioFrequencyButtonAircraft}" Command="{Binding UP001}" />
+            <Button Grid.Row="0" Grid.Column="4" ToolTipProperties.Text="+0.001"
+                    Style="{StaticResource RadioFrequencyButtonAircraft}" Command="{Binding UP0001}" />
+            <Button Grid.Row="2" Grid.Column="0" ToolTipProperties.Text="-10.000"
+                    Style="{StaticResource RadioFrequencyButtonAircraft}" Command="{Binding DOWN10}" />
+            <Button Grid.Row="2" Grid.Column="1" ToolTipProperties.Text="-1.000"
+                    Style="{StaticResource RadioFrequencyButtonAircraft}" Command="{Binding DOWN1}" />
+            <Button Grid.Row="2" Grid.Column="2" ToolTipProperties.Text="-0.10"
+                    Style="{StaticResource RadioFrequencyButtonAircraft}" Command="{Binding DOWN01}" />
+            <Button Grid.Row="2" Grid.Column="3" ToolTipProperties.Text="-0.010"
+                    Style="{StaticResource RadioFrequencyButtonAircraft}" Command="{Binding DOWN001}" />
+            <Button Grid.Row="2" Grid.Column="4" ToolTipProperties.Text="-0.001"
+                    Style="{StaticResource RadioFrequencyButtonAircraft}" Command="{Binding DOWN0001}" />
+
+            <Label Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="5" x:Name="Frequency" FontFamily="RobotoMono"
+                   HorizontalTextAlignment="Center" HorizontalOptions="Fill" VerticalOptions="Start"
+                   FontSize="14" Background="{Binding BackgroundActiveFill}"
+                   TextColor="{Binding FrequencyTextColour}" Text="{Binding Frequency}"
+                   MaxLines="1" LineBreakMode="TailTruncation"
+                   Padding="0,0,0,0">
+                <Label.GestureRecognizers>
+                    <TapGestureRecognizer Command="{Binding RadioSelect}" NumberOfTapsRequired="1" />
+                    <TapGestureRecognizer Command="{Binding ToggleGuard}" NumberOfTapsRequired="2"/>
+                </Label.GestureRecognizers>
+            </Label>
+        </Grid>
+
+        <Picker x:Name="ChannelPicker" Title="Select Channel" ItemsSource="{Binding Channels}"
+                SelectedItem="{Binding Mode=TwoWay, Path=SelectedPresetChannel}" />
+
+        <Slider Margin="0,0,0,10" Maximum="100" Minimum="0" IsEnabled="{Binding VolumeEnabled}"
+                Value="{Binding Volume}" Style="{StaticResource VolumeSlider}" />
+
+    </VerticalStackLayout>
+</ContentView>

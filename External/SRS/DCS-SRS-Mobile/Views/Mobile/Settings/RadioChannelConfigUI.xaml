@@ -1,0 +1,25 @@
+﻿<ContentView
+    x:Class="Ciribob.DCS.SimpleRadio.Standalone.Client.Mobile.Views.Mobile.Settings.RadioChannelConfigUi"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    x:Name="RadioChannelConfig">
+    <VerticalStackLayout Margin="3">
+
+        <!--  Value="{Binding ElementName=RadioChannelConfig, Path=VolumeValue, Mode=TwoWay}" -->
+        <Slider
+            Maximum="1.0"
+            Minimum="-1.0"
+            Value="{Binding Source={x:Reference RadioChannelConfig}, Path=Volume}" />
+
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Label Grid.Column="0" FontSize="10" Text="Left" HorizontalTextAlignment="Start" />
+            <Label Grid.Column="1" FontSize="10" Text="Equal" HorizontalTextAlignment="Center" />
+            <Label Grid.Column="2" FontSize="10" Text="Right" HorizontalTextAlignment="End" />
+        </Grid>
+    </VerticalStackLayout>
+</ContentView>

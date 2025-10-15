@@ -1,0 +1,63 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFramework>net9.0-windows</TargetFramework>
+        <OutputType>WinExe</OutputType>
+        <AssemblyName>SRS-AutoUpdater</AssemblyName>
+        <IsWebBootstrapper>false</IsWebBootstrapper>
+        <PublishUrl>publish\</PublishUrl>
+        <Install>true</Install>
+        <InstallFrom>Disk</InstallFrom>
+        <UpdateEnabled>false</UpdateEnabled>
+        <UpdateMode>Foreground</UpdateMode>
+        <UpdateInterval>7</UpdateInterval>
+        <UpdateIntervalUnits>Days</UpdateIntervalUnits>
+        <UpdatePeriodically>false</UpdatePeriodically>
+        <UpdateRequired>false</UpdateRequired>
+        <MapFileExtensions>true</MapFileExtensions>
+        <ApplicationRevision>0</ApplicationRevision>
+        <ApplicationVersion>2.3.2.1</ApplicationVersion>
+        <UseApplicationTrust>false</UseApplicationTrust>
+        <BootstrapperEnabled>true</BootstrapperEnabled>
+        <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+        <UseWindowsForms>true</UseWindowsForms>
+        <UseWPF>true</UseWPF>
+        <ImportWindowsDesktopTargets>true</ImportWindowsDesktopTargets>
+        <PlatformTarget>x64</PlatformTarget>
+        <AssemblyVersion>2.3.2.1</AssemblyVersion>
+        <FileVersion>2.3.2.1</FileVersion>
+        <Version>2.3.2.1</Version>
+        <Company>Ciribob - GitHub.com/Ciribob</Company>
+        <Product>DCS-SRS-AutoUpdater</Product>
+    </PropertyGroup>
+    <PropertyGroup>
+        <ApplicationIcon>system_software_update.ico</ApplicationIcon>
+    </PropertyGroup>
+    <PropertyGroup>
+        <StartupObject>AutoUpdater.App</StartupObject>
+    </PropertyGroup>
+    <PropertyGroup>
+        <ApplicationManifest>Properties\app.manifest</ApplicationManifest>
+    </PropertyGroup>
+    <ItemGroup>
+        <Compile Update="MyWebClient.cs">
+            <SubType>Component</SubType>
+        </Compile>
+    </ItemGroup>
+    <ItemGroup>
+        <Resource Include="system_software_update.ico" />
+    </ItemGroup>
+    <ItemGroup>
+        <PackageReference Include="Microsoft.CSharp" Version="4.7.0" />
+        <PackageReference Include="Octokit" Version="14.0.0" />
+    </ItemGroup>
+    <ItemGroup>
+      <EmbeddedResource Update="Properties\Resources.resx">
+        <Generator>PublicResXFileCodeGenerator</Generator>
+      </EmbeddedResource>
+    </ItemGroup>
+    <PropertyGroup Condition=" '$(Configuration)' == 'Release' ">
+        <PlatformTarget>x64</PlatformTarget>
+        <DebugSymbols>False</DebugSymbols>
+        <DebugType>None</DebugType>
+    </PropertyGroup>
+</Project>

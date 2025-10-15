@@ -1,0 +1,540 @@
+﻿<UserControl x:Class="Ciribob.DCS.SimpleRadio.Standalone.Server.UI.MainWindow.MainView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:local="clr-namespace:Ciribob.DCS.SimpleRadio.Standalone.Server.UI"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:p="clr-namespace:Ciribob.DCS.SimpleRadio.Standalone.Server.Properties"
+             Width="330"
+             Height="575"
+             mc:Ignorable="d">
+    <ScrollViewer VerticalScrollBarVisibility="Visible"  Margin="0,0,0,0" >
+        <StackPanel Orientation="Vertical" Margin="5" >
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="2*" />
+                    <ColumnDefinition Width="2*" />
+                    <ColumnDefinition Width="2*" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition />
+                    <RowDefinition />
+                    <RowDefinition />
+                    <RowDefinition />
+                    <RowDefinition />
+                    <RowDefinition />
+                    <RowDefinition />
+                    <RowDefinition />
+                    <RowDefinition />
+                    <RowDefinition />
+                    <RowDefinition />
+                    <RowDefinition />
+                    <RowDefinition />
+                    <RowDefinition />
+                    <RowDefinition />
+                    <RowDefinition />
+                    <RowDefinition />
+                    <RowDefinition />
+                    <RowDefinition />
+                    <RowDefinition />
+                    <RowDefinition />
+                    <RowDefinition />
+                    <RowDefinition />
+                    <RowDefinition />
+                    <RowDefinition />
+                    <RowDefinition />
+                    <RowDefinition />
+                    <RowDefinition />
+                    <RowDefinition />
+                    <RowDefinition />
+                    <RowDefinition />
+                </Grid.RowDefinitions>
+
+                <Button Grid.Row="0"
+                        Grid.Column="0" x:Name="ServerStartStop"
+                        Width="75"
+                        Height="20"
+                        VerticalAlignment="Center"
+                        HorizontalAlignment="Center"
+                        Content="{Binding ServerButtonText}" />
+
+                <StackPanel Orientation="Vertical" Grid.Row="0"
+                            Grid.Column="1">
+                    <StackPanel Orientation="Horizontal">
+                        <Label Width="55"
+                               HorizontalAlignment="Left"
+                               VerticalAlignment="Top"
+                               Content="{x:Static p:Resources.LabelClients}" />
+                        <Label x:Name="ClientsCount"
+                               Width="44"
+                               HorizontalAlignment="Left"
+                               VerticalAlignment="Top"
+                               Content="0" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal">
+                        <Label Width="55"
+                               HorizontalAlignment="Left"
+                               VerticalAlignment="Top"
+                               Content="{x:Static p:Resources.LabelPort}" />
+                        <Label x:Name="ListeningPort"
+                               Width="44"
+                               HorizontalAlignment="Left"
+                               VerticalAlignment="Top"
+                               Content="5002" />
+                    </StackPanel>
+
+
+                </StackPanel>
+
+
+                <Button x:Name="ShowClientList"
+                        Width="75"
+                        Height="20"
+                        VerticalAlignment="Center"
+                        HorizontalAlignment="Center"
+                        Content="{x:Static p:Resources.BtnClientAdmin}" Grid.Row="0"
+                        Grid.Column="2" />
+
+                <Label
+                    HorizontalAlignment="Left"
+                    VerticalAlignment="Center"
+                    Content="{x:Static p:Resources.LabelSecurity}"
+                    Grid.Row="1"
+                    Grid.Column="0" Grid.ColumnSpan="2"/>
+
+                <Button x:Name="RadioSecurityToggle"
+                        Content="{Binding RadioSecurityText}"
+                        Grid.Row="1"
+                        Grid.Column="2"
+                        Width="75"
+                        Height="20"
+                        VerticalAlignment="Center"
+                        HorizontalAlignment="Center"/>
+
+                <Label Content="{x:Static p:Resources.LabelSpectator}"
+                       Grid.Row="2"
+                       Grid.Column="0" 
+                       Grid.ColumnSpan="2"
+                       HorizontalAlignment="Left"
+                       VerticalAlignment="Center"/>
+
+                <Button x:Name="SpectatorAudioToggle"
+                        Content="{Binding SpectatorAudioText}"
+                        Grid.Row="2"
+                        Grid.Column="2"
+                        Width="75"
+                        Height="20"
+                        VerticalAlignment="Center"
+                        HorizontalAlignment="Center"/>
+
+                <Label Content="{x:Static p:Resources.LabelExportList}"
+                       Grid.Row="3"
+                       Grid.Column="0" 
+                       Grid.ColumnSpan="2"
+                       HorizontalAlignment="Left"
+                       VerticalAlignment="Center"/>
+
+                <Button x:Name="ExportListToggle"
+                        Content="{Binding ExportListText}"
+                        Grid.Row="3"
+                        Grid.Column="2"
+                        Width="75"
+                        Height="20"
+                        VerticalAlignment="Center"
+                        HorizontalAlignment="Center" />
+
+                <Label Content="{x:Static p:Resources.LabelLOS}"
+                       Grid.Row="4"
+                       Grid.Column="0" 
+                       Grid.ColumnSpan="2"
+                       HorizontalAlignment="Left"
+                       VerticalAlignment="Center"/>
+
+                <Button x:Name="LOSToggle"
+                        Content="{Binding LOSText}"
+                        Grid.Row="4"
+                        Grid.Column="2"
+                        Width="75"
+                        Height="20"
+                        VerticalAlignment="Center"
+                        HorizontalAlignment="Center"/>
+
+                <Label Content="{x:Static p:Resources.LabelDistanceLimit}"
+                       Grid.Row="5"
+                       Grid.Column="0" 
+                       Grid.ColumnSpan="2"
+                       HorizontalAlignment="Left"
+                       VerticalAlignment="Center"/>
+
+                <Button x:Name="DistanceLimitToggle"
+                        Content="{Binding DistanceLimitText}"
+                        Grid.Row="5"
+                        Grid.Column="2"
+                        Width="75"
+                        Height="20"
+                        VerticalAlignment="Center"
+                        HorizontalAlignment="Center"/>
+
+                <Label Content="{x:Static p:Resources.LabelRealTx}"
+                       Grid.Row="6"
+                       Grid.Column="0" 
+                       Grid.ColumnSpan="2"
+                       HorizontalAlignment="Left"
+                       VerticalAlignment="Center"/>
+
+                <Button x:Name="RealRadioToggle"
+                        Content="{Binding RealRadioText}"
+                        Grid.Row="6"
+                        Grid.Column="2"
+                        Width="75"
+                        Height="20"
+                        VerticalAlignment="Center"
+                        HorizontalAlignment="Center"/>
+
+                <Label Content="{x:Static p:Resources.LabelRealRx}"
+                       Grid.Row="7"
+                       Grid.Column="0" 
+                       Grid.ColumnSpan="2"
+                       HorizontalAlignment="Left"
+                       VerticalAlignment="Center"/>
+
+                <Button x:Name="IRLRadioRxBehaviourToggle"
+                        Content="{Binding IRLRadioRxText}"
+                        Grid.Row="7"
+                        Grid.Column="2"
+                        Width="75"
+                        Height="20"
+                        VerticalAlignment="Center"
+                        HorizontalAlignment="Center"/>
+
+                <Label Content="{x:Static p:Resources.LabelRadioExpansion}"
+                       Grid.Row="8"
+                       Grid.Column="0" 
+                       Grid.ColumnSpan="2"
+                       HorizontalAlignment="Left"
+                       VerticalAlignment="Center"/>
+
+                <Button x:Name="RadioExpansionToggle"
+                        Content="{Binding RadioExpansion}"    
+                        Grid.Row="8"
+                        Grid.Column="2"
+                        Width="75"
+                        Height="20"
+                        VerticalAlignment="Center"
+                        HorizontalAlignment="Center"/>
+
+                <Label Content="{x:Static p:Resources.LabelRadioEncryption}"
+                       Grid.Row="9"
+                       Grid.Column="0" 
+                       Grid.ColumnSpan="2"
+                       HorizontalAlignment="Left"
+                       VerticalAlignment="Center"/>
+
+                <Button x:Name="AllowRadioEncryptionToggle"
+                        Content="{Binding AllowRadioEncryption}"
+                        Grid.Row="9"
+                        Grid.Column="2"
+                        Width="75"
+                        Height="20"
+                        VerticalAlignment="Center"
+                        HorizontalAlignment="Center"/>
+
+                <Label Content="{x:Static p:Resources.LabelStrictEncryption}"
+                       Grid.Row="10"
+                       Grid.Column="0" 
+                       Grid.ColumnSpan="2"
+                       HorizontalAlignment="Left"
+                       VerticalAlignment="Center"/>
+
+                <Button x:Name="StrictRadioEncryptionToggle"
+                        Content="{Binding StrictRadioEncryption}"
+                        Grid.Row="10"
+                        Grid.Column="2"
+                        Width="75"
+                        Height="20"
+                        VerticalAlignment="Center"
+                        HorizontalAlignment="Center"/>
+
+                <Label Content="{x:Static p:Resources.LabelCheckBetaUpdates}"
+                       Grid.Row="11"
+                       Grid.Column="0" 
+                       Grid.ColumnSpan="2"
+                       HorizontalAlignment="Left"
+                       VerticalAlignment="Center"/>
+
+                <Button x:Name="CheckForBetaUpdatesToggle"
+                       Content="{Binding CheckForBetaUpdates}" 
+                       Grid.Row="11"
+                       Grid.Column="2"
+                       Width="75"
+                       Height="20"
+                       VerticalAlignment="Center"
+                       HorizontalAlignment="Center"/>
+
+
+                <Label Content="{x:Static p:Resources.LabelExternalAWACS}"
+                       Grid.Row="12"
+                       Grid.Column="0" 
+                       Grid.ColumnSpan="2"
+                       HorizontalAlignment="Left"
+                       VerticalAlignment="Center"/>
+
+                <Button x:Name="ExternalAWACSModeToggle"
+                        Content="{Binding ExternalAWACSMode}" 
+                        Grid.Row="12"
+                        Grid.Column="2"
+                        Width="75"
+                        Height="20"
+                        VerticalAlignment="Center"
+                        HorizontalAlignment="Center"/>
+
+                <Label Content="{x:Static p:Resources.LabelExternalAWACSBluePass}"
+                       Grid.Row="13"
+                       Grid.Column="0" 
+                       Grid.ColumnSpan="2"
+                       HorizontalAlignment="Left"
+                       VerticalAlignment="Center"/>
+
+                <TextBox x:Name="ExternalAWACSModeBluePassword"
+                         IsEnabled="{Binding IsExternalAWACSModeEnabled}"
+                         Text="{Binding Path=ExternalAWACSModeBluePassword, UpdateSourceTrigger=PropertyChanged}"
+                         Grid.Row="13"
+                         Grid.Column="2"
+                         Width="75"
+                         Height="20"
+                         VerticalAlignment="Center"
+                         HorizontalAlignment="Center"/>
+
+                <Label Content="{x:Static p:Resources.LabelExternalAWACSRedPass}"
+                       Grid.Row="14"
+                       Grid.Column="0" 
+                       Grid.ColumnSpan="2"
+                       HorizontalAlignment="Left"
+                       VerticalAlignment="Center"/>
+
+                <TextBox x:Name="ExternalAWACSModeRedPassword"
+                         IsEnabled="{Binding IsExternalAWACSModeEnabled}"
+                         Text="{Binding Path=ExternalAWACSModeRedPassword, UpdateSourceTrigger=PropertyChanged}"
+                         Grid.Row="14"
+                         Grid.Column="2"
+                         Width="75"
+                         Height="20"
+                         VerticalAlignment="Center"
+                         HorizontalAlignment="Center"/>
+
+                <Label Content="{x:Static p:Resources.LabelTestFreq}"
+                       Grid.Row="15"
+                       Grid.Column="0" 
+                       Grid.ColumnSpan="2"
+                       HorizontalAlignment="Left"
+                       VerticalAlignment="Center"/>
+
+                <TextBox x:Name="TestFrequencies"
+                         IsEnabled="True"
+                         Text="247.2,120.3"
+                         Grid.Row="15"
+                         Grid.Column="2"
+                         Width="75"
+                         Height="20"
+                         VerticalAlignment="Center"
+                         HorizontalAlignment="Center"/>
+
+
+                <Label Content="{x:Static p:Resources.LabelTunedCount}"
+                       Grid.Row="16"
+                       Grid.Column="0" 
+                       Grid.ColumnSpan="2"
+                       HorizontalAlignment="Left"
+                       VerticalAlignment="Center"/>
+
+                <Button x:Name="TunedCountToggle"
+                       Content="{Binding TunedCountText}"
+                       Grid.Row="16"
+                       Grid.Column="2"
+                       Width="75"
+                       Height="20"
+                       VerticalAlignment="Center"
+                       HorizontalAlignment="Center"/>
+
+                <Label Content="{x:Static p:Resources.LabelGlobalLobbyFreq}"
+                       Grid.Row="17"
+                       Grid.Column="0" 
+                       Grid.ColumnSpan="2"
+                       HorizontalAlignment="Left"
+                       VerticalAlignment="Center"/>
+
+                <TextBox x:Name="GlobalLobbyFrequencies"
+                         IsEnabled="True"
+                         Text="241.2,122.3"  
+                         Grid.Row="17"
+                         Grid.Column="2"
+                         Width="75"
+                         Height="20"
+                         VerticalAlignment="Center"
+                         HorizontalAlignment="Center"/>
+
+                <Label Content="{x:Static p:Resources.LabelOverrideEffectsOnGlobal}"
+                       Grid.Row="18"
+                       Grid.Column="0" 
+                       Grid.ColumnSpan="2"
+                       HorizontalAlignment="Left"
+                       VerticalAlignment="Center"/>
+
+                <Button x:Name="OverrideEffectsOnGlobalToggle"
+                        Content="{Binding OverrideEffectsOnGlobal}"
+                        Grid.Row="18"
+                        Grid.Column="2"
+                        Width="75"
+                        Height="20"
+                        VerticalAlignment="Center"
+                        HorizontalAlignment="Center"/>
+
+                <Label Content="{x:Static p:Resources.LabelLotATCExport}"
+                       Grid.Row="19"
+                       Grid.Column="0" 
+                       Grid.ColumnSpan="2"
+                       HorizontalAlignment="Left"
+                       VerticalAlignment="Center"/>
+
+                <Button x:Name="LotATCExportToggle"
+                        Content="{Binding LotATCExportText}"
+                        Grid.Row="19"
+                        Grid.Column="2"
+                        Width="75"
+                        Height="20"
+                        VerticalAlignment="Center"
+                        HorizontalAlignment="Center"/>
+
+                <Label Content="{x:Static p:Resources.LabelShowTransmitterName}"
+                       Grid.Row="20"
+                       Grid.Column="0" 
+                       Grid.ColumnSpan="2"
+                       HorizontalAlignment="Left"
+                       VerticalAlignment="Center"/>
+
+                <Button x:Name="ShowTransmitterNameToggle"
+                        Content="{Binding ShowTransmitterNameText}" 
+                        Grid.Row="20"
+                        Grid.Column="2"
+                        Width="75"
+                        Height="20"
+                        VerticalAlignment="Center"
+                        HorizontalAlignment="Center"/>
+
+                <Label Content="{x:Static p:Resources.LabelTransmissionLog}"
+                       Grid.Row="21"
+                       Grid.Column="0" 
+                       Grid.ColumnSpan="2"
+                       HorizontalAlignment="Left"
+                       VerticalAlignment="Center"/>
+
+                <Button x:Name="TransmissionLogEnabledToggle"
+                        Content="{Binding TransmissionLogEnabledText}"
+                        Grid.Row="21"
+                        Grid.Column="2"
+                        Width="75"
+                        Height="20"
+                        VerticalAlignment="Center"
+                        HorizontalAlignment="Center"/>
+
+                <Label Content="{x:Static p:Resources.LabelArchiveTime}"
+                       Grid.Row="22"
+                       Grid.Column="0" 
+                       Grid.ColumnSpan="2"
+                       HorizontalAlignment="Left"
+                       VerticalAlignment="Center"/>
+
+                <StackPanel Orientation="Vertical"
+                            Grid.Row="22"
+                            Grid.Column="2">
+                    <Grid  Width="75">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Label Grid.Column="0" FontSize="10" Content="0" HorizontalAlignment="Left" />
+                        <Label HorizontalAlignment="Right" Grid.Column="1" FontSize="10" Content="7" />
+                    </Grid>
+                    
+                    <Slider 
+                        Value="{Binding ArchiveLimit}"
+                        Width="75"
+                        Height="40"
+                        VerticalAlignment="Center"
+                        Interval="1"
+                        Minimum="0"
+                        Maximum="7"
+                        Ticks="1,2,3,4,5,6,7"
+                        TickPlacement="TopLeft"
+                        IsSnapToTickEnabled="True"
+                        HorizontalAlignment="Center">
+                    </Slider>
+                </StackPanel>
+
+                <Label Content="{x:Static p:Resources.LabelRetransmitNodeLimit}"
+                       Grid.Row="23"
+                       Grid.Column="0" 
+                       Grid.ColumnSpan="2"
+                       HorizontalAlignment="Left"
+                       VerticalAlignment="Center"/>
+                <StackPanel Orientation="Vertical"
+                            Grid.Row="23"
+                            Grid.Column="2">
+                    <Grid  Width="75">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Label Grid.Column="0" FontSize="10" Content="0" HorizontalAlignment="Left" />
+                        <Label HorizontalAlignment="Right" Grid.Column="1" FontSize="10" Content="5" />
+                    </Grid>
+                    <Slider 
+                        Value="{Binding  NodeLimit}"
+                            Width="75"
+                            Height="40"
+                            VerticalAlignment="Center"
+                            Interval="1"
+                            Minimum="0"
+                            Maximum="5"
+                            Ticks="0,1,2,3,4,5"
+                            TickPlacement="TopLeft"
+                            IsSnapToTickEnabled="True"
+                            HorizontalAlignment="Center">
+                    </Slider>
+                </StackPanel>
+                
+                <Label Content="{x:Static p:Resources.ServerPresetsEnabled}"
+                       Grid.Row="24"
+                       Grid.Column="0" 
+                       Grid.ColumnSpan="2"
+                       HorizontalAlignment="Left"
+                       VerticalAlignment="Center"/>
+                
+                <Button x:Name="ServerPresetsEnabledToggle"
+                        Content="{Binding ServerPresetsEnabledText}"
+                        Grid.Row="24"
+                        Grid.Column="2"
+                        Width="75"
+                        Height="20"
+                        VerticalAlignment="Center"
+                        HorizontalAlignment="Center"/>
+                
+                <Label Content="{x:Static p:Resources.ServerEAMRadioPresetEnabled}"
+                       Grid.Row="25"
+                       Grid.Column="0"
+                       Grid.ColumnSpan="2"
+                       HorizontalAlignment="Left"
+                       VerticalAlignment="Center"/>
+                
+                <Button x:Name="ServerEAMRadioPresetEnabledToggle"
+                        Content="{Binding ServerEAMRadioPresetEnabledText}"
+                        Grid.Row="25"
+                        Grid.Column="2"
+                        Width="75"
+                        Height="20"
+                        VerticalAlignment="Center"
+                        HorizontalAlignment="Center"/>
+            </Grid>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

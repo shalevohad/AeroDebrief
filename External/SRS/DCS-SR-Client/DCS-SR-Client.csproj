@@ -1,0 +1,559 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFramework>net9.0-windows10.0.22621.0</TargetFramework>
+        <OutputType>WinExe</OutputType>
+        <RootNamespace>Ciribob.DCS.SimpleRadio.Standalone.Client</RootNamespace>
+        <AssemblyName>SR-ClientRadio</AssemblyName>
+        <IsWebBootstrapper>false</IsWebBootstrapper>
+        <PublishUrl>publish\</PublishUrl>
+        <Install>true</Install>
+        <InstallFrom>Disk</InstallFrom>
+        <UpdateEnabled>false</UpdateEnabled>
+        <UpdateMode>Foreground</UpdateMode>
+        <UpdateInterval>7</UpdateInterval>
+        <UpdateIntervalUnits>Days</UpdateIntervalUnits>
+        <UpdatePeriodically>false</UpdatePeriodically>
+        <UpdateRequired>false</UpdateRequired>
+        <MapFileExtensions>true</MapFileExtensions>
+        <ApplicationRevision>0</ApplicationRevision>
+        <UseApplicationTrust>false</UseApplicationTrust>
+        <BootstrapperEnabled>true</BootstrapperEnabled>
+        <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+        <UseWindowsForms>true</UseWindowsForms>
+        <UseWPF>true</UseWPF>
+        <ImportWindowsDesktopTargets>true</ImportWindowsDesktopTargets>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+        <Company>Ciribob - GitHub.com/Ciribob</Company>
+        <Product>DCS-SimpleRadio Standalone</Product>
+        <ApplicationVersion>2.3.2.1</ApplicationVersion>
+        <AssemblyVersion>2.3.2.1</AssemblyVersion>
+        <FileVersion>2.3.2.1</FileVersion>
+        <Version>2.3.2.1</Version>
+        <ApplicationIcon>audio-headset.ico</ApplicationIcon>
+    </PropertyGroup>
+    <PropertyGroup>
+        <StartupObject>Ciribob.DCS.SimpleRadio.Standalone.Client.App</StartupObject>
+    </PropertyGroup>
+    <PropertyGroup>
+        <TargetZone>
+        </TargetZone>
+    </PropertyGroup>
+    <PropertyGroup>
+        <GenerateManifests>false</GenerateManifests>
+    </PropertyGroup>
+    <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+        <OutputPath>bin\x64\Debug\</OutputPath>
+        <CodeAnalysisRuleSet>MinimumRecommendedRules.ruleset</CodeAnalysisRuleSet>
+    </PropertyGroup>
+    <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+        <OutputPath>bin\x64\Release\</OutputPath>
+        <DefineConstants>
+        </DefineConstants>
+        <CodeAnalysisRuleSet>MinimumRecommendedRules.ruleset</CodeAnalysisRuleSet>
+        <DebugSymbols>False</DebugSymbols>
+        <DebugType>None</DebugType>
+    </PropertyGroup>
+    <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
+        <PlatformTarget>x64</PlatformTarget>
+    </PropertyGroup>
+    <PropertyGroup Condition=" '$(Configuration)' == 'Release' ">
+        <PlatformTarget>x64</PlatformTarget>
+        <DebugSymbols>False</DebugSymbols>
+        <DebugType>None</DebugType>
+    </PropertyGroup>
+    <PropertyGroup>
+        <ApplicationManifest>Properties\app.manifest</ApplicationManifest>
+    </PropertyGroup>
+    <ItemGroup>
+        <None Update="awacs-radios.json">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+        <Content Include="AudioEffects\Ambient\A10.wav">
+          <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\Ambient\A29.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\Ambient\A4.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\Ambient\AH64.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\Ambient\AJS37.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\Ambient\AV8BNA.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\Ambient\BF109.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\Ambient\C101.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\Ambient\CH47.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\Ambient\ChristenEagle.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\Ambient\F1.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\Ambient\F14.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\Ambient\F15.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\Ambient\F16.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\Ambient\F4.wav">
+          <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\Ambient\F5.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\Ambient\F86.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\Ambient\FA18.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\Ambient\FW190.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\Ambient\HELICOPTER.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\Ambient\Hercules.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\Ambient\I16.wav">
+          <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\Ambient\J11.wav">
+          <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\Ambient\JET.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\Ambient\JF17.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\Ambient\Ka50.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\Ambient\L39.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\Ambient\M2000.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\Ambient\MB339.wav">
+          <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\Ambient\Mi24.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\Ambient\Mi8.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\Ambient\Mig15.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\Ambient\Mig19.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\Ambient\Mig21.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\Ambient\Mig29.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\Ambient\Mosquito.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\Ambient\OH58D.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\Ambient\OH6A.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\Ambient\P47.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\Ambient\P51.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\Ambient\PROP.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\Ambient\SA342.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\Ambient\SK60.wav">
+          <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\Ambient\Spitfire.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\Ambient\Su25.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\Ambient\Su27.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\Ambient\Su33.wav">
+          <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\Ambient\UH1.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\Ambient\UH60.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\Ambient\Yak52.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\FM_NOISE.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\HAVEQUICK_TONE.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\HF_NOISE.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\INTERCOM_TRANS_END.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\INTERCOM_TRANS_END_SILENT.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\INTERCOM_TRANS_START.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\INTERCOM_TRANS_START_SILENT.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\KY_58_RX.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\KY_58_TX.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\MIDS_TX.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\MIDS_TX_END.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\NATO_TONE.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\RADIO_TRANS_END.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\RADIO_TRANS_END_ALTERNATE.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\RADIO_TRANS_START.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\RADIO_TRANS_START_ALTERNATE.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\RADIO_TRANS_START_APACHE.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\UHF_NOISE.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\VHF_NOISE.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="NLog.config">
+          <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </Content>
+        <AppDesigner Include="Properties\" />
+        <None Remove="AudioEffects\Ambient\F4U.wav" />
+        <Content Include="AudioEffects\Ambient\F4U.wav">
+          <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+    </ItemGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\Common\Common.csproj" />
+        <ProjectReference Include="..\SharedAudio\SharedAudio.csproj" />
+    </ItemGroup>
+    <ItemGroup>
+        <None Update="FodyWeavers.xml">
+            <SubType>Designer</SubType>
+        </None>
+        <None Update="Presets\arc131.json">
+          <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </None>
+        <None Update="Presets\arc134.json">
+          <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </None>
+        <None Update="Presets\arc164.json">
+          <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </None>
+        <None Update="Presets\arc186.json">
+          <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </None>
+        <None Update="Presets\arc201d.json">
+          <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </None>
+        <None Update="Presets\arc210.json">
+          <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </None>
+        <None Update="Presets\arc220.json">
+          <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </None>
+        <None Update="Presets\arc222.json">
+          <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </None>
+        <None Update="Presets\arc27.json">
+          <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </None>
+        <None Update="Presets\arc51.json">
+          <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </None>
+        <None Update="Presets\baklan5.json">
+          <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </None>
+        <None Update="Presets\fug16zy.json">
+          <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </None>
+        <None Update="Presets\hfnoise.json">
+          <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </None>
+        <None Update="Presets\HOWTO.md">
+          <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </None>
+        <None Update="Presets\intercom.json">
+          <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </None>
+        <None Update="Presets\jadro1a.json">
+          <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </None>
+        <None Update="Presets\link16.json">
+          <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </None>
+        <None Update="Presets\r1155.json">
+          <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </None>
+        <None Update="Presets\r800.json">
+          <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </None>
+        <None Update="Presets\r828.json">
+          <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </None>
+        <None Update="Presets\r832m.json">
+          <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </None>
+        <None Update="Presets\r852.json">
+          <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </None>
+        <None Update="Presets\r862.json">
+          <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </None>
+        <None Update="Presets\r863.json">
+          <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </None>
+        <None Update="Presets\r864.json">
+          <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </None>
+        <None Update="Presets\rsi6k.json">
+          <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </None>
+        <None Update="Presets\scr522a.json">
+          <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </None>
+        <None Update="Presets\t1154.json">
+          <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </None>
+        <None Update="Properties\Settings.settings">
+          <Generator>SettingsSingleFileGenerator</Generator>
+          <LastGenOutput>Settings.Designer.cs</LastGenOutput>
+        </None>
+        <None Update="RadioModels\arc131.json">
+          <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+        <None Update="RadioModels\arc134.json">
+          <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+        <None Update="RadioModels\arc164.json">
+          <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+        <None Update="RadioModels\arc186.json">
+          <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+        <None Update="RadioModels\arc201d.json">
+          <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+        <None Update="RadioModels\arc210.json">
+          <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+        <None Update="RadioModels\arc220.json">
+          <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+        <None Update="RadioModels\arc222.json">
+          <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+        <None Update="RadioModels\arc27.json">
+          <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+        <None Update="RadioModels\arc51.json">
+          <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+        <None Update="RadioModels\baklan5.json">
+          <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+        <None Update="RadioModels\hfnoise.json">
+          <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+        <None Update="RadioModels\HOWTO.md">
+          <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+        <None Update="RadioModels\intercom.json">
+          <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+        <None Update="RadioModels\jadro1a.json">
+          <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+        <None Update="RadioModels\link16.json">
+          <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+        <None Update="RadioModels\r800.json">
+          <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+        <None Update="RadioModels\r828.json">
+          <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+        <None Update="RadioModels\r832m.json">
+          <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+        <None Update="RadioModels\r852.json">
+          <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+        <None Update="RadioModels\r862.json">
+          <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+        <None Update="RadioModels\r863.json">
+          <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+        <None Update="RadioModels\r864.json">
+          <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+        <None Update="RadioModels\rsi6k.json">
+          <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+        <None Update="RadioModels\WW2_WIP\arc5.json">
+          <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+        <None Update="RadioModels\WW2_WIP\fug16zy.json">
+          <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+        <None Update="RadioModels\WW2_WIP\r1155.json">
+          <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+        <None Update="RadioModels\WW2_WIP\scr522a.json">
+          <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+        <None Update="RadioModels\WW2_WIP\t1154.json">
+          <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+    </ItemGroup>
+    <ItemGroup>
+        <Resource Include="audio-headset.ico" />
+    </ItemGroup>
+    <ItemGroup>
+        <Resource Include="status-disconnected-game.png" />
+        <Resource Include="status-connected.png" />
+        <Resource Include="status-disconnected-error.png" />
+        <Resource Include="status-disconnected.png" />
+        <Content Include="AudioEffects\beep-disconnected.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="AudioEffects\beep-connected.wav">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="speexdsp.dll">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+    </ItemGroup>
+    <ItemGroup>
+
+        <PackageReference Include="Extended.Wpf.Toolkit" Version="4.7.25104.5739" />
+        <PackageReference Include="Fody" Version="6.9.2" />
+        <PackageReference Include="MahApps.Metro" Version="2.4.10" />
+        <PackageReference Include="Microsoft.Windows.Compatibility" Version="9.0.8" />
+        <PackageReference Include="Microsoft.Xaml.Behaviors.Wpf" Version="1.1.135" />
+        <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
+        <PackageReference Include="PropertyChanged.Fody" Version="4.1.0" />
+        <PackageReference Include="Sentry" Version="5.11.1" />
+        <PackageReference Include="SharpConfig" Version="3.2.9.1" />
+        <PackageReference Include="SharpDX" Version="4.2.0" />
+        <PackageReference Include="SharpDX.DirectInput" Version="4.2.0" />
+        <PackageReference Include="SharpDX.XInput" Version="4.2.0" />
+        <PackageReference Include="WebRtcVadSharp" Version="1.3.2" />
+    </ItemGroup>
+    <ItemGroup>
+        <Compile Remove="Audio\BufferedSampleProvider.cs" />
+        <Compile Remove="DejitterBuffer.cs" />
+        <Compile Remove="UI\ClientWindow\InputBindingListControl.xaml.cs" />
+        <Page Remove="UI\ClientWindow\InputBindingListControl.xaml" />
+        <Compile Update="Properties\Resources.Designer.cs">
+          <DesignTime>True</DesignTime>
+          <AutoGen>True</AutoGen>
+          <DependentUpon>Resources.resx</DependentUpon>
+        </Compile>
+        <EmbeddedResource Update="Properties\Resources.resx">
+          <Generator>PublicResXFileCodeGenerator</Generator>
+          <LastGenOutput>Resources.Designer.cs</LastGenOutput>
+        </EmbeddedResource>
+        <Page Update="UI\ClientWindow\InputProfileWindow\InputProfileWindow.xaml">
+            <Generator>MSBuild:Compile</Generator>
+        </Page>
+        <Page Update="UI\ClientWindow\RadioOverlayWindow\PresetChannels\PresetChannelsView.xaml">
+            <Generator>MSBuild:Compile</Generator>
+        </Page>
+        <Page Update="UI\ClientWindow\RadioOverlayWindow\RadioOverlay.xaml">
+            <Generator>MSBuild:Compile</Generator>
+        </Page>
+        <Page Update="UI\ClientWindow\RadioOverlayWindow\TransponderPanel.xaml">
+            <Generator>MSBuild:Compile</Generator>
+        </Page>
+        <Page Update="UI\ClientWindow\RadioOverlayWindow\RadioCapabilities.xaml">
+            <Generator>MSBuild:Compile</Generator>
+        </Page>
+        <Page Update="UI\ClientWindow\RadioOverlayWindow\RadioControlGroup.xaml">
+            <Generator>MSBuild:Compile</Generator>
+        </Page>
+        <Page Update="UI\ClientWindow\RadioOverlayWindow\IntercomControlGroup.xaml">
+            <Generator>MSBuild:Compile</Generator>
+        </Page>
+        <Page Update="UI\ClientWindow\AwacsRadioOverlayWindow\AwacsIntercomControlGroup.xaml">
+            <Generator>MSBuild:Compile</Generator>
+        </Page>
+        <Page Update="UI\ClientWindow\AwacsRadioOverlayWindow\AwacsOverlay.xaml">
+            <Generator>MSBuild:Compile</Generator>
+        </Page>
+        <Page Update="UI\ClientWindow\AwacsRadioOverlayWindow\AwacsRadioControlGroup.xaml">
+            <Generator>MSBuild:Compile</Generator>
+        </Page>
+        <EmbeddedResource Update="Properties\Resources.zh.resx">
+          <Generator>PublicResXFileCodeGenerator</Generator>
+          <DependentUpon>Resources.resx</DependentUpon>
+        </EmbeddedResource>
+        <EmbeddedResource Update="Properties\Resources.ru-RU.resx">
+          <Generator>PublicResXFileCodeGenerator</Generator>
+        </EmbeddedResource>
+    </ItemGroup>
+</Project>

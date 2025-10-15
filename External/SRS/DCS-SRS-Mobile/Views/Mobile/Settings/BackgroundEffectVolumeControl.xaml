@@ -1,0 +1,39 @@
+﻿<ContentView
+    x:Class="Ciribob.DCS.SimpleRadio.Standalone.Client.Mobile.Views.Mobile.Settings.BackgroundEffectVolumeControl"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    x:Name="BackgroundEffectVolume">
+    <VerticalStackLayout
+        Margin="10">
+
+
+        <!-- <Slider x:Name="EffectVolume" -->
+        <!--         TickPlacement="BottomRight" -->
+        <!--         SmallChange="5" -->
+        <!--         LargeChange="10" -->
+        <!--         IsSnapToTickEnabled="True" -->
+        <!--         TickFrequency="10" -->
+        <!--         VerticalAlignment="Center" -->
+        <!--         VerticalContentAlignment="Center" -->
+        <!--         Maximum="200" -->
+        <!--         Value="{Binding ElementName=EffectsVolumeControl, Path=VolumeValue, Mode=TwoWay}" -->
+        <!--         Minimum="0" /> -->
+        <Slider
+            Maximum="200"
+            Value="{Binding Source={x:Reference BackgroundEffectVolume}, Path=Volume, Mode=TwoWay}"
+            Minimum="0" />
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Label Grid.Column="0" FontSize="10" Text="0%" HorizontalTextAlignment="Start" />
+            <Label Grid.Column="1" FontSize="10" Text="100%"
+                   HorizontalTextAlignment="Center" />
+            <Label Grid.Column="2" FontSize="10" Text="200%"
+                   HorizontalTextAlignment="End" />
+        </Grid>
+
+    </VerticalStackLayout>
+</ContentView>

@@ -1,0 +1,51 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:statusBar="clr-namespace:Ciribob.DCS.SimpleRadio.Standalone.Client.Mobile.Views.Mobile.StatusBar"
+             x:Class="Ciribob.DCS.SimpleRadio.Standalone.Client.Mobile.Views.Mobile.Home.HomePage">
+
+    <!-- <Shell.TitleView> -->
+    <!--     <statusBar:StatusView /> -->
+    <!-- </Shell.TitleView> -->
+    <ScrollView>
+        <VerticalStackLayout
+            Spacing="25"
+            Padding="30,0"
+            VerticalOptions="Start">
+            <Label x:Name="Version"></Label>
+            <Label FontSize="30">Server Address</Label>
+            <Entry
+                x:Name="Address"
+                FontSize="32"
+                ClearButtonVisibility="WhileEditing"
+                Text=""
+                Placeholder="DCSserver.io:5002"
+                IsSpellCheckEnabled="False"
+                IsTextPredictionEnabled="False" />
+
+            <Button
+                x:Name="ConnectDisconnect"
+                FontFamily="RobotoMono" FontSize="30" BackgroundColor="#919191" TextColor="White"
+                Text="Connect"
+                Clicked="OnStartClicked"
+                HorizontalOptions="Center" />
+
+            <Button
+                FontFamily="RobotoMono" FontSize="30" BackgroundColor="#919191" TextColor="White"
+
+                Text="Handheld Radio"
+                Clicked="Navigate_Clicked"
+                HorizontalOptions="Center" />
+
+            <Button
+                FontFamily="RobotoMono" FontSize="30" BackgroundColor="#919191" TextColor="White"
+                Text="Aircraft Radio"
+                Clicked="AircraftRadio_OnClicked"
+                HorizontalOptions="Center" />
+
+
+        </VerticalStackLayout>
+    </ScrollView>
+
+</ContentPage>

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:statusBar="clr-namespace:Ciribob.DCS.SimpleRadio.Standalone.Client.Mobile.Views.Mobile.StatusBar"
+             x:Class="Ciribob.DCS.SimpleRadio.Standalone.Client.Mobile.Views.Mobile.StatusBar.StatusView">
+    <ContentView.BindingContext>
+        <statusBar:StatusViewModel />
+    </ContentView.BindingContext>
+    <Grid VerticalOptions="Center" HorizontalOptions="Fill">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="1*" />
+            <ColumnDefinition Width="1*" />
+        </Grid.ColumnDefinitions>
+
+        <VerticalStackLayout Grid.Column="0" Grid.Row="0" VerticalOptions="Center" HorizontalOptions="Start">
+            <Label HorizontalOptions="Start" TextColor="{Binding TCPTextColour}" VerticalTextAlignment="Center"
+                   Text="{Binding TCPText}" />
+            <Label HorizontalOptions="Start" VerticalOptions="Center" VerticalTextAlignment="Center"
+                   TextColor="{Binding VOIPTextColour}" Text="{Binding VOIPText}" />
+        </VerticalStackLayout>
+
+        <ImageButton Margin="10" Grid.Column="1" Grid.Row="0" WidthRequest="30" HeightRequest="30"
+                     Source="settingsicon.png" Clicked="Button_OnClicked" HorizontalOptions="End" />
+    </Grid>
+
+</ContentView>

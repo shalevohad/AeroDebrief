@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <TargetFramework>net9.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>disable</Nullable>
+        <StartupObject>Ciribob.DCS.SimpleRadio.Standalone.Server.Program</StartupObject>
+        <PlatformTarget>x64</PlatformTarget>
+        <PublishSingleFile>false</PublishSingleFile>
+        <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+        <AssemblyName>SRS-Server-Commandline</AssemblyName>
+        <RootNamespace>Ciribob.DCS.SimpleRadio.Standalone.Server</RootNamespace>
+        <Version>2.3.2.1</Version>
+        <AssemblyVersion>2.3.2.1</AssemblyVersion>
+        <FileVersion>2.3.2.1</FileVersion>
+        <LangVersion>11</LangVersion>
+        <IsPackable>false</IsPackable>
+        <Company>Ciribob - GitHub.com/Ciribob</Company>
+        <Product>DCS-SimpleRadio Standalone</Product>
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\Common\Common.csproj" />
+        <ProjectReference Include="..\SharedAudio\SharedAudio.csproj" />
+    </ItemGroup>
+    <ItemGroup>
+        <PackageReference Include="CommandLineParser" Version="2.9.1" />
+        <PackageReference Include="Sentry" Version="5.11.1" />
+        <PackageReference Include="Sentry.PlatformAbstractions" Version="1.1.1" />
+        <PackageReference Include="Sentry.Protocol" Version="2.1.8" />
+    </ItemGroup>
+    <ItemGroup>
+      <Folder Include="Properties\" />
+    </ItemGroup>
+    <PropertyGroup Condition=" '$(Configuration)' == 'Release' ">
+        <PlatformTarget>x64</PlatformTarget>
+        <DebugSymbols>False</DebugSymbols>
+        <DebugType>None</DebugType>
+    </PropertyGroup>
+</Project>

@@ -1,0 +1,4 @@
+[submodule "External/SRS"]
+    path = External/SRS
+    url = https://github.com/ciribob/DCS-SimpleRadioStandalone
+    branch = release
