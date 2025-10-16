@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <RootNamespace>AeroDebrief.UI</RootNamespace>
+    <AssemblyName>AeroDebrief.UI</AssemblyName>
+    <Nullable>enable</Nullable>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Platforms>x64</Platforms>
+    <StartupObject>AeroDebrief.UI.Program</StartupObject>
+    <Version>1.0.0</Version>
+    <Authors>Shalev Ohad</Authors>
+    <Company>AeroDebrief</Company>
+    <Product>AeroDebrief</Product>
+    <Description>WPF UI for AeroDebrief - DCS SRS Playback and Analysis</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AeroDebrief.Core\AeroDebrief.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="NLog.config">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>

@@ -1,36 +1,45 @@
-name: Build & Test
-
+﻿name: Build & Test
 
 on:
-	push:
-		branches: [ main, beta, release ]
-
+  push:
+    branches: [ main, beta, release ]
+  pull_request:
+    branches: [ main, beta, release ]
 
 jobs:
-	build:
-		runs-on: windows-latest
+  build:
+    runs-on: windows-latest
 
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
 
-		steps:
-			- uses: actions/checkout@v4
-			- name: Setup .NET
-			  uses: actions/setup-dotnet@v4
-			  with:
-				dotnet-version: '9.0.x'
+      - name: Restore dependencies
+        run: dotnet restore AeroDebrief.sln
 
+      - name: Build
+        run: dotnet build AeroDebrief.sln --configuration Release --no-restore
 
-			- name: Restore dependencies
-			  run: dotnet restore
+      - name: Test
+        run: dotnet test AeroDebrief.sln --configuration Release --no-build --verbosity normal
 
+      - name: Upload CLI artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AeroDebrief-CLI-${{ github.ref_name }}
+          path: src/AeroDebrief.CLI/bin/Release/net9.0/
 
-			- name: Build
-			  run: dotnet build -c Release --no-restore
-
-
-			- name: Test
-			  run: dotnet test -c Release --no-build --verbosity normal
-
-
-			- name: Publish artifact (Release only)
-			  if: github.ref == 'refs/heads/release'
-			  run: dotnet publish -c Release -o ./publish
+      - name: Upload UI artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AeroDebrief-UI-${{ github.ref_name }}
+          path: src/AeroDebrief.UI/bin/Release/net9.0-windows/

@@ -1,3 +1,5 @@
+# Copy this content to .github/workflows/beta.yml
+
 name: Beta Release
 
 on:
