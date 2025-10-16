@@ -25,6 +25,11 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Common", "External\SRS\Comm
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SharedAudio", "External\SRS\SharedAudio\SharedAudio.csproj", "{30F29FE6-1CC9-4A20-A389-0439E6F3DE7F}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{8EC462FD-D22E-90A8-E5CE-7E832BA40C5D}"
+	ProjectSection(SolutionItems) = preProject
+		docs\Prompts\RadioPresenceNetworkView_Copilot_Prompt.txt = docs\Prompts\RadioPresenceNetworkView_Copilot_Prompt.txt
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -132,5 +137,8 @@ Global
 		{6BDF01F6-FB49-BDA7-B310-88FBA6F3310A} = {A288BEE0-695A-BEEA-455C-649571D89326}
 		{C530FA2B-9D50-4853-980D-5502BF493C31} = {6BDF01F6-FB49-BDA7-B310-88FBA6F3310A}
 		{30F29FE6-1CC9-4A20-A389-0439E6F3DE7F} = {6BDF01F6-FB49-BDA7-B310-88FBA6F3310A}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {D25A06F3-8B62-4051-9C15-4A50314F1440}
 	EndGlobalSection
 EndGlobal

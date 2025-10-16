@@ -43,8 +43,42 @@ namespace AeroDebrief.UI{
 
             WireUpAudioSessionEvents();
             
+            // Initialize analytics views
+            InitializeAnalyticsViews();
+            
             // Autoload last opened file if it exists
             Loaded += MainWindow_Loaded;
+        }
+
+        private void InitializeAnalyticsViews()
+        {
+            // Create and add analytics views to their respective containers
+            var presenceGraphView = new Views.Analytics.PresenceGraphView
+            {
+                DataContext = _viewModel
+            };
+            PresenceGraphContainer.Children.Add(presenceGraphView);
+
+            var powerDistributionView = new Views.Analytics.PowerDistributionView
+            {
+                DataContext = _viewModel
+            };
+            PowerDistributionContainer.Children.Add(powerDistributionView);
+
+            var signalQualityView = new Views.Analytics.SignalQualityView
+            {
+                DataContext = _viewModel
+            };
+            SignalQualityContainer.Children.Add(signalQualityView);
+
+            var statisticsTableView = new Views.Analytics.StatisticsTableView
+            {
+                DataContext = _viewModel
+            };
+            StatisticsTableContainer.Children.Add(statisticsTableView);
+
+            // Set default tab to Presence Graph
+            AnalyticsTabControl.SelectedIndex = 0;
         }
 
         private async void MainWindow_Loaded(object sender, RoutedEventArgs e)

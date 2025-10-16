@@ -175,22 +175,64 @@ WindowStartupLocation="CenterScreen">
                             Background="{StaticResource BorderBrush}"
                             Height="2"/>
 
-                <!-- Spectral Analyzer -->
+                <!-- Analytics TabControl -->
                 <Border Grid.Row="2" Style="{StaticResource ModernCard}">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                        </Grid.RowDefinitions>
+                    <TabControl x:Name="AnalyticsTabControl" 
+                              Background="White"
+                              BorderThickness="0"
+                              Padding="0">
+                        <TabControl.Resources>
+                            <Style TargetType="TabItem">
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="TabItem">
+                                            <Border x:Name="Border" 
+                                                  Background="#F5F5F5"
+                                                  BorderThickness="0"
+                                                  Padding="16,8"
+                                                  Margin="0,0,4,0"
+                                                  CornerRadius="4,4,0,0">
+                                                <ContentPresenter ContentSource="Header" 
+                                                                HorizontalAlignment="Center"
+                                                                VerticalAlignment="Center"/>
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsSelected" Value="True">
+                                                    <Setter TargetName="Border" Property="Background" Value="{StaticResource AccentBrush}"/>
+                                                </Trigger>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="Border" Property="Opacity" Value="0.8"/>
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                                <Setter Property="Foreground" Value="#333333"/>
+                                <Setter Property="FontWeight" Value="SemiBold"/>
+                                <Setter Property="FontSize" Value="13"/>
+                            </Style>
+                        </TabControl.Resources>
 
-                        <TextBlock Grid.Row="0" Style="{StaticResource SubHeaderTextStyle}" Text="Spectral Analyzer"/>
-                        
-                        <controls:SpectrumAnalyzer Grid.Row="1" 
-                                                 x:Name="SpectrumAnalyzer"
-                                                 SpectrumData="{Binding SpectrumData}"
-                                                 Background="White"
-                                                 Margin="0,8,0,0"/>
-                    </Grid>
+                        <!-- Tab 1: Presence Graph -->
+                        <TabItem Header="Presence Network">
+                            <Grid x:Name="PresenceGraphContainer" Background="White"/>
+                        </TabItem>
+
+                        <!-- Tab 2: Power Distribution -->
+                        <TabItem Header="Power Levels">
+                            <Grid x:Name="PowerDistributionContainer" Background="White"/>
+                        </TabItem>
+
+                        <!-- Tab 3: Signal Quality -->
+                        <TabItem Header="Signal Quality">
+                            <Grid x:Name="SignalQualityContainer" Background="White"/>
+                        </TabItem>
+
+                        <!-- Tab 4: Statistics -->
+                        <TabItem Header="Statistics">
+                            <Grid x:Name="StatisticsTableContainer" Background="White"/>
+                        </TabItem>
+                    </TabControl>
                 </Border>
             </Grid>
 

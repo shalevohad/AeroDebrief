@@ -1,8 +1,0 @@
-{
-  "profiles": {
-    "SimpleRawExport": {
-      "commandName": "Project",
-      "commandLineArgs": "C:\\Users\\Ohad\\source\\repos\\DCS-SRS-RecordingClient\\DCS-SRS-RecordingClient\\SimpleRawExport\\pf_recorded_audio.raw C:\\SRS_Records\\export.mp3"
-    }
-  }
-}

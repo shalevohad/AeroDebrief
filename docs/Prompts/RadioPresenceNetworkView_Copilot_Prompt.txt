@@ -1,0 +1,80 @@
+
+🎯 Objective:
+Implement a WPF UserControl named "RadioPresenceNetworkView" that visualizes real-time presence of users 
+connected to various military communication frequencies (UHF/VHF). 
+Each frequency appears as a central node surrounded by user nodes that represent connected clients.
+
+────────────────────────────────────────────
+🧱 Layout Overview:
+• Each frequency is displayed as a central circle labeled with its frequency (e.g., "243.500 MHz").
+• Around each frequency circle, render user circles connected by lines (Bezier or straight) to the center.
+• The view displays multiple frequencies on a shared canvas — each spaced evenly or positioned dynamically.
+
+────────────────────────────────────────────
+⚙️ Dynamic Behavior:
+• When a user joins a frequency:
+    → Fade-in animation (1.0s)
+    → Green glow with subtle scale-up (1.2x)
+• When a user leaves a frequency:
+    → Red glow followed by fade-out (1.2s)
+• When a user speaks:
+    → User circle grows (120%) + bold border
+• Group Highlight feature:
+    → All users in the same communication group share a common color tone.
+    → When group activity is detected (multiple users speaking), apply a soft pulsing aura around their nodes.
+• Optional hover tooltip for each user:
+    → Shows username, group ID, and signal strength (RSSI).
+
+────────────────────────────────────────────
+🧠 Data Model (from Core project):
+```csharp
+class FrequencyPresence {
+    public double FrequencyMHz { get; set; }
+    public ObservableCollection<UserNode> Users { get; set; }
+}
+
+class UserNode {
+    public string UserName { get; set; }
+    public bool IsTalking { get; set; }
+    public bool IsJustJoined { get; set; }
+    public bool IsJustLeft { get; set; }
+    public bool IsInGroup { get; set; }
+    public string GroupColor { get; set; }
+}
+```
+
+Data source: Core.SignalProcessor via events:
+  OnUserJoined(frequency, userClass, userName)
+  OnUserLeft(frequency, userClass)
+  OnUserSpeaking(frequency, userClass, isTalking)
+  OnGroupActive(frequency, groupId, usersInGroup)
+
+────────────────────────────────────────────
+🎨 Visual Guidelines:
+• Background: #101014
+• Frequency node color: #007ACC
+• User node color: light gray (inactive), white (speaking)
+• Group highlight colors: assign soft, distinct pastel tones
+• Lines connecting users to frequency: #404040 (semi-transparent)
+• Smooth transitions (fade/scale) via Storyboard animations.
+
+────────────────────────────────────────────
+⚙️ Technical Notes:
+• File: RadioPresenceNetworkView.xaml / .cs
+• ViewModel: RadioPresenceNetworkViewModel.cs
+• Canvas used for dynamic layout and animation rendering.
+• Use CompositionTarget.Rendering for 60 FPS animation smoothness.
+• Use Storyboard for transitions and glow effects.
+• The control subscribes to the Core.SignalProcessor service events.
+
+────────────────────────────────────────────
+📦 Integration Notes:
+• Replace or add this as one of the analytics tabs under the waveform in AudioAnalyzerView.
+• The tab title: "גרף נוכחות קשר" (Radio Presence Graph).
+• Ensure responsive scaling to window size changes.
+────────────────────────────────────────────
+💾 Deliverables:
+- RadioPresenceNetworkView.xaml
+- RadioPresenceNetworkView.xaml.cs
+- RadioPresenceNetworkViewModel.cs
+────────────────────────────────────────────

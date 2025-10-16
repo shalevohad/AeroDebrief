@@ -1,0 +1,75 @@
+<UserControl x:Class="AeroDebrief.UI.Views.Analytics.StatisticsTableView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             mc:Ignorable="d" 
+             d:DesignHeight="300" d:DesignWidth="600"
+             Background="White">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Title -->
+        <Border Grid.Row="0" Background="#F5F5F5" Padding="12,8" Margin="0,0,0,8">
+            <TextBlock Text="Frequency Statistics" 
+                     FontSize="16" 
+                     FontWeight="SemiBold"
+                     Foreground="#333333"/>
+        </Border>
+
+        <!-- Data Grid -->
+        <DataGrid Grid.Row="1" 
+                 x:Name="StatisticsDataGrid"
+                 AutoGenerateColumns="False"
+                 CanUserAddRows="False"
+                 CanUserDeleteRows="False"
+                 IsReadOnly="True"
+                 GridLinesVisibility="Horizontal"
+                 Background="White"
+                 Foreground="#333333"
+                 BorderThickness="0"
+                 RowBackground="White"
+                 AlternatingRowBackground="#F9F9F9"
+                 HeadersVisibility="Column">
+            
+            <DataGrid.Resources>
+                <Style TargetType="DataGridColumnHeader">
+                    <Setter Property="Background" Value="#007ACC"/>
+                    <Setter Property="Foreground" Value="White"/>
+                    <Setter Property="FontWeight" Value="SemiBold"/>
+                    <Setter Property="Padding" Value="8,6"/>
+                    <Setter Property="BorderThickness" Value="0,0,1,0"/>
+                    <Setter Property="BorderBrush" Value="#0066AA"/>
+                </Style>
+                
+                <Style TargetType="DataGridCell">
+                    <Setter Property="BorderThickness" Value="0"/>
+                    <Setter Property="Padding" Value="8,4"/>
+                </Style>
+            </DataGrid.Resources>
+
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="Frequency" Binding="{Binding Frequency}" Width="*"/>
+                <DataGridTextColumn Header="Users" Binding="{Binding UserCount}" Width="*"/>
+                <DataGridTextColumn Header="Messages" Binding="{Binding MessageCount}" Width="*"/>
+                <DataGridTextColumn Header="Duration" Binding="{Binding TotalDuration}" Width="*"/>
+                <DataGridTextColumn Header="Avg Power" Binding="{Binding AveragePower}" Width="*"/>
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <!-- Placeholder -->
+        <Border Grid.Row="1" 
+               Background="Transparent"
+               Visibility="{Binding HasData, Converter={StaticResource InverseBoolToVisibilityConverter}}">
+            <TextBlock Text="No statistics data available"
+                     FontSize="14"
+                     Foreground="#999999"
+                     TextAlignment="Center"
+                     HorizontalAlignment="Center"
+                     VerticalAlignment="Center"/>
+        </Border>
+    </Grid>
+</UserControl>
