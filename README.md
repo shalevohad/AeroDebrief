@@ -6,7 +6,7 @@ AeroDebrief is an advanced audio analysis system designed to record, replay, and
 
 ---
 
-## ?? What is AeroDebrief?
+## What is AeroDebrief?
 
 AeroDebrief captures all SRS radio traffic during your DCS missions and presents it through an intuitive interface with advanced analytics capabilities:
 
@@ -21,13 +21,13 @@ Whether you're conducting after-action reviews, training sessions, or just want 
 
 ---
 
-## ??? System Architecture
+## System Architecture
 
 AeroDebrief is built as a modular .NET 9 solution with clear separation of concerns.
 
 ---
 
-## ?? Projects in the Solution
+## Projects in the Solution
 
 ### AeroDebrief.Core - Audio Processing Engine
 
@@ -93,7 +93,7 @@ Shared libraries from the SRS project providing protocol definitions, network co
 
 ---
 
-## ?? Getting Started
+## Getting Started
 
 ### Prerequisites
 
@@ -113,7 +113,7 @@ Shared libraries from the SRS project providing protocol definitions, network co
 
 ---
 
-## ?? Building from Source
+## Building from Source
 
 Requirements: Visual Studio 2022 or later, .NET 9 SDK, Git
 
@@ -128,7 +128,7 @@ dotnet run --project src/AeroDebrief.UI
 
 ---
 
-## ?? Key Features in Detail
+## Key Features in Detail
 
 ### Multi-Frequency Recording
 * Captures all active SRS frequencies simultaneously
@@ -149,7 +149,7 @@ dotnet run --project src/AeroDebrief.UI
 
 ---
 
-## ??? Technology Stack
+## Technology Stack
 
 * .NET 9 - Modern, high-performance runtime
 * WPF - Rich desktop UI framework
@@ -160,7 +160,7 @@ dotnet run --project src/AeroDebrief.UI
 
 ---
 
-## ?? Documentation
+## Documentation
 
 * Analytics Developer Guide - Extending the analytics system
 * Analytics TODO - Planned features and enhancements
@@ -168,19 +168,19 @@ dotnet run --project src/AeroDebrief.UI
 
 ---
 
-## ?? Contributing
+## Contributing
 
 Contributions are welcome! Fork the repository, create a feature branch, commit your changes, push to the branch, and open a Pull Request.
 
 ---
 
-## ?? License
+## License
 
 This project is open source. See the LICENSE file for details.
 
 ---
 
-## ?? Acknowledgments
+## Acknowledgments
 
 * SRS (SimpleRadio Standalone) - For the excellent radio communication system
 * NAudio - For audio processing capabilities
@@ -188,7 +188,7 @@ This project is open source. See the LICENSE file for details.
 
 ---
 
-## ?? Support
+## Support
 
 * Issues: GitHub Issues
 * Discussions: GitHub Discussions
