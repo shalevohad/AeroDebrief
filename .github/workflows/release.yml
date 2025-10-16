@@ -1,0 +1,170 @@
+name: Production Release
+
+# Trigger this workflow on push or pull request to the release branch
+on:
+  push:
+    branches: [ release ]
+  pull_request:
+    branches: [ release ]
+
+# Define permissions required for creating releases and reading repository contents
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  release-build:
+    name: Build, Test, and Publish Release
+    runs-on: windows-latest
+
+    steps:
+      # Checkout the repository with full history to enable proper versioning
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history for all tags and branches
+          submodules: recursive
+
+      # Setup .NET 9 SDK for building the solution
+      - name: Setup .NET 9
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      # Restore NuGet packages and dependencies
+      - name: Restore dependencies
+        run: dotnet restore AeroDebrief.sln
+
+      # Build the entire solution in Release configuration
+      - name: Build solution
+        run: dotnet build AeroDebrief.sln --configuration Release --no-restore
+
+      # Execute all unit tests to ensure quality
+      - name: Run tests
+        run: dotnet test AeroDebrief.sln --configuration Release --no-build --verbosity normal
+
+      # Publish CLI application as self-contained Windows executable
+      - name: Publish CLI Self-contained
+        run: dotnet publish src/AeroDebrief.CLI/AeroDebrief.CLI.csproj -c Release -r win-x64 --self-contained -o ./publish/cli
+
+      # Publish UI application as self-contained Windows executable
+      - name: Publish UI Self-contained
+        run: dotnet publish src/AeroDebrief.UI/AeroDebrief.UI.csproj -c Release -r win-x64 --self-contained -o ./publish/ui
+
+      # Generate semantic version based on existing tags or use date-based versioning
+      - name: Generate version number
+        id: version
+        shell: pwsh
+        run: |
+          # Fetch all tags from remote
+          git fetch --tags
+          
+          # Get the latest tag that matches semantic versioning pattern (v*.*.*)
+          $latestTag = git tag -l "v*.*.*" --sort=-v:refname | Select-Object -First 1
+          
+          if ($latestTag) {
+            # Parse the existing version
+            $version = $latestTag -replace '^v', ''
+            $parts = $version -split '\.'
+            $major = [int]$parts[0]
+            $minor = [int]$parts[1]
+            $patch = [int]$parts[2]
+            
+            # Increment patch version for new release
+            $patch++
+            $newVersion = "$major.$minor.$patch"
+          } else {
+            # No existing tags, start with 1.0.0
+            $newVersion = "1.0.0"
+          }
+          
+          Write-Host "Generated version: $newVersion"
+          "version=$newVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      # Create artifacts directory if it doesn't exist
+      - name: Create artifacts directory
+        run: |
+          New-Item -ItemType Directory -Force -Path artifacts
+
+      # Package CLI binaries into a ZIP archive
+      - name: Create CLI ZIP package
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          Compress-Archive -Path publish/cli/* -DestinationPath "artifacts/AeroDebrief-CLI_$version.zip"
+
+      # Package UI binaries into a ZIP archive
+      - name: Create UI ZIP package
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          Compress-Archive -Path publish/ui/* -DestinationPath "artifacts/AeroDebrief-UI_$version.zip"
+
+      # Create combined release package with both CLI and UI
+      - name: Create combined release package
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          New-Item -ItemType Directory -Force -Path release-package
+          Copy-Item -Path publish/cli -Destination release-package/CLI -Recurse
+          Copy-Item -Path publish/ui -Destination release-package/UI -Recurse
+          Compress-Archive -Path release-package/* -DestinationPath "artifacts/AeroDebrief_release_$version.zip"
+
+      # Upload artifacts for review (accessible from Actions tab)
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: AeroDebrief-Release-${{ steps.version.outputs.version }}
+          path: artifacts/
+          retention-days: 90
+
+      # Create GitHub Release with all packaged artifacts
+      # This step only runs on push events (not pull requests)
+      - name: Create GitHub Release
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: AeroDebrief v${{ steps.version.outputs.version }}
+          body: |
+            ## AeroDebrief Production Release v${{ steps.version.outputs.version }}
+            
+            **Official stable release** - Ready for production use.
+            
+            ### What's Included
+            
+            ? **AeroDebrief CLI** - Command-line interface for automated processing
+            ? **AeroDebrief UI** - Full-featured WPF desktop application
+            ? **Combined Package** - Both applications in a single download
+            
+            ### Installation
+            
+            1. Download the appropriate package below
+            2. Extract the ZIP file to your desired location
+            3. Run the executable (no additional installation required)
+            
+            ### Packages
+            
+            - `AeroDebrief_release_${{ steps.version.outputs.version }}.zip` - Complete package (CLI + UI)
+            - `AeroDebrief-CLI_${{ steps.version.outputs.version }}.zip` - CLI only
+            - `AeroDebrief-UI_${{ steps.version.outputs.version }}.zip` - UI only
+            
+            ### Requirements
+            
+            - Windows 10/11 (64-bit)
+            - .NET 9 Runtime (included in self-contained builds)
+            
+            ### Notes
+            
+            All packages are self-contained and include the .NET 9 runtime.
+            No additional dependencies are required.
+            
+            ---
+            
+            Built from commit: ${{ github.sha }}
+            Build date: ${{ github.event.head_commit.timestamp }}
+          draft: false
+          prerelease: false
+          files: |
+            artifacts/AeroDebrief_release_${{ steps.version.outputs.version }}.zip
+            artifacts/AeroDebrief-CLI_${{ steps.version.outputs.version }}.zip
+            artifacts/AeroDebrief-UI_${{ steps.version.outputs.version }}.zip
+          generate_release_notes: true
+          make_latest: true
