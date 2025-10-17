@@ -3,6 +3,8 @@ using Ciribob.DCS.SimpleRadio.Standalone.Common;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Network.Client;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Network.Singletons;
 using NLog;
+using System.Timers;
+using Ciribob.DCS.SimpleRadio.Standalone.Common.Models.EventMessages;
 using System.Net;
 using System.Collections.Concurrent;
 using SRSTCPClientStatusMessage = Ciribob.DCS.SimpleRadio.Standalone.Common.Models.EventMessages.TCPClientStatusMessage;
@@ -18,6 +20,7 @@ namespace AeroDebrief.Core{
         private UDPVoiceHandler? _udpVoiceHandler;
         private FileStream? _fileStream;
         private CancellationTokenSource? _recordingCts;
+        private System.Timers.Timer? _keepAliveTimer;
         private string? _outputFile;
         private string? _clientGuid;
         private IPEndPoint? _serverEndpoint;
@@ -329,7 +332,8 @@ namespace AeroDebrief.Core{
             if (!status.Connected)
             {
                 Logger.Warn($"Disconnected from server. Reason: {status.Error}");
-
+                // Stop keep-alive when disconnected
+                StopKeepAliveTimer();
                 // Stop recording and clean up UDP
                 StopRecording();
                 _udpVoiceHandler?.RequestStop();
@@ -346,7 +350,60 @@ namespace AeroDebrief.Core{
                     _udpVoiceHandler = new UDPVoiceHandler(_clientGuid, _serverEndpoint);
                     _udpVoiceHandler.Connect();
                 }
+                // Start periodic keep-alive to prevent server-side idle disconnects
+                StartKeepAliveTimer();
                 ConnectionStatusChanged?.Invoke(status);
+            }
+        }
+
+        private void StartKeepAliveTimer()
+        {
+            try
+            {
+                if (_keepAliveTimer != null)
+                    return;
+
+                // Send a lightweight UnitUpdateMessage periodically to keep the TCP connection alive.
+                _keepAliveTimer = new System.Timers.Timer(TimeSpan.FromMinutes(2).TotalMilliseconds);
+                _keepAliveTimer.AutoReset = true;
+                _keepAliveTimer.Elapsed += (s, e) =>
+                {
+                    try
+                    {
+                        var state = RecordingClientState.Instance;
+                        var msg = new UnitUpdateMessage { UnitUpdate = state, FullUpdate = false };
+                        EventBus.Instance.PublishOnBackgroundThreadAsync(msg);
+                        Logger.Debug("KeepAlive: published UnitUpdateMessage to EventBus");
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Warn(ex, "KeepAlive: failed to publish UnitUpdateMessage");
+                    }
+                };
+                _keepAliveTimer.Enabled = true;
+                _keepAliveTimer.Start();
+                Logger.Info("Keep-alive timer started (2 minutes interval)");
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn(ex, "Failed to start keep-alive timer");
+            }
+        }
+
+        private void StopKeepAliveTimer()
+        {
+            try
+            {
+                if (_keepAliveTimer == null) return;
+                _keepAliveTimer.Enabled = false;
+                _keepAliveTimer.Stop();
+                _keepAliveTimer.Dispose();
+                _keepAliveTimer = null;
+                Logger.Info("Keep-alive timer stopped");
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn(ex, "Error while stopping keep-alive timer");
             }
         }
 
