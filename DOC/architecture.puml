@@ -1,0 +1,48 @@
+@startuml
+
+' Component diagram for AeroDebrief
+
+package "AeroDebrief.Core" {
+  [AudioPacketRecorder] as Recorder
+  [AudioPacketReader] as Reader
+  [FileAnalyzer] as Analyzer
+  [FrequencyAnalysisService] as FreqService
+  [AudioProcessingEngine] as Processing
+  [AudioOutputEngine] as Output
+  [AudioBufferManager] as BufferManager
+  [PlaybackController] as PlaybackCtrl
+}
+
+package "AeroDebrief.UI" {
+  [MainViewModel] as MainVM
+  [FrequencyAnalysisIntegrationService] as IntegrationSvc
+  [WaveformViewer] as Waveform
+}
+
+package "External/SRS" {
+  [TCPClientHandler] as TCP
+  [UDPVoiceHandler] as UDP
+  [EventBus] as EventBus
+}
+
+' Interactions
+Recorder --> TCP
+Recorder --> UDP
+Recorder --> EventBus
+Recorder --> Analyzer : writes .srs
+
+Reader --> Analyzer : reads metadata
+Reader --> Processing
+Reader --> Output
+Reader --> BufferManager
+Reader --> PlaybackCtrl
+
+IntegrationSvc --> Reader
+IntegrationSvc --> FreqService
+IntegrationSvc --> MainVM
+MainVM --> Waveform
+
+FreqService --> Analyzer
+FreqService --> IntegrationSvc : events
+
+@enduml
