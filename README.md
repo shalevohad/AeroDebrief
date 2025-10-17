@@ -18,12 +18,12 @@ The `AeroDebrief.Integrations` project contains integration code and helpers for
 2. Configure the recorder to point at the SRS server IP/port in the UI or configuration.
 3. Start a recording or analyse live frequencies using the UI.
 4. AeroDebrief captures all SRS radio traffic during your DCS missions and presents it through an intuitive interface with advanced analytics capabilities:
-* Multi-frequency recording - Capture communications across all active radio frequencies simultaneously
-* Advanced waveform visualization - Interactive waveform display with zoom, pan, and timeline navigation
-* Frequency-based filtering - Isolate and analyze specific frequencies with individual gain and pan controls
-* Real-time analytics - Visualize user presence, power distribution, signal quality, and communication statistics
-* Playback controls - Precise playback with transport controls, seeking, and timeline markers
-* Network visualization - See who's connected to which frequencies in real-time with animated presence graphs
+   * Multi-frequency recording - Capture communications across all active radio frequencies simultaneously
+   * Advanced waveform visualization - Interactive waveform display with zoom, pan, and timeline navigation
+   * Frequency-based filtering - Isolate and analyze specific frequencies with individual gain and pan controls
+   * Real-time analytics - Visualize user presence, power distribution, signal quality, and communication statistics
+   * Playback controls - Precise playback with transport controls, seeking, and timeline markers
+   * Network visualization - See who's connected to which frequencies in real-time with animated presence graphs
 
 Whether you're conducting after-action reviews, training sessions, or just want to relive your missions, AeroDebrief provides the tools you need.
 
