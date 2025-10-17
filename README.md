@@ -1,12 +1,22 @@
 # AeroDebrief
 
-**A comprehensive post-flight analysis and debriefing tool for DCS World radio communications**
+AeroDebrief is a debriefing and analysis tool for flight simulations. It focuses on capturing and analysing live, online voice communications from networked sessions — specifically from Simple Radio Standalone (SRS) servers or other compatible networked voice systems.
 
-AeroDebrief is an advanced audio analysis system designed to record, replay, and analyze radio communications from [SRS (SimpleRadio Standalone)](https://github.com/ciribob/DCS-SimpleRadioStandalone) during DCS World flight sessions. Built with .NET 9 and WPF, it provides powerful visualization and analytics tools for reviewing communications, understanding network activity, and conducting detailed post-mission debriefings.
+Important: AeroDebrief is designed for online voice interrogation of flights via an SRS-style server (UDP/TCP based voice and metadata). It is *not* intended to record or intercept the internal, offline DCS in-sim radio subsystem. If you are running a single-player or local-only DCS session that uses DCS' internal radio channels, AeroDebrief will not capture those internal comms.
 
----
+## Key features
+- Live capture of networked voice (SRS) and associated player metadata
+- Frequency and presence analysis for live sessions
+- Recording of received audio packets with per-player metadata
+- Integration points and export support for third-party tools (for example TacView)
 
-## What is AeroDebrief?
+## Integrations
+The `AeroDebrief.Integrations` project contains integration code and helpers for connecting AeroDebrief output with external tools such as TacView (flight visualization) and DCS Lua export pipelines. Some integration components are work-in-progress or provided as placeholders to guide implementers.
+
+## Getting started
+1. Run or connect to an SRS-compatible server. AeroDebrief listens to the networked voice and metadata published by the server.
+2. Configure the recorder to point at the SRS server IP/port in the UI or configuration.
+3. Start a recording or analyse live frequencies using the UI.
 
 AeroDebrief captures all SRS radio traffic during your DCS missions and presents it through an intuitive interface with advanced analytics capabilities:
 
@@ -19,6 +29,10 @@ AeroDebrief captures all SRS radio traffic during your DCS missions and presents
 
 Whether you're conducting after-action reviews, training sessions, or just want to relive your missions, AeroDebrief provides the tools you need.
 
+* ## Notes and limitations
+- AeroDebrief only receives voice and metadata exposed over the network by an SRS-style server. That means you must be participating in or connected to a multiplayer session using an external voice relay (SRS) or equivalent.
+- AeroDebrief does not hook into or read DCS' internal IPC or in-sim radio system.
+- Privacy: respect the rules and consent of servers and pilots before recording or analysing voice communications.
 ---
 
 ## System Architecture
@@ -169,10 +183,7 @@ dotnet run --project src/AeroDebrief.UI
 ---
 
 ## Contributing
-
-Contributions are welcome! Fork the repository, create a feature branch, commit your changes, push to the branch, and open a Pull Request.
-
----
+Contributions and corrections are welcome. If you plan to add or improve integrations (for example TacView integration), please follow the existing project structure and add clear documentation and tests where possible.
 
 ## License
 
