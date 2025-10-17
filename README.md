@@ -1,6 +1,6 @@
 # AeroDebrief
 
-AeroDebrief is a debriefing and analysis tool for flight simulations. It focuses on capturing and analysing live, online voice communications from networked sessions — specifically from Simple Radio Standalone (SRS) servers or other compatible networked voice systems.
+AeroDebrief is a debriefing and analysis tool for flight simulations. It focuses on capturing and analysing live, online voice communications from networked sessions â€” specifically from Simple Radio Standalone (SRS) servers or other compatible networked voice systems.
 
 Important: AeroDebrief is designed for online voice interrogation of flights via an SRS-style server (UDP/TCP based voice and metadata). It is *not* intended to record or intercept the internal, offline DCS in-sim radio subsystem. If you are running a single-player or local-only DCS session that uses DCS' internal radio channels, AeroDebrief will not capture those internal comms.
 
@@ -17,9 +17,7 @@ The `AeroDebrief.Integrations` project contains integration code and helpers for
 1. Run or connect to an SRS-compatible server. AeroDebrief listens to the networked voice and metadata published by the server.
 2. Configure the recorder to point at the SRS server IP/port in the UI or configuration.
 3. Start a recording or analyse live frequencies using the UI.
-
-AeroDebrief captures all SRS radio traffic during your DCS missions and presents it through an intuitive interface with advanced analytics capabilities:
-
+4.AeroDebrief captures all SRS radio traffic during your DCS missions and presents it through an intuitive interface with advanced analytics capabilities:
 * Multi-frequency recording - Capture communications across all active radio frequencies simultaneously
 * Advanced waveform visualization - Interactive waveform display with zoom, pan, and timeline navigation
 * Frequency-based filtering - Isolate and analyze specific frequencies with individual gain and pan controls
