@@ -11,7 +11,7 @@ namespace AeroDebrief.UI.ViewModels
     {
         private string _statusText = "Ready to load recording file";
         private string _currentFileName = string.Empty;
-        private string _windowTitle = "SRS Signal Analyzer";
+        private string _windowTitle = "AeroDebrief";
         private bool _isFileLoaded;
         private bool _isPlaying;
         private bool _isPaused;
@@ -47,8 +47,8 @@ namespace AeroDebrief.UI.ViewModels
                 {
                     // Update window title when filename changes
                     WindowTitle = string.IsNullOrEmpty(value) 
-                        ? "SRS Signal Analyzer" 
-                        : $"SRS Signal Analyzer - {value}";
+                        ? "AeroDebrief" 
+                        : $"AeroDebrief - {value}";
                 }
             }
         }
