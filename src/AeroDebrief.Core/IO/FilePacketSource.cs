@@ -41,9 +41,10 @@ namespace AeroDebrief.Core.IO
         /// <summary>
         /// Opens the file and builds/loads the packet index
         /// </summary>
-        public async Task OpenAsync(CancellationToken cancellationToken = default)
+        public async Task OpenAsync(IProgress<string>? progress = null, CancellationToken cancellationToken = default)
         {
             Logger.Info($"Opening file packet source: {_filePath}");
+            progress?.Report("Opening file...");
 
             // Open file stream for memory mapping
             _fileStream = new FileStream(_filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
@@ -58,6 +59,7 @@ namespace AeroDebrief.Core.IO
                 leaveOpen: false);
             
             _accessor = _mmf.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read);
+            progress?.Report("File opened successfully");
 
             // Load or build index
             bool needsRebuild = false;
@@ -69,8 +71,10 @@ namespace AeroDebrief.Core.IO
                     try
                     {
                         Logger.Info("Loading existing packet index...");
+                        progress?.Report("Loading packet index...");
                         _index = await PacketIndex.LoadAsync(_indexPath, cancellationToken);
                         Logger.Info($"✅ Loaded index with {_index.Entries.Count} entries");
+                        progress?.Report($"Index loaded: {_index.Entries.Count:N0} packets");
                     }
                     catch (Exception ex)
                     {
@@ -81,21 +85,26 @@ namespace AeroDebrief.Core.IO
                 else
                 {
                     Logger.Info("Index file is outdated - will rebuild");
+                    progress?.Report("Index outdated, rebuilding...");
                     needsRebuild = true;
                 }
             }
             else
             {
                 Logger.Info("No index file found - will build");
+                progress?.Report("Building packet index...");
                 needsRebuild = true;
             }
             
             if (needsRebuild || _index == null)
             {
                 Logger.Info("Building packet index...");
-                _index = await BuildIndexAsync(cancellationToken);
+                progress?.Report("Analyzing file and building index...");
+                _index = await BuildIndexAsync(progress, cancellationToken);
+                progress?.Report("Saving index...");
                 await _index.SaveAsync(_indexPath, cancellationToken);
                 Logger.Info($"✅ Built and saved index with {_index.Entries.Count} entries");
+                progress?.Report($"Index built: {_index.Entries.Count:N0} packets");
             }
         }
 
@@ -296,7 +305,7 @@ namespace AeroDebrief.Core.IO
             }
         }
 
-        private async Task<PacketIndex> BuildIndexAsync(CancellationToken cancellationToken)
+        private async Task<PacketIndex> BuildIndexAsync(IProgress<string>? progress = null, CancellationToken cancellationToken = default)
         {
             var index = new PacketIndex();
             var entries = new List<PacketIndexEntry>();
@@ -309,17 +318,44 @@ namespace AeroDebrief.Core.IO
 
             DateTime? firstTimestamp = null;
             DateTime? lastTimestamp = null;
+            
+            // Error recovery tracking
+            int validPackets = 0;
+            int corruptedPackets = 0;
+            int consecutiveFailures = 0;
+            const int maxConsecutiveFailures = 100; // Stop if too many consecutive failures
+            long lastValidOffset = fs.Position;
+            long lastProgressReport = DateTime.UtcNow.Ticks;
+
+            Logger.Info($"Building packet index for file: {Path.GetFileName(_filePath)} ({fs.Length:N0} bytes)");
+            progress?.Report($"Indexing: 0% (0 packets)");
 
             while (fs.Position < fs.Length && !cancellationToken.IsCancellationRequested)
             {
                 var offset = fs.Position;
 
+                // Progress reporting every 0.5 seconds for smoother UI updates
+                if (DateTime.UtcNow.Ticks - lastProgressReport > TimeSpan.FromMilliseconds(500).Ticks)
+                {
+                    var progressPercent = (double)fs.Position / fs.Length * 100.0;
+                    var message = $"Indexing: {progressPercent:F1}% ({validPackets:N0} packets)";
+                    
+                    if (corruptedPackets > 0)
+                    {
+                        message += $" [{corruptedPackets} corrupted]";
+                    }
+                    
+                    progress?.Report(message);
+                    Logger.Info($"Index building: {progressPercent:F1}% ({validPackets:N0} valid, {corruptedPackets:N0} corrupted)");
+                    lastProgressReport = DateTime.UtcNow.Ticks;
+                }
+
                 if (AudioPacketMetadata.TryReadMetadata(reader, out var metadata) && metadata != null)
                 {
+                    // Valid packet found
                     firstTimestamp ??= metadata.Timestamp;
                     lastTimestamp = metadata.Timestamp;
 
-                    // NEW: Populate player metadata from AudioPacketMetadata
                     entries.Add(new PacketIndexEntry
                     {
                         FileOffset = offset,
@@ -336,14 +372,78 @@ namespace AeroDebrief.Core.IO
                         Modulation = metadata.Modulation
                     });
 
-                    if (entries.Count % 1000 == 0)
+                    validPackets++;
+                    consecutiveFailures = 0;
+                    lastValidOffset = fs.Position;
+
+                    if (validPackets % 1000 == 0)
                         await Task.Yield(); // Prevent blocking
                 }
                 else
                 {
-                    break;
+                    // Corrupted packet - attempt recovery
+                    corruptedPackets++;
+                    consecutiveFailures++;
+
+                    if (consecutiveFailures >= maxConsecutiveFailures)
+                    {
+                        Logger.Warn($"Stopping index build: {maxConsecutiveFailures} consecutive failures at position {offset:N0}");
+                        progress?.Report($"Warning: Stopped at {offset:N0} due to corruption");
+                        break;
+                    }
+
+                    // IMPROVED ERROR RECOVERY: Try to find next valid packet by looking for reasonable timestamp/frequency
+                    const int maxSearchBytes = 2048; // Search up to 2KB ahead
+                    long startSearchPos = offset;
+                    long endSearchPos = Math.Min(startSearchPos + maxSearchBytes, fs.Length);
+                    bool foundValidPacket = false;
+                    
+                    // Try to find a valid packet header by checking for reasonable timestamp + frequency values
+                    for (long searchPos = startSearchPos + 1; searchPos < endSearchPos - AudioPacketMetadata.FixedHeaderLength; searchPos++)
+                    {
+                        try
+                        {
+                            fs.Seek(searchPos, SeekOrigin.Begin);
+                            
+                            // Try reading timestamp
+                            long ticks = reader.ReadInt64();
+                            if (ticks >= Constants.MinValidTimestamp.Ticks && ticks <= Constants.MaxValidTimestamp.Ticks)
+                            {
+                                // Timestamp looks valid, check frequency
+                                double freq = reader.ReadDouble();
+                                if (freq >= Constants.MinValidFrequencyHz && freq <= Constants.MaxValidFrequencyHz && 
+                                    !double.IsNaN(freq) && !double.IsInfinity(freq))
+                                {
+                                    // Found what looks like a valid packet header!
+                                    fs.Seek(searchPos, SeekOrigin.Begin);
+                                    foundValidPacket = true;
+                                    Logger.Debug($"Found valid packet signature at {searchPos:N0} (skipped {searchPos - offset} bytes from {offset:N0})");
+                                    break;
+                                }
+                            }
+                        }
+                        catch
+                        {
+                            // Continue searching
+                        }
+                    }
+                    
+                    if (!foundValidPacket)
+                    {
+                        // Couldn't find valid packet, skip forward by reasonable amount
+                        long recoverySkipBytes = 512; // Larger skip if we can't find anything
+                        long newPosition = Math.Min(offset + recoverySkipBytes, fs.Length);
+                        
+                        if (newPosition >= fs.Length)
+                            break; // EOF reached
+                        
+                        fs.Seek(newPosition, SeekOrigin.Begin);
+                    }
                 }
             }
+
+            // Final progress update
+            progress?.Report($"Sorting {validPackets:N0} packets...");
 
             // Sort by PTS (Presentation Time Stamp)
             entries.Sort((a, b) => a.Timestamp.CompareTo(b.Timestamp));
@@ -352,6 +452,19 @@ namespace AeroDebrief.Core.IO
             index.TotalDuration = lastTimestamp.HasValue && firstTimestamp.HasValue
                 ? lastTimestamp.Value - firstTimestamp.Value
                 : TimeSpan.Zero;
+
+            var corruptionRate = validPackets > 0 ? (double)corruptedPackets / (validPackets + corruptedPackets) * 100.0 : 0;
+            Logger.Info($"✅ Index built: {validPackets:N0} valid packets, {corruptedPackets:N0} corrupted ({corruptionRate:F2}% corruption rate)");
+            progress?.Report($"Index complete: {validPackets:N0} packets ({index.TotalDuration})");
+            
+            if (corruptionRate > 10.0)
+            {
+                Logger.Warn($"⚠️ High corruption rate detected ({corruptionRate:F2}%) - file may be damaged");
+            }
+            else if (corruptionRate > 0)
+            {
+                Logger.Info($"ℹ️ Minor corruption detected ({corruptionRate:F2}%) - successfully recovered valid packets");
+            }
 
             return index;
         }

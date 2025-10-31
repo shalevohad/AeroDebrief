@@ -97,15 +97,12 @@ namespace AeroDebrief.Core
                 if (reader.BaseStream.CanSeek)
                 {
                     startPosition = reader.BaseStream.Position;
-                }
-                
-                // Check if we have enough bytes remaining for the fixed header
-                if (reader.BaseStream.CanSeek && reader.BaseStream.Length - reader.BaseStream.Position < FixedHeaderLength)
-                {
-#if DEBUG
-                    Logger.Debug($"Not enough bytes for fixed header at position {reader.BaseStream.Position}");
-#endif
-                    return false;
+                    
+                    // Check if we have enough bytes remaining for the fixed header
+                    if (reader.BaseStream.Length - startPosition < FixedHeaderLength)
+                    {
+                        return false; // Not enough data - this is normal at EOF
+                    }
                 }
                 
                 // Read fixed header
@@ -114,9 +111,6 @@ namespace AeroDebrief.Core
                 // Validate timestamp - must be reasonable (between year 2000 and 2100)
                 if (ticks < Constants.MinValidTimestamp.Ticks || ticks > Constants.MaxValidTimestamp.Ticks)
                 {
-#if DEBUG
-                    Logger.Warn($"Invalid timestamp in packet: {ticks} (position: {startPosition})");
-#endif
                     return false;
                 }
                 
@@ -125,9 +119,6 @@ namespace AeroDebrief.Core
                 // Validate frequency - must be reasonable (typically 30 MHz to 400 MHz for radios)
                 if (frequency < Constants.MinValidFrequencyHz || frequency > Constants.MaxValidFrequencyHz || double.IsNaN(frequency) || double.IsInfinity(frequency))
                 {
-#if DEBUG
-                    Logger.Warn($"Invalid frequency in packet: {frequency} Hz (position: {startPosition})");
-#endif
                     return false;
                 }
                 
@@ -140,10 +131,7 @@ namespace AeroDebrief.Core
                 byte[] guidBytes = reader.ReadBytes(GuidLength);
                 if (guidBytes.Length != GuidLength)
                 {
-#if DEBUG
-                    Logger.Warn($"Failed to read GUID bytes (expected {GuidLength}, got {guidBytes.Length}) at position {startPosition}");
-#endif
-                    return false;
+                    return false; // Couldn't read GUID - likely corrupted or EOF
                 }
                 string transmitterGuid = Encoding.ASCII.GetString(guidBytes).TrimEnd('\0');
 
@@ -157,20 +145,24 @@ namespace AeroDebrief.Core
                         // Validate audio payload length
                         if (audioLength < 0 || audioLength > Constants.MaxAudioPayloadBytes)
                         {
-#if DEBUG
-                            Logger.Warn($"Invalid audio payload length: {audioLength} at position {startPosition}");
-#endif
                             return false;
+                        }
+                        
+                        // Early exit if there's not enough data remaining
+                        if (reader.BaseStream.CanSeek)
+                        {
+                            var remaining = reader.BaseStream.Length - reader.BaseStream.Position;
+                            if (remaining < audioLength + sizeof(int))
+                            {
+                                return false; // Not enough data for payload + coalition
+                            }
                         }
                         
                         byte[] audioPayload = audioLength > 0 ? reader.ReadBytes(audioLength) : Array.Empty<byte>();
                         
                         if (audioPayload.Length != audioLength)
                         {
-#if DEBUG
-                            Logger.Warn($"Failed to read audio payload (expected {audioLength}, got {audioPayload.Length}) at position {startPosition}");
-#endif
-                            return false;
+                            return false; // Couldn't read full payload
                         }
                         
                         int coalition = reader.ReadInt32();
@@ -194,9 +186,6 @@ namespace AeroDebrief.Core
                 }
                 catch (Exception ex)
                 {
-#if DEBUG
-                    Logger.Debug(ex, $"Failed to read player data, attempting legacy format (position: {startPosition})");
-#endif
                     // Try to recover stream position and read as legacy format
                     if (reader.BaseStream.CanSeek && startPosition >= 0)
                     {
@@ -217,20 +206,24 @@ namespace AeroDebrief.Core
                 
                 if (legacyAudioLength < 0 || legacyAudioLength > Constants.MaxAudioPayloadBytes)
                 {
-#if DEBUG
-                    Logger.Warn($"Invalid legacy audio payload length: {legacyAudioLength} at position {startPosition}");
-#endif
                     return false;
+                }
+                
+                // Early exit if there's not enough data remaining
+                if (reader.BaseStream.CanSeek)
+                {
+                    var remaining = reader.BaseStream.Length - reader.BaseStream.Position;
+                    if (remaining < legacyAudioLength + sizeof(int))
+                    {
+                        return false; // Not enough data for payload + coalition
+                    }
                 }
                 
                 byte[] legacyAudioPayload = legacyAudioLength > 0 ? reader.ReadBytes(legacyAudioLength) : Array.Empty<byte>();
                 
                 if (legacyAudioPayload.Length != legacyAudioLength)
                 {
-#if DEBUG
-                    Logger.Warn($"Failed to read legacy audio payload (expected {legacyAudioLength}, got {legacyAudioPayload.Length}) at position {startPosition}");
-#endif
-                    return false;
+                    return false; // Couldn't read full payload
                 }
                 
                 int legacyCoalition = reader.ReadInt32();
@@ -264,27 +257,16 @@ namespace AeroDebrief.Core
             }
             catch (EndOfStreamException)
             {
-#if DEBUG
-                Logger.Debug($"End of stream reached at position {startPosition}");
-#endif
+                return false; // Normal EOF condition
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                // Corrupted data - handled by caller's error recovery
                 return false;
             }
-            catch (ArgumentOutOfRangeException ex)
+            catch (Exception)
             {
-#if DEBUG
-                Logger.Warn(ex, $"ArgumentOutOfRangeException reading packet at position {startPosition} - possibly corrupt data");
-#else
-                Logger.Warn($"Corrupt packet data detected at position {startPosition}");
-#endif
-                return false;
-            }
-            catch (Exception ex)
-            {
-#if DEBUG
-                Logger.Error(ex, $"Failed to read audio packet metadata at position {startPosition}");
-#else
-                Logger.Error($"Failed to read audio packet metadata - file may be corrupted (position: {startPosition})");
-#endif
+                // Unexpected error - handled by caller's error recovery
                 return false;
             }
         }

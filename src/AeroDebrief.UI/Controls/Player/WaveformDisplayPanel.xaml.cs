@@ -297,15 +297,15 @@ namespace AeroDebrief.UI.Controls.Player
         /// Gets the engine status color based on whether GPU is being used.
         /// </summary>
         public Brush EngineStatusColor => IsUsingGpu
-            ? new SolidColorBrush(Color.FromRgb(76, 175, 80))  // Green for GPU
+            ? new SolidColorBrush(Color.FromRgb(33, 150, 243))  // Vibrant Blue for GPU
             : new SolidColorBrush(Color.FromRgb(255, 152, 0)); // Orange for CPU
 
         /// <summary>
         /// Gets the engine status tooltip.
         /// </summary>
         public string EngineStatusTooltip => IsUsingGpu
-            ? "GPU-accelerated waveform generation\n10-50x faster than CPU"
-            : "CPU-based waveform generation\nGPU not available or disabled";
+            ? "GPU-accelerated waveform rendering\nHardware-accelerated, 10-50x faster than CPU"
+            : "CPU-based waveform rendering\nGPU not available or disabled";
 
         #endregion
 
@@ -565,8 +565,12 @@ namespace AeroDebrief.UI.Controls.Player
         /// </summary>
         private void OnPropertyChanged(string propertyName)
         {
-            // Trigger property changed notification
-            GetBindingExpression(GetPropertyForName(propertyName))?.UpdateTarget();
+            // Trigger property changed notification only if we have a valid dependency property
+            var property = GetPropertyForName(propertyName);
+            if (property != null)
+            {
+                GetBindingExpression(property)?.UpdateTarget();
+            }
         }
 
         /// <summary>

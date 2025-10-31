@@ -15,6 +15,8 @@ namespace AeroDebrief.UI.Controls
 {
     public class WaveformViewer : Canvas
     {
+        private static readonly NLog.Logger Logger = NLog.LogManager.GetCurrentClassLogger();
+        
         public static readonly DependencyProperty WaveformDataProperty =
             DependencyProperty.Register(nameof(WaveformData), typeof(float[]), typeof(WaveformViewer),
                 new PropertyMetadata(null, OnWaveformDataChanged));
@@ -503,12 +505,7 @@ namespace AeroDebrief.UI.Controls
             if (FrequencyWaveforms != null && FrequencyWaveforms.Any() && ActualWidth > 0 && ActualHeight > 0)
             {
                 DrawMultiFrequencyWaveform();
-                
-                // Re-add playhead if it exists
-                if (_playheadLine != null)
-                {
-                    Children.Add(_playheadLine);
-                }
+                // Note: DrawMultiFrequencyWaveform now handles playhead re-adding internally
                 return;
             }
 
@@ -621,8 +618,8 @@ namespace AeroDebrief.UI.Controls
             path.Data = geometry;
             Children.Add(path);
 
-            // Re-add playhead if it exists
-            if (_playheadLine != null)
+            // Re-add playhead if it exists (for fallback single-color waveform)
+            if (_playheadLine != null && !Children.Contains(_playheadLine))
             {
                 Children.Add(_playheadLine);
             }
@@ -633,23 +630,85 @@ namespace AeroDebrief.UI.Controls
             if (FrequencyWaveforms == null || !FrequencyWaveforms.Any())
                 return;
 
-            // NEW Phase 2.4: Check if using GPU layers
-            // GPU layers have valid LayerId (non-empty Guid) but for Phase 2, we still use CPU compositor
-            // Phase 3 will add GPU compositor shader for even better performance
-            var isUsingGpuLayers = FrequencyWaveforms.Values.Any(f => f.LayerId != Guid.Empty);
-            
-            if (isUsingGpuLayers)
+            // NEW: Check if we have GPU layers (each layer has its own texture)
+            var allLayers = FrequencyWaveforms.Values
+                .Where(f => f.LayerId != Guid.Empty)
+                .ToList();
+
+            if (allLayers.Any())
             {
-                // GPU-layered mode: Waveforms are cached in GPU textures
-                // For Phase 2: Still render on CPU (per-layer cached data)
-                // For Phase 3: Will use GPU compositor shader for final blending
-#if DEBUG
-                System.Diagnostics.Debug.WriteLine($"[WaveformViewer] Rendering {FrequencyWaveforms.Count} GPU layers (CPU compositor)");
-#endif
+                // Separate visible (ready) layers from pending ones
+                var visibleLayers = allLayers.Where(l => l.IsVisible).ToList();
+                var totalExpectedLayers = allLayers.Count;
+                
+                Logger.Debug($"[WaveformViewer] Rendering {visibleLayers.Count}/{totalExpectedLayers} GPU layers (progressive rendering)");
+                
+                // CRITICAL: Draw ALL available visible layers immediately, regardless of total count
+                if (visibleLayers.Any())
+                {
+                    foreach (var layer in visibleLayers.OrderBy(l => l.Frequency))
+                    {
+                        DrawGpuLayer(layer);
+                    }
+                }
+                
+                // Show loading overlay if not all layers are ready yet
+                if (visibleLayers.Count < totalExpectedLayers && ActualWidth > 0 && ActualHeight > 0)
+                {
+                    // Semi-transparent overlay
+                    var overlay = new Rectangle
+                    {
+                        Fill = new SolidColorBrush(Color.FromArgb(180, 255, 255, 255)),
+                        Width = ActualWidth,
+                        Height = ActualHeight
+                    };
+                    Children.Add(overlay);
+                    
+                    // Loading text with progress
+                    var loadingText = new TextBlock
+                    {
+                        Text = $"Loading waveform layers...\n{visibleLayers.Count} of {totalExpectedLayers} ready",
+                        FontSize = 16,
+                        FontWeight = FontWeights.SemiBold,
+                        Foreground = new SolidColorBrush(Color.FromRgb(33, 33, 33)),
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        VerticalAlignment = VerticalAlignment.Center,
+                        TextAlignment = TextAlignment.Center
+                    };
+
+                    loadingText.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                    Canvas.SetLeft(loadingText, (ActualWidth - loadingText.DesiredSize.Width) / 2);
+                    Canvas.SetTop(loadingText, (ActualHeight - loadingText.DesiredSize.Height) / 2);
+
+                    Children.Add(loadingText);
+                    
+                    Logger.Debug($"[WaveformViewer] Showing loading overlay: {visibleLayers.Count}/{totalExpectedLayers} layers ready");
+                }
+                else if (visibleLayers.Count == totalExpectedLayers)
+                {
+                    Logger.Debug($"[WaveformViewer] All {totalExpectedLayers} GPU layers rendered - loading complete");
+                }
+                
+                // Re-add playhead on top of everything (layers + overlay)
+                // Remove first to avoid "already a child" exception
+                if (_playheadLine != null)
+                {
+                    Children.Remove(_playheadLine);
+                    Children.Add(_playheadLine);
+                }
+                
+                if (_playheadTimeText != null)
+                {
+                    Children.Remove(_playheadTimeText);
+                    Children.Add(_playheadTimeText);
+                }
+                
+                return;
             }
 
+            // Fallback: CPU rendering with overlaid waveforms
             var centerY = ActualHeight / 2;
-            var scaleY = (ActualHeight * 0.8) / 2; // Use 80% of height
+            var scaleY = (ActualHeight * 0.8) / 2;
 
             // Find global max amplitude across all visible frequencies for consistent scaling
             var globalMaxAmplitude = 0.0f;
@@ -688,19 +747,110 @@ namespace AeroDebrief.UI.Controls
                 return;
             }
 
-            // Draw each visible frequency with its own color
-            // NEW: Skip hidden layers (GPU layer visibility is managed by LayeredWaveformRenderer)
+            // Draw each visible frequency with its own color (CPU fallback)
             foreach (var (frequency, freqData) in FrequencyWaveforms.OrderBy(kvp => kvp.Key))
             {
-                // CRITICAL: Check visibility flag (set by GPU layer system)
                 if (!freqData.IsVisible)
-                    continue; // Skip hidden layers - no rendering needed!
+                    continue;
                 
                 if (freqData.WaveformData == null || freqData.WaveformData.Length == 0)
                     continue;
 
                 DrawFrequencyWaveform(freqData, centerY, scaleY, globalMaxAmplitude);
             }
+        }
+
+        /// <summary>
+        /// Draws a single GPU layer texture (Phase 3: Individual layer rendering)
+        /// Each layer is drawn separately for instant visibility toggling
+        /// </summary>
+        private void DrawGpuLayer(FrequencyWaveformData layerData)
+        {
+            if (layerData.WaveformData == null || layerData.WaveformData.Length == 0)
+                return;
+
+            Logger.Debug($"[WaveformViewer] Drawing GPU layer: {layerData.DisplayName} (LayerId: {layerData.LayerId})");
+
+            // For now, draw using CPU data (cached from GPU)
+            // TODO Phase 3.2: Direct GPU texture rendering via WriteableBitmap or D3DImage
+            var centerY = ActualHeight / 2;
+            var scaleY = (ActualHeight * 0.8) / 2;
+
+            // Calculate visible data range based on zoom
+            var waveformData = layerData.WaveformData;
+            var startIndex = (int)(ZoomStartTime * waveformData.Length);
+            var endIndex = (int)(ZoomEndTime * waveformData.Length);
+            startIndex = Math.Clamp(startIndex, 0, waveformData.Length - 1);
+            endIndex = Math.Clamp(endIndex, startIndex + 1, waveformData.Length);
+            
+            var visibleData = waveformData[startIndex..endIndex];
+            var pointsPerPixel = Math.Max(1, (int)(visibleData.Length / ActualWidth));
+            
+            // Find max amplitude for this layer
+            var maxAmplitude = visibleData.Max(Math.Abs);
+            if (maxAmplitude == 0)
+                return;
+
+            // Create path with frequency-specific color
+            var strokeBrush = new SolidColorBrush(layerData.Color);
+            var fillColor = Color.FromArgb(60, layerData.Color.R, layerData.Color.G, layerData.Color.B);
+
+            var path = new Path
+            {
+                Stroke = strokeBrush,
+                StrokeThickness = 1.2,
+                Fill = new SolidColorBrush(fillColor),
+                Opacity = 0.7 // Transparency for overlaying multiple layers
+            };
+
+            var geometry = new StreamGeometry();
+            using (var context = geometry.Open())
+            {
+                var points = new List<Point>();
+
+                for (int x = 0; x < (int)ActualWidth; x++)
+                {
+                    var dataIndex = (int)(x * visibleData.Length / ActualWidth);
+                    if (dataIndex >= visibleData.Length)
+                        dataIndex = visibleData.Length - 1;
+
+                    // Find peak amplitude in this pixel's window
+                    var startIdx = Math.Max(0, dataIndex - pointsPerPixel / 2);
+                    var endIdx = Math.Min(visibleData.Length - 1, dataIndex + pointsPerPixel / 2);
+
+                    var maxValue = 0.0;
+                    for (int i = startIdx; i <= endIdx; i++)
+                    {
+                        maxValue = Math.Max(maxValue, Math.Abs(visibleData[i]));
+                    }
+
+                    var normalizedAmplitude = maxValue / maxAmplitude;
+                    var y = centerY - (normalizedAmplitude * scaleY);
+                    points.Add(new Point(x, y));
+                }
+
+                if (points.Count > 0)
+                {
+                    context.BeginFigure(points[0], true, true);
+
+                    // Draw top half
+                    for (int i = 1; i < points.Count; i++)
+                    {
+                        context.LineTo(points[i], true, false);
+                    }
+
+                    // Draw bottom half (mirrored)
+                    for (int i = points.Count - 1; i >= 0; i--)
+                    {
+                        var mirroredPoint = new Point(points[i].X, centerY + (centerY - points[i].Y));
+                        context.LineTo(mirroredPoint, true, false);
+                    }
+                }
+            }
+
+            geometry.Freeze();
+            path.Data = geometry;
+            Children.Add(path);
         }
 
         private void DrawFrequencyWaveform(FrequencyWaveformData freqData, double centerY, double scaleY, float globalMaxAmplitude)
@@ -741,8 +891,7 @@ namespace AeroDebrief.UI.Controls
                     if (dataIndex >= visibleData.Length)
                         dataIndex = visibleData.Length - 1;
 
-                    // CRITICAL FIX: Use max value instead of RMS
-                    // The data is ALREADY RMS from GPU shader, so we just need the peak in this window
+                    // Find peak amplitude in this pixel's window
                     var startIdx = Math.Max(0, dataIndex - pointsPerPixel / 2);
                     var endIdx = Math.Min(visibleData.Length - 1, dataIndex + pointsPerPixel / 2);
 

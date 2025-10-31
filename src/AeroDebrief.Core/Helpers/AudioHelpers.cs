@@ -146,6 +146,26 @@ namespace AeroDebrief.Core.Helpers
             if (audioData == null || audioData.Length == 0)
                 return false;
 
+            // VALIDATION: Reject obviously corrupted data
+            // Valid Opus packets are typically 20-400 bytes
+            // Valid PCM is typically 1920 bytes (40ms @ 48kHz mono)
+            const int minValidOpusSize = 10;     // Minimum for any valid Opus frame
+            const int maxValidOpusSize = 1500;   // Maximum reasonable Opus packet
+            const int minValidPcmSize = 160;     // Minimum PCM (1ms @ 48kHz)
+            const int maxValidPcmSize = 9600;    // Maximum PCM (50ms @ 48kHz stereo)
+            
+            // Reject suspiciously small packets
+            if (audioData.Length < minValidOpusSize)
+            {
+                return false; // Too small to be valid
+            }
+            
+            // Reject suspiciously large packets (likely corruption)
+            if (audioData.Length > maxValidPcmSize)
+            {
+                return false; // Way too large - corrupted data
+            }
+
             // Size-based heuristic: PCM=1920 bytes, OPUS=60-400 bytes
             const int expectedPcmSize = Constants.OUTPUT_SAMPLE_RATE * Constants.OPUS_FRAME_DURATION_MS / 1000 * 2;
             const int opusMaxSize = 400;
@@ -169,14 +189,36 @@ namespace AeroDebrief.Core.Helpers
         #region Opus Decoding
 
         /// <summary>
-        /// Decodes audio payload to PCM Int16 samples, automatically detecting format
+        /// Decodes audio payload to PCM Int16 samples, automatically detecting format.
+        /// Includes comprehensive validation to detect and skip corrupted data.
         /// </summary>
         /// <param name="audioData">Audio data (Opus-encoded or raw PCM bytes)</param>
-        /// <returns>PCM Int16 samples</returns>
+        /// <returns>PCM Int16 samples, or empty array if data is corrupted/invalid</returns>
         public static short[] DecodeAudioToPcm(byte[] audioData)
         {
             if (audioData == null || audioData.Length == 0)
                 return Array.Empty<short>();
+
+            // VALIDATION: Detect obviously corrupted data
+            const int minValidSize = 10;        // Minimum for any valid audio
+            const int maxValidSize = 10000;     // Maximum reasonable audio packet
+            
+            if (audioData.Length < minValidSize)
+            {
+                // Too small - likely corruption
+                return Array.Empty<short>();
+            }
+            
+            if (audioData.Length > maxValidSize)
+            {
+                // Way too large - definitely corruption
+                // Only log once per 100 occurrences to reduce spam
+                if (audioData.Length % 100 == 0)
+                {
+                    Logger.Debug($"Rejecting oversized audio payload ({audioData.Length} bytes) - likely corruption");
+                }
+                return Array.Empty<short>();
+            }
 
             if (IsOpusEncodedByteArray(audioData))
                 return DecodeOpusToPcm(audioData);
@@ -194,12 +236,24 @@ namespace AeroDebrief.Core.Helpers
             if (opusData == null || opusData.Length == 0)
                 return Array.Empty<short>();
 
-            // Safety check: reject suspiciously large packets
-            if (opusData.Length > 2000)
+            // VALIDATION: Comprehensive size checks
+            const int minValidOpusSize = 10;    // Minimum Opus frame
+            const int maxValidOpusSize = 1500;  // Maximum reasonable Opus packet
+            
+            if (opusData.Length < minValidOpusSize)
             {
-#if DEBUG
-                Logger.Warn($"Opus packet too large ({opusData.Length} bytes), skipping to prevent decoder crash");
-#endif
+                // Too small - skip silently (likely corruption)
+                return Array.Empty<short>();
+            }
+
+            if (opusData.Length > maxValidOpusSize)
+            {
+                // Way too large - log once per occurrence type
+                var sizeCategory = (opusData.Length / 10000) * 10000; // Group by 10KB
+                if (sizeCategory % 100000 == 0) // Only log every 100KB category
+                {
+                    Logger.Debug($"Skipping oversized Opus packet (~{sizeCategory/1000}KB) - corruption detected");
+                }
                 return Array.Empty<short>();
             }
 
@@ -214,9 +268,7 @@ namespace AeroDebrief.Core.Helpers
                 
                 if (pcmBuffer.Length == 0)
                 {
-#if DEBUG
                     Logger.Error("PCM buffer has zero length");
-#endif
                     return Array.Empty<short>();
                 }
 
@@ -224,9 +276,7 @@ namespace AeroDebrief.Core.Helpers
 
                 if (samplesDecoded < 0)
                 {
-#if DEBUG
-                    Logger.Warn($"Opus decoder returned negative sample count: {samplesDecoded}");
-#endif
+                    // Decoder error - skip silently (corruption)
                     return Array.Empty<short>();
                 }
 
@@ -243,20 +293,21 @@ namespace AeroDebrief.Core.Helpers
                     return result;
                 }
 
-#if DEBUG
-                Logger.Warn($"Opus decoder returned 0 samples for {opusData.Length} bytes");
-#endif
+                // Zero samples - skip silently
+                return Array.Empty<short>();
             }
             catch (Exception ex)
             {
+                // Decoder exception - skip silently in release, log in debug
+                // This is expected for corrupted packets
 #if DEBUG
-                Logger.Warn(ex, $"Failed to decode Opus packet ({opusData.Length} bytes)");
-#else
-                Logger.Warn($"Failed to decode audio packet ({opusData.Length} bytes)");
+                if (opusData.Length > 100) // Only log for packets that should be valid
+                {
+                    Logger.Debug($"Opus decode failed for {opusData.Length}B packet (likely corruption): {ex.Message}");
+                }
 #endif
+                return Array.Empty<short>();
             }
-
-            return Array.Empty<short>();
         }
 
         /// <summary>
@@ -269,10 +320,24 @@ namespace AeroDebrief.Core.Helpers
             if (pcmBytes == null || pcmBytes.Length == 0)
                 return Array.Empty<short>();
 
+            // VALIDATION: Reject obviously corrupted data
+            const int maxReasonablePcmSize = 10000; // 50ms @ 48kHz stereo
+            
+            if (pcmBytes.Length > maxReasonablePcmSize)
+            {
+                // Way too large - corruption
+                return Array.Empty<short>();
+            }
+
             if (pcmBytes.Length % 2 != 0)
             {
+                // Odd length - truncate last byte (minor corruption)
+                // Only log in debug mode to reduce spam
 #if DEBUG
-                Logger.Warn($"PCM byte array has odd length ({pcmBytes.Length}), truncating");
+                if (pcmBytes.Length > 1000) // Only log for larger packets
+                {
+                    Logger.Debug($"PCM byte array has odd length ({pcmBytes.Length}), truncating last byte");
+                }
 #endif
             }
 

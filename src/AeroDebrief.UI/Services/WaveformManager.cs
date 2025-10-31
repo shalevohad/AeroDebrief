@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using AeroDebrief.Core.Audio;
+using AeroDebrief.Core.Audio.Waveform;
 using AeroDebrief.Core.IO;
 using AeroDebrief.Core.Analysis;
 using NLog;
@@ -290,6 +291,31 @@ namespace AeroDebrief.UI.Services
         public float[]? GetChannelWaveform(double frequency)
         {
             return _waveformGenerator?.GetChannelWaveform(frequency);
+        }
+
+        /// <summary>
+        /// Gets all GPU layers with their metadata (for UI rendering).
+        /// Returns empty list if GPU layered rendering is not active.
+        /// </summary>
+        public IReadOnlyList<WaveformLayer> GetAllLayers()
+        {
+            if (!IsUsingLayeredRendering || _waveformGenerator is not GpuWaveformGenerator gpuGen)
+            {
+                Logger.Debug("GPU layered rendering not active, returning empty layer list");
+                return new List<WaveformLayer>().AsReadOnly();
+            }
+
+            try
+            {
+                var layers = gpuGen.GetAllLayers();
+                Logger.Debug($"Retrieved {layers.Count} GPU layers from generator");
+                return layers;
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, "Failed to get GPU layers");
+                return new List<WaveformLayer>().AsReadOnly();
+            }
         }
 
         /// <summary>

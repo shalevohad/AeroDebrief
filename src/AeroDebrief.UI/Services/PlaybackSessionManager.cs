@@ -73,7 +73,7 @@ namespace AeroDebrief.UI.Services
         /// <summary>
         /// Loads a file and creates a playback session.
         /// </summary>
-        public async Task LoadFileAsync(string filePath)
+        public async Task LoadFileAsync(string filePath, IProgress<string>? progress = null)
         {
             if (string.IsNullOrWhiteSpace(filePath))
                 throw new ArgumentException("File path cannot be empty", nameof(filePath));
@@ -85,31 +85,38 @@ namespace AeroDebrief.UI.Services
             {
                 Logger.Info("======== LOADING FILE (Pure FilePacketSource Architecture) ========");
                 Logger.Info($"File: {System.IO.Path.GetFileName(filePath)}");
+                progress?.Report("Initializing...");
 
                 // Unload existing session if any
                 if (IsSessionLoaded)
                 {
                     Logger.Info("Unloading existing session...");
+                    progress?.Report("Unloading previous session...");
                     UnloadSession();
                 }
 
                 // STEP 1: Open FilePacketSource (memory-mapped, indexed)
                 Logger.Info("Step 1: Opening FilePacketSource (memory-mapped, shared)...");
+                progress?.Report("Opening file...");
                 _packetSource = new FilePacketSource(filePath);
-                await _packetSource.OpenAsync();
+                await _packetSource.OpenAsync(progress);
                 Logger.Info($"? FilePacketSource ready: {_packetSource.TotalPackets} packets, {_packetSource.TotalDuration}");
+                progress?.Report($"File ready: {_packetSource.TotalPackets:N0} packets");
 
                 // STEP 2: Create FilePlaybackPipeline (shares packet source)
                 Logger.Info("Step 2: Creating FilePlaybackPipeline...");
+                progress?.Report("Initializing playback engine...");
                 _pipeline = new FilePlaybackPipeline(_packetSource);
                 await _pipeline.OpenAsync();
                 Logger.Info($"? FilePlaybackPipeline initialized");
+                progress?.Report("Playback engine ready");
 
                 _currentFilePath = filePath;
 
                 Logger.Info($"? Session loaded successfully");
                 Logger.Info($"?? Memory-mapped packets: {_packetSource.TotalPackets}");
                 Logger.Info($"?? RAM usage: ~10MB (Pure FilePacketSource Architecture)");
+                progress?.Report("Session loaded successfully");
 
                 // Raise event
                 SessionLoaded?.Invoke(this, new SessionLoadedEventArgs(
@@ -122,6 +129,7 @@ namespace AeroDebrief.UI.Services
             catch (Exception ex)
             {
                 Logger.Error(ex, $"Failed to load file: {filePath}");
+                progress?.Report($"Error: {ex.Message}");
 
                 // Clean up on failure
                 _pipeline?.Dispose();

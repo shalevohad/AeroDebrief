@@ -535,8 +535,73 @@ namespace AeroDebrief.UI.ViewModels
             // Track layer ID
             _frequencyLayerIds[e.Frequency] = e.LayerId;
             
-            // Update waveform display
-            _ = UpdateWaveformDisplayAsync();
+            Logger.Info($"? GPU layer added for {e.DisplayName}");
+            
+            // Check if all expected layers are now ready
+            var expectedLayerCount = _frequencyManager.SelectedFrequencies.Count;
+            var actualLayerCount = _frequencyLayerIds.Count;
+            
+            Logger.Debug($"GPU layers: {actualLayerCount}/{expectedLayerCount} ready");
+            
+            // If all layers are ready, update the display
+            if (actualLayerCount == expectedLayerCount)
+            {
+                Logger.Info($"? All {expectedLayerCount} GPU layers ready - updating display");
+                _ = RefreshGpuLayerDisplay();
+            }
+        }
+        
+        /// <summary>
+        /// Refreshes the GPU layer display after all layers are generated
+        /// </summary>
+        private async Task RefreshGpuLayerDisplay()
+        {
+            try
+            {
+                Logger.Info($"?? Refreshing GPU layer display");
+                
+                // Get all GPU layers with metadata
+                var layers = _waveformManager.GetAllLayers();
+                Logger.Info($"?? Retrieved {layers.Count} GPU layers from WaveformManager");
+                
+                var freqWaveforms = new System.Collections.Generic.Dictionary<double, Controls.FrequencyWaveformData>();
+                
+                foreach (var layer in layers.Where(l => l.IsVisible))
+                {
+                    var freqViewModel = Frequencies
+                        .SelectMany(g => g.Frequencies)
+                        .FirstOrDefault(f => Math.Abs(f.Frequency - layer.FrequencyHz) < 0.1);
+
+                    if (freqViewModel != null)
+                    {
+                        freqWaveforms[layer.FrequencyHz] = new Controls.FrequencyWaveformData
+                        {
+                            Frequency = layer.FrequencyHz,
+                            WaveformData = layer.CachedWaveformData ?? Array.Empty<float>(),
+                            Color = freqViewModel.WaveformColor,
+                            DisplayName = layer.DisplayName,
+                            LayerId = layer.LayerId,
+                            IsVisible = layer.IsVisible
+                        };
+                        
+                        Logger.Debug($"   ? Added GPU layer: {layer.DisplayName} (LayerId: {layer.LayerId}, Visible: {layer.IsVisible})");
+                    }
+                }
+                
+                FrequencyWaveforms = freqWaveforms;
+                OnPropertyChanged(nameof(FrequencyWaveforms));
+                
+                IsLoadingWaveform = false;
+                StatusMessage = $"{freqWaveforms.Count} GPU layers displayed";
+                
+                Logger.Info($"? GPU layer display refreshed: {freqWaveforms.Count} layers visible");
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, "Failed to refresh GPU layer display");
+                StatusMessage = "Failed to display GPU layers";
+                IsLoadingWaveform = false;
+            }
         }
 
         private void OnLayerRemoved(object? sender, LayerRemovedEventArgs e)
@@ -810,8 +875,18 @@ namespace AeroDebrief.UI.ViewModels
                 
                 Logger.Info("======== LOADING FILE (Service Architecture) ========", filePath);
                 
-                // Delegate to session manager
-                await _sessionManager.LoadFileAsync(filePath);
+                // Create progress reporter for status updates
+                var progress = new Progress<string>(status =>
+                {
+                    // Marshal to UI thread
+                    System.Windows.Application.Current?.Dispatcher?.InvokeAsync(() =>
+                    {
+                        StatusMessage = status;
+                    });
+                });
+                
+                // Delegate to session manager with progress reporting
+                await _sessionManager.LoadFileAsync(filePath, progress);
                 
                 // Session loaded event will trigger next steps
             }
@@ -1006,12 +1081,38 @@ namespace AeroDebrief.UI.ViewModels
             if (!_sessionManager.IsSessionLoaded)
                 return;
 
-            if (_frequencyManager.SelectedFrequencies.Count == 0)
+            // FIX: Check both FrequencyManager AND actual UI frequency selection state
+            var actualSelectedCount = Frequencies
+                .SelectMany(g => g.Frequencies)
+                .Count(f => f.IsSelected);
+            
+            if (_frequencyManager.SelectedFrequencies.Count == 0 && actualSelectedCount == 0)
             {
                 WaveformData = new float[_waveformManager.MaxDataPoints];
                 FrequencyWaveforms = null;
                 StatusMessage = "No frequencies selected";
+                Logger.Debug("No frequencies selected - waveform cleared");
                 return;
+            }
+            
+            // If FrequencyManager is out of sync with UI, log warning and sync it
+            if (_frequencyManager.SelectedFrequencies.Count == 0 && actualSelectedCount > 0)
+            {
+                Logger.Warn($"FrequencyManager out of sync: {actualSelectedCount} frequencies selected in UI but not in manager");
+                
+                // Sync selected frequencies from UI to FrequencyManager
+                var selectedFrequencies = Frequencies
+                    .SelectMany(g => g.Frequencies)
+                    .Where(f => f.IsSelected)
+                    .Select(f => f.Frequency)
+                    .ToList();
+                
+                foreach (var freq in selectedFrequencies)
+                {
+                    _frequencyManager.SelectFrequency(freq);
+                }
+                
+                Logger.Info($"Synced {selectedFrequencies.Count} frequencies from UI to FrequencyManager");
             }
 
             try
@@ -1033,9 +1134,27 @@ namespace AeroDebrief.UI.ViewModels
                 
                 WaveformData = waveformData.CombinedWaveform;
 
-                // Build frequency waveforms dictionary for UI
+                // CRITICAL FIX: If using GPU layers, they're still being generated in the background
+                // We need to wait a moment for them to be ready before trying to display them
+                if (_waveformManager.IsUsingLayeredRendering)
+                {
+                    Logger.Info($"?? GPU layered rendering active - layers will be added asynchronously");
+                    
+                    // Clear the waveform data temporarily to show loading state
+                    FrequencyWaveforms = null;
+                    StatusMessage = "GPU layers generating...";
+                    
+                    // The layers will be populated via the OnLayerAdded event handler
+                    // which calls UpdateWaveformDisplayAsync()
+                    IsLoadingWaveform = false;
+                    return;
+                }
+
+                // CPU rendering path (fallback)
                 var freqWaveforms = new System.Collections.Generic.Dictionary<double, Controls.FrequencyWaveformData>();
+                Logger.Info($"?? Using CPU rendering for waveform display");
                 
+                // Fallback to CPU rendering
                 foreach (var frequency in _frequencyManager.SelectedFrequencies.OrderBy(f => f))
                 {
                     var channelWaveform = _waveformManager.GetChannelWaveform(frequency);
@@ -1054,6 +1173,8 @@ namespace AeroDebrief.UI.ViewModels
                                 Color = freqViewModel.WaveformColor,
                                 DisplayName = freqViewModel.DisplayName
                             };
+                            
+                            Logger.Debug($"   ? Added CPU waveform: {freqViewModel.DisplayName}");
                         }
                     }
                 }
@@ -1064,9 +1185,9 @@ namespace AeroDebrief.UI.ViewModels
                 OnPropertyChanged(nameof(FrequencyWaveforms));
 
                 IsLoadingWaveform = false;
-                StatusMessage = $"{_frequencyManager.SelectedFrequencies.Count} frequencies displayed";
+                StatusMessage = $"{freqWaveforms.Count} frequency waveforms displayed";
                 
-                Logger.Info($"Waveform generated: {_frequencyManager.SelectedFrequencies.Count} frequencies");
+                Logger.Info($"? Waveform generated: {freqWaveforms.Count} frequency waveforms");
             }
             catch (Exception ex)
             {
@@ -1084,59 +1205,52 @@ namespace AeroDebrief.UI.ViewModels
             if (!_sessionManager.IsSessionLoaded)
                 return;
 
-            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-
             try
             {
-                // Phase 3.1: Check if GPU compositor is available
-                if (Constants.USE_GPU_COMPOSITOR && _waveformManager.IsUsingLayeredRendering)
+                // Phase 3: Individual GPU layer rendering (no compositor needed)
+                // Each layer is rendered separately by WaveformViewer for instant visibility toggling
+                if (_waveformManager.IsUsingLayeredRendering)
                 {
-                    try
+                    Logger.Debug($"? Using individual GPU layer rendering for {_frequencyManager.SelectedFrequencies.Count} layers");
+                    
+                    // Get all GPU layers and pass to UI
+                    var layers = _waveformManager.GetAllLayers();
+                    var freqWaveforms = new Dictionary<double, Controls.FrequencyWaveformData>();
+                    
+                    foreach (var layer in layers.Where(l => l.IsVisible))
                     {
-                        Logger.Debug($"?? Using GPU compositor for {_frequencyManager.SelectedFrequencies.Count} layers");
-                        
-                        // Get GPU composite texture
-                        var compositeTexture = await _waveformManager.ComposeLayersAsync(
-                            waveformWidth,
-                            waveformHeight,
-                            ZoomStartTime,
-                            ZoomEndTime);
-                        
-                        // Signal to UI that GPU composite is ready
-                        var gpuComposite = new Dictionary<double, Controls.FrequencyWaveformData>
+                        var freqViewModel = Frequencies
+                            .SelectMany(g => g.Frequencies)
+                            .FirstOrDefault(f => Math.Abs(f.Frequency - layer.FrequencyHz) < 0.1);
+
+                        if (freqViewModel != null)
                         {
-                            [double.NegativeInfinity] = new Controls.FrequencyWaveformData
+                            freqWaveforms[layer.FrequencyHz] = new Controls.FrequencyWaveformData
                             {
-                                Frequency = double.NegativeInfinity,
-                                GpuCompositeTexture = compositeTexture as Vortice.Direct3D11.ID3D11Texture2D,
-                                IsGpuComposite = true
-                            }
-                        };
-                        
-                        FrequencyWaveforms = gpuComposite;
-                        
-                        stopwatch.Stop();
-                        
-                        // Update performance metrics
-                        CompositionTime = stopwatch.Elapsed.TotalMilliseconds;
-                        RenderMode = "GPU";
-                        UpdateFPS();
-                        
-                        Logger.Debug($"? GPU compositor rendered: {waveformWidth}x{waveformHeight} in {CompositionTime:F2}ms");
-                        return;
+                                Frequency = layer.FrequencyHz,
+                                WaveformData = layer.CachedWaveformData ?? Array.Empty<float>(),
+                                Color = freqViewModel.WaveformColor,
+                                DisplayName = layer.DisplayName,
+                                LayerId = layer.LayerId,
+                                IsVisible = layer.IsVisible
+                            };
+                        }
                     }
-                    catch (Exception ex)
-                    {
-                        Logger.Warn(ex, "GPU compositor failed, falling back to CPU");
-                        // Fall through to CPU path
-                    }
+                    
+                    FrequencyWaveforms = freqWaveforms;
+                    RenderMode = "GPU (Layered)";
+                    UpdateFPS();
+                    
+                    Logger.Debug($"? Individual GPU layers passed to UI: {freqWaveforms.Count} visible");
+                    return;
                 }
 
-                // Fallback: Phase 2 CPU rendering
+                // Fallback: CPU rendering
                 await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
                 {
                     var cpuWaveformData = GetCpuFrequencyWaveforms();
                     FrequencyWaveforms = cpuWaveformData;
+                    RenderMode = "CPU";
                 });
             }
             catch (Exception ex)
@@ -1217,7 +1331,7 @@ namespace AeroDebrief.UI.ViewModels
         #region GPU Compositor Integration (Phase 3.1)
 
         /// <summary>
-        /// Updates waveform display with GPU compositor support (Phase 3.1)
+        /// Updates waveform display with individual GPU layer rendering (Phase 3)
         /// </summary>
         private async Task UpdateWaveformDisplayAsync()
         {
@@ -1226,48 +1340,42 @@ namespace AeroDebrief.UI.ViewModels
 
             try
             {
-                // Get waveform viewer dimensions (from WaveformWithMiniMap control)
-                var waveformWidth = 2000; // Default, will be updated from actual control size
-                var waveformHeight = 400; // Default, will be updated from actual control size
-
-                // Phase 3.1: Check if GPU compositor is available
-                if (Constants.USE_GPU_COMPOSITOR && _waveformManager.IsUsingLayeredRendering)
+                // Phase 3: Individual GPU layer rendering
+                if (_waveformManager.IsUsingLayeredRendering)
                 {
-                    try
+                    Logger.Debug($"? Updating individual GPU layer display for {_frequencyManager.SelectedFrequencies.Count} layers");
+                    
+                    // Get all GPU layers with metadata
+                    var layers = _waveformManager.GetAllLayers();
+                    var freqWaveforms = new Dictionary<double, Controls.FrequencyWaveformData>();
+                    
+                    foreach (var layer in layers.Where(l => l.IsVisible))
                     {
-                        Logger.Debug($"?? Using GPU compositor for {_frequencyManager.SelectedFrequencies.Count} layers");
-                        
-                        // Get GPU composite texture
-                        var compositeTexture = await _waveformManager.ComposeLayersAsync(
-                            waveformWidth,
-                            waveformHeight,
-                            ZoomStartTime,
-                            ZoomEndTime);
-                        
-                        // Signal to UI that GPU composite is ready
-                        var gpuComposite = new Dictionary<double, Controls.FrequencyWaveformData>
+                        var freqViewModel = Frequencies
+                            .SelectMany(g => g.Frequencies)
+                            .FirstOrDefault(f => Math.Abs(f.Frequency - layer.FrequencyHz) < 0.1);
+
+                        if (freqViewModel != null)
                         {
-                            [double.NegativeInfinity] = new Controls.FrequencyWaveformData
+                            freqWaveforms[layer.FrequencyHz] = new Controls.FrequencyWaveformData
                             {
-                                Frequency = double.NegativeInfinity,
-                                GpuCompositeTexture = compositeTexture as Vortice.Direct3D11.ID3D11Texture2D,
-                                IsGpuComposite = true
-                            }
-                        };
-                        
-                        FrequencyWaveforms = gpuComposite;
-                        
-                        Logger.Debug($"? GPU compositor active: {waveformWidth}x{waveformHeight}");
-                        return;
+                                Frequency = layer.FrequencyHz,
+                                WaveformData = layer.CachedWaveformData ?? Array.Empty<float>(),
+                                Color = freqViewModel.WaveformColor,
+                                DisplayName = layer.DisplayName,
+                                LayerId = layer.LayerId,
+                                IsVisible = layer.IsVisible
+                            };
+                        }
                     }
-                    catch (Exception ex)
-                    {
-                        Logger.Warn(ex, "GPU compositor failed, falling back to CPU");
-                        // Fall through to CPU path
-                    }
+                    
+                    FrequencyWaveforms = freqWaveforms;
+                    
+                    Logger.Debug($"? Individual GPU layers updated: {freqWaveforms.Count} visible");
+                    return;
                 }
 
-                // Fallback: Phase 2 CPU rendering
+                // Fallback: CPU rendering
                 await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
                 {
                     var cpuWaveformData = GetCpuFrequencyWaveforms();

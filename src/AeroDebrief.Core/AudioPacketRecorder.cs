@@ -219,9 +219,14 @@ namespace AeroDebrief.Core{
             Logger.Info("Stopping recording...");
             _recordingCts?.Cancel();
             _writerRunning = false;
+            
             try
             {
-                _writerTask?.Wait();
+                // Wait up to 5 seconds for graceful shutdown
+                if (_writerTask != null && !_writerTask.Wait(TimeSpan.FromSeconds(5)))
+                {
+                    Logger.Warn("Writer task did not complete within 5 seconds");
+                }
             }
             catch (AggregateException ae)
             {
@@ -234,6 +239,21 @@ namespace AeroDebrief.Core{
             {
                 Logger.Error(ex, "Error during writer task shutdown.");
             }
+            
+            // CRITICAL: Final flush before closing to ensure all data reaches disk
+            try
+            {
+                if (_fileStream != null)
+                {
+                    _fileStream.Flush(flushToDisk: true);
+                    Logger.Info("Recording file flushed to disk");
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn(ex, "Error flushing recording file");
+            }
+            
             _fileStream?.Dispose();
             _fileStream = null;
             Logger.Info("Recording stopped and file stream disposed.");
@@ -481,6 +501,11 @@ namespace AeroDebrief.Core{
 
         private async Task WriterLoop(CancellationToken token)
         {
+            int writesSinceFlush = 0;
+            const int FLUSH_EVERY_N_WRITES = 100; // Flush every 100 packets (~2 seconds of audio)
+            
+            Logger.Info("WriterLoop started with batch flush strategy (flush every 100 packets)");
+            
             while (_writerRunning && !token.IsCancellationRequested)
             {
                 if (_writeQueue.TryDequeue(out var meta))
@@ -491,7 +516,22 @@ namespace AeroDebrief.Core{
                         {
                             using var bw = new BinaryWriter(_fileStream!, System.Text.Encoding.UTF8, leaveOpen: true);
                             if (!meta.TryWriteMetadata(bw))
+                            {
                                 Logger.Warn("Failed to write audio packet metadata.");
+                            }
+                            else
+                            {
+                                writesSinceFlush++;
+                            }
+                            
+                            // Flush periodically to balance safety vs performance
+                            if (writesSinceFlush >= FLUSH_EVERY_N_WRITES)
+                            {
+                                bw.Flush();
+                                _fileStream?.Flush(flushToDisk: true);
+                                Logger.Debug($"Flushed {writesSinceFlush} packets to disk");
+                                writesSinceFlush = 0;
+                            }
                         }
                     }
                     catch (Exception ex)
@@ -501,9 +541,45 @@ namespace AeroDebrief.Core{
                 }
                 else
                 {
+                    // Flush when idle to ensure pending writes are saved
+                    if (writesSinceFlush > 0)
+                    {
+                        try
+                        {
+                            lock (_fileWriteLock)
+                            {
+                                _fileStream?.Flush(flushToDisk: true);
+                                Logger.Debug($"Flushed {writesSinceFlush} pending packets (idle)");
+                                writesSinceFlush = 0;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Logger.Debug(ex, "Error flushing during idle");
+                        }
+                    }
+                    
                     await Task.Delay(10, token); // Avoid busy wait
                 }
             }
+            
+            // FINAL FLUSH before exiting to ensure all data is written
+            try
+            {
+                lock (_fileWriteLock)
+                {
+                    if (_fileStream != null && writesSinceFlush > 0)
+                    {
+                        _fileStream.Flush(flushToDisk: true);
+                        Logger.Info($"Final flush: {writesSinceFlush} packets written to disk");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn(ex, "Error flushing file stream on writer loop exit");
+            }
+            
             Logger.Info("WriterLoop stopped.");
         }
 

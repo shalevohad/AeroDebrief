@@ -100,7 +100,7 @@ namespace AeroDebrief.UI.Services
         /// <summary>
         /// Loads an audio file for analysis and playback using the NEW Pure FilePacketSource architecture
         /// </summary>
-        public async Task<bool> LoadFileAsync(string filePath)
+        public async Task<bool> LoadFileAsync(string filePath, IProgress<string>? progress = null)
         {
             try
             {
@@ -124,13 +124,14 @@ namespace AeroDebrief.UI.Services
 
                 logger.Info("======== LOADING FILE (Pure FilePacketSource Architecture) ========");
                 logger.Info($"File: {filePath}");
+                progress?.Report("Initializing file loading...");
                 
                 #if DEBUG
                 logger.Info("🔴 BUILD CONFIGURATION: DEBUG");
-                #else
-                logger.Info("🟢 BUILD CONFIGURATION: RELEASE");
-                #endif
-                
+#else
+                logger.Info("🔴 BUILD CONFIGURATION: RELEASE");
+#endif
+
                 var assembly = System.Reflection.Assembly.GetExecutingAssembly();
                 var assemblyName = assembly.GetName();
                 var buildDate = new System.IO.FileInfo(assembly.Location).LastWriteTime;
@@ -139,15 +140,19 @@ namespace AeroDebrief.UI.Services
                 
                 // STEP 1: Open FilePacketSource ONCE (memory-mapped, indexed, ~5MB)
                 logger.Info("Step 1: Opening FilePacketSource (memory-mapped, shared)...");
+                progress?.Report("Opening file...");
                 _packetSource = new FilePacketSource(filePath);
-                await _packetSource.OpenAsync();
+                await _packetSource.OpenAsync(progress);
                 logger.Info($"✅ FilePacketSource ready: {_packetSource.TotalPackets} packets, {_packetSource.TotalDuration}");
+                progress?.Report($"File ready: {_packetSource.TotalPackets:N0} packets");
                 
                 // STEP 2: Create FilePlaybackPipeline (shares packet source!)
                 logger.Info("Step 2: Creating FilePlaybackPipeline...");
+                progress?.Report("Initializing playback engine...");
                 _pipeline = new FilePlaybackPipeline(_packetSource);
                 await _pipeline.OpenAsync();
                 logger.Info($"✅ FilePlaybackPipeline initialized");
+                progress?.Report("Playback engine ready");
                 
                 // Wire pipeline events
                 _pipeline.PlaybackStarted += () => PlaybackStarted?.Invoke();
@@ -164,6 +169,7 @@ namespace AeroDebrief.UI.Services
                 
                 // STEP 3: Initialize services (GPU waveform generator, etc.)
                 logger.Info("Step 3: Initializing analysis services...");
+                progress?.Report("Initializing audio analysis...");
                 try
                 {
                     _analysisService = new FrequencyAnalysisService();
@@ -177,6 +183,7 @@ namespace AeroDebrief.UI.Services
                         logger.Info("✨ GPU acceleration enabled for waveform generation");
                         logger.Info($"   GPU Device: {(gpuGenerator as dynamic)?.DeviceName ?? "Unknown"}");
                         _waveformGenerator = gpuGenerator;
+                        progress?.Report("GPU acceleration enabled");
                     }
                     else
                     {
@@ -184,6 +191,7 @@ namespace AeroDebrief.UI.Services
                         gpuGenerator.Dispose();
                         _waveformGenerator = new FilteredWaveformGenerator(_analysisService);
                         logger.Info("   Using FilteredWaveformGenerator (CPU)");
+                        progress?.Report("Using CPU waveform generation");
                     }
                     
                     _channelMixer = new AudioMixerEngine();
@@ -200,15 +208,18 @@ namespace AeroDebrief.UI.Services
 
                 // STEP 4: Generate waveform using FilePacketSource (memory-mapped, efficient)
                 logger.Info("Step 4: Generating waveform from FilePacketSource...");
+                progress?.Report("Generating waveform...");
                 
                 var waveformProgress = new Progress<double>(percent =>
                 {
                     logger.Info($"Waveform generation progress: {percent:F1}%");
                     WaveformGenerationProgress?.Invoke(percent);
+                    progress?.Report($"Generating waveform: {percent:F1}%");
                 });
                 
                 await GenerateWaveformDataFromSourceAsync(waveformProgress);
                 logger.Info("✅ Waveform generated from FilePacketSource");
+                progress?.Report("Waveform generation complete");
 
                 logger.Info("======== FILE LOADED SUCCESSFULLY ========");
                 logger.Info($"📊 PURE FilePacketSource ARCHITECTURE:");
@@ -220,12 +231,14 @@ namespace AeroDebrief.UI.Services
                 logger.Info($"   🎯 File open: 2.5x faster!");
                 logger.Info($"   🎯 Filtering: 500x faster (instant vs 500-1000ms)!");
                 
+                progress?.Report("File loaded successfully");
                 return true;
             }
             catch (Exception ex)
             {
                 PlaybackError?.Invoke(ex);
                 CurrentFilePath = string.Empty;
+                progress?.Report($"Error: {ex.Message}");
                 return false;
             }
         }

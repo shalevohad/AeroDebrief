@@ -151,7 +151,7 @@ namespace AeroDebrief.UI.Controls
         /// <summary>
         /// Handles file panel request from header control.
         /// </summary>
-        private void OnFilePanelRequested(object sender, EventArgs e)
+        private void OnFilePanelRequested(object sender, RoutedEventArgs e)
         {
             FileOverlay?.Open();
         }
@@ -164,7 +164,7 @@ namespace AeroDebrief.UI.Controls
         /// Handles play request from transport controls.
         /// Delegates to ViewModel PlayCommand.
         /// </summary>
-        private void OnPlayRequested(object sender, EventArgs e)
+        private void OnPlayRequested(object sender, RoutedEventArgs e)
         {
             if (ViewModel?.PlayCommand?.CanExecute(null) == true)
             {
@@ -176,7 +176,7 @@ namespace AeroDebrief.UI.Controls
         /// Handles pause request from transport controls.
         /// Delegates to ViewModel PauseCommand.
         /// </summary>
-        private void OnPauseRequested(object sender, EventArgs e)
+        private void OnPauseRequested(object sender, RoutedEventArgs e)
         {
             if (ViewModel?.PauseCommand?.CanExecute(null) == true)
             {
@@ -188,7 +188,7 @@ namespace AeroDebrief.UI.Controls
         /// Handles stop request from transport controls.
         /// Delegates to ViewModel StopCommand.
         /// </summary>
-        private void OnStopRequested(object sender, EventArgs e)
+        private void OnStopRequested(object sender, RoutedEventArgs e)
         {
             if (ViewModel?.StopCommand?.CanExecute(null) == true)
             {
@@ -255,7 +255,7 @@ namespace AeroDebrief.UI.Controls
         /// Handles frequency selection changes from mixer panel.
         /// Delegates to ViewModel for mixer updates and waveform regeneration.
         /// </summary>
-        private void OnFrequencySelectionChanged(object sender, FrequencySelectionChangedEventArgs e)
+        private void OnFrequencySelectionChanged(object sender, Events.FrequencySelectionChangedEventArgs e)
         {
             ViewModel?.OnFrequencySelectionChanged(e.Frequency, e.IsSelected);
         }
@@ -264,7 +264,7 @@ namespace AeroDebrief.UI.Controls
         /// Handles mixer value changes (volume, pan) from mixer panel.
         /// Updates ViewModel channel settings.
         /// </summary>
-        private void OnMixerValueChanged(object sender, MixerValueChangedEventArgs e)
+        private void OnMixerValueChanged(object sender, Events.MixerValueChangedEventArgs e)
         {
             if (ViewModel == null) return;
 
@@ -292,7 +292,7 @@ namespace AeroDebrief.UI.Controls
         /// Handles mixer boolean changes (mute, solo) from mixer panel.
         /// Updates ViewModel channel settings and handles solo logic.
         /// </summary>
-        private void OnMixerBooleanChanged(object sender, MixerBooleanChangedEventArgs e)
+        private void OnMixerBooleanChanged(object sender, Events.MixerBooleanChangedEventArgs e)
         {
             if (ViewModel == null) return;
 
