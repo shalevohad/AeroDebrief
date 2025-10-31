@@ -1,11 +1,16 @@
-namespace AeroDebrief.CLI{
+namespace AeroDebrief.CLI
+{
     using Ciribob.DCS.SimpleRadio.Standalone.Common.Models;
     using Ciribob.DCS.SimpleRadio.Standalone.Common.Models.EventMessages;
     using AeroDebrief.Core;
     using AeroDebrief.Core.Audio;
     using AeroDebrief.Core.Helpers;
+    using AeroDebrief.Core.Settings;
     using NLog;
     using System;
+    using System.IO;
+    using System.Linq;
+    using System.Threading.Tasks;
 
     class Program
     {
@@ -25,6 +30,7 @@ namespace AeroDebrief.CLI{
                 return;
             }
 
+            // Default recording mode
             var settings = RecorderSettingsStore.Instance;
 
             string serverIp = args.Length > 0 ? args[0] : settings.GetRecorderSettingString(RecorderSettingKeys.ServerIp);
@@ -145,7 +151,7 @@ namespace AeroDebrief.CLI{
                         var displayName = playerInfo?.GetDisplayName() ?? $"Unknown ({meta.TransmitterGuid})";
                         var coalition = playerInfo?.GetCoalitionName() ?? "Unknown";
                         var aircraft = playerInfo?.AircraftInfo?.ToString() ?? "Unknown Aircraft";
-                        var position = playerInfo?.Position?.ToString() ?? "Unknown Position";
+                        var position = playerInfo?.Position.ToString() ?? "Unknown Position";
                         var seat = playerInfo?.Seat >= 0 ? $"Seat {playerInfo.Seat}" : "Unknown Seat";
                         
                         Console.WriteLine($"Packet received:");
@@ -240,10 +246,6 @@ namespace AeroDebrief.CLI{
             
             switch (command)
             {
-                case "--test-audio":
-                    await HandleTestAudioCommand(args);
-                    break;
-                    
                 case "--analyze":
                     await HandleAnalyzeCommand(args);
                     break;
@@ -261,75 +263,6 @@ namespace AeroDebrief.CLI{
                     Console.WriteLine($"Unknown command: {command}");
                     Console.WriteLine("Use --help to see available commands.");
                     break;
-            }
-        }
-
-        private static async Task HandleTestAudioCommand(string[] args)
-        {
-            Console.WriteLine("=== Audio System Test ===");
-            Console.WriteLine("This test will check multiple levels of audio functionality:");
-            Console.WriteLine("1. Basic Windows audio (beeps)");
-            Console.WriteLine("2. System audio device information");
-            Console.WriteLine("3. Advanced audio methods (tones)");
-            Console.WriteLine();
-            
-            try
-            {
-                // Parse test parameters
-                double frequency = 440.0;
-                double duration = 3.0;
-                
-                for (int i = 1; i < args.Length; i += 2)
-                {
-                    if (i + 1 < args.Length)
-                    {
-                        switch (args[i].ToLowerInvariant())
-                        {
-                            case "--frequency":
-                            case "-f":
-                                if (double.TryParse(args[i + 1], out var freq))
-                                    frequency = freq;
-                                break;
-                            case "--duration":
-                            case "-d":
-                                if (double.TryParse(args[i + 1], out var dur))
-                                    duration = dur;
-                                break;
-                        }
-                    }
-                }
-
-                Console.WriteLine($"Testing audio at {frequency}Hz for {duration} seconds...");
-                Console.WriteLine();
-                
-                await AudioDiagnostics.PlayTestToneAsync(frequency, duration);
-                
-                Console.WriteLine();
-                Console.ForegroundColor = ConsoleColor.Green;
-                Console.WriteLine("? Audio test completed!");
-                Console.ResetColor();
-                
-                Console.WriteLine();
-                Console.WriteLine("WHAT DID YOU HEAR?");
-                Console.WriteLine("- If you heard BEEPS only: Your hardware works, but audio drivers have compatibility issues");
-                Console.WriteLine("- If you heard TONES/MUSIC: Your audio system is fully working");
-                Console.WriteLine("- If you heard NOTHING: Check speakers, volume, and Windows audio settings");
-                Console.WriteLine();
-                Console.WriteLine("Check the detailed log output above for specific recommendations.");
-            }
-            catch (Exception ex)
-            {
-                Console.ForegroundColor = ConsoleColor.Red;
-                Console.WriteLine($"? Audio test failed: {ex.Message}");
-                Console.ResetColor();
-                Console.WriteLine();
-                Console.WriteLine("If you heard beeps during the test, your audio hardware works.");
-                Console.WriteLine("The failure likely indicates audio driver compatibility issues.");
-                Console.WriteLine("Try:");
-                Console.WriteLine("- Running as Administrator");
-                Console.WriteLine("- Updating audio drivers");
-                Console.WriteLine("- Checking Windows Updates");
-                Logger.Error(ex, "Audio test failed");
             }
         }
 
@@ -366,27 +299,14 @@ namespace AeroDebrief.CLI{
                     return;
                 }
 
-                Console.WriteLine("Analyzing file contents...");
-                var result = await AudioDiagnostics.AnalyzeRecordedFileAsync(filePath);
+                Console.WriteLine("Analyzing file structure and content...");
+                var analysis = Core.Analysis.FileAnalyzer.AnalyzeAudioActivity(filePath);
                 
-                Console.WriteLine("\n" + result.ToString());
+                Console.WriteLine("\n" + analysis.ToString());
                 
-                if (result.PotentialIssues.Any())
-                {
-                    Console.ForegroundColor = ConsoleColor.Yellow;
-                    Console.WriteLine("??  Potential Issues Found:");
-                    Console.ResetColor();
-                    foreach (var issue in result.PotentialIssues)
-                    {
-                        Console.WriteLine($"  - {issue}");
-                    }
-                }
-                else
-                {
-                    Console.ForegroundColor = ConsoleColor.Green;
-                    Console.WriteLine("? No obvious issues detected");
-                    Console.ResetColor();
-                }
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine("? Analysis complete");
+                Console.ResetColor();
 
                 // Export to WAV if requested
                 if (!string.IsNullOrEmpty(exportPath))
@@ -512,7 +432,7 @@ namespace AeroDebrief.CLI{
                 if (filteredPeriods.Count != analysis.ActivityPeriods.Count)
                 {
                     Console.WriteLine($"\nFiltered Results ({filteredPeriods.Count} periods):");
-                    foreach (var period in filteredPeriods.Take(50)) // Show first 50 filtered results
+                    foreach (var period in filteredPeriods.Take(50))
                     {
                         var players = string.Join(", ", period.Players.Take(3));
                         if (period.Players.Count > 3) players += "...";
@@ -624,15 +544,10 @@ namespace AeroDebrief.CLI{
             Console.WriteLine("  DCS-SRS-RecordingClient.exe <server_ip> <port>");
             Console.WriteLine("  Example: DCS-SRS-RecordingClient.exe 192.168.1.100 5002");
             Console.WriteLine();
-            Console.WriteLine("Audio Testing:");
-            Console.WriteLine("  --test-audio [--frequency|-f <Hz>] [--duration|-d <seconds>]");
-            Console.WriteLine("    Test audio output with a tone");
-            Console.WriteLine("    Example: --test-audio -f 440 -d 3");
-            Console.WriteLine();
             Console.WriteLine("File Analysis:");
             Console.WriteLine("  --analyze <file_path> [--export <wav_file>]");
-            Console.WriteLine("    Analyze a recorded file for issues and optionally export to WAV");
-            Console.WriteLine("    Example: --analyze recording.raw --export output.wav");
+            Console.WriteLine("    Analyze a recorded file and optionally export to WAV");
+            Console.WriteLine("    Example: --analyze recording.adb --export output.wav");
             Console.WriteLine();
             Console.WriteLine("Audio Activity Analysis:");
             Console.WriteLine("  --analyze-activity <file_path> [options]");
@@ -644,10 +559,10 @@ namespace AeroDebrief.CLI{
             Console.WriteLine("      --player <name>         Show only activity for specific player");
             Console.WriteLine("      --frequency <mhz>       Show only activity for specific frequency");
             Console.WriteLine("    Examples:");
-            Console.WriteLine("      --analyze-activity recording.raw");
-            Console.WriteLine("      --analyze-activity recording.raw --threshold 1000 --min-duration 500");
-            Console.WriteLine("      --analyze-activity recording.raw --player \"Viper1\" --export-csv activity.csv");
-            Console.WriteLine("      --analyze-activity recording.raw --frequency 251.0");
+            Console.WriteLine("      --analyze-activity recording.adb");
+            Console.WriteLine("      --analyze-activity recording.adb --threshold 1000 --min-duration 500");
+            Console.WriteLine("      --analyze-activity recording.adb --player \"Viper1\" --export-csv activity.csv");
+            Console.WriteLine("      --analyze-activity recording.adb --frequency 251.0");
             Console.WriteLine();
             Console.WriteLine("Help:");
             Console.WriteLine("  --help | --h");

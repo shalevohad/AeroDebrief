@@ -1,0 +1,508 @@
+using System.Diagnostics;
+using System.Runtime.CompilerServices;
+using AeroDebrief.Core.IO;
+using AeroDebrief.Core.Audio;
+using AeroDebrief.Core.Models;
+using Ciribob.DCS.SimpleRadio.Standalone.Common.Models.Player;
+using NLog;
+
+namespace AeroDebrief.Core.Playback
+{
+    /// <summary>
+    /// Complete playback pipeline using FilePacketSource for memory-efficient streaming.
+    /// Supports batched packet reading, instant filtering, and low-latency playback.
+    /// </summary>
+    public sealed class FilePlaybackPipeline : IDisposable
+    {
+        private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
+
+        private readonly FilePacketSource _packetSource;
+        private PacketRouter? _packetRouter;
+        private AudioOutputEngine? _audioOutput;
+        private MasterMixer? _masterMixer;
+        
+        // FrequencyWorker mapping (FrequencyRoutingWorker -> FrequencyWorker)
+        private readonly Dictionary<double, FrequencyWorker> _frequencyWorkers = new();
+        
+        // NEW: Track registered UserWorkers to avoid duplicate registration
+        private readonly HashSet<(double Frequency, string PilotId)> _registeredUserWorkers = new();
+        
+        // NEW: Enable per-pilot mixing mode
+        public bool EnablePerPilotMixing { get; set; } = true;
+
+        private CancellationTokenSource? _playbackCts;
+        private Task? _streamingTask;
+        private Task? _positionUpdateTask;
+        private bool _disposed;
+
+        // Playback state
+        public bool IsPlaying { get; private set; }
+        public bool IsPaused { get; private set; }
+        public TimeSpan CurrentPosition { get; private set; }
+        public TimeSpan TotalDuration => _packetSource.TotalDuration;
+        public DateTime RecordingStart => _packetSource.RecordingStart;
+
+        // Events
+        public event Action? PlaybackStarted;
+        public event Action? PlaybackStopped;
+        public event Action? PlaybackPaused;
+        public event Action? PlaybackResumed;
+        public event Action<TimeSpan, TimeSpan>? PositionChanged;
+        public event Action<Exception>? ErrorOccurred;
+
+        /// <summary>
+        /// Creates a new FilePlaybackPipeline with an already-opened FilePacketSource.
+        /// This allows sharing the same FilePacketSource for waveform generation and playback.
+        /// </summary>
+        public FilePlaybackPipeline(FilePacketSource packetSource)
+        {
+            _packetSource = packetSource ?? throw new ArgumentNullException(nameof(packetSource));
+            Logger.Info("FilePlaybackPipeline created with shared FilePacketSource");
+        }
+
+        /// <summary>
+        /// Initializes the complete playback pipeline components.
+        /// FilePacketSource must already be opened before calling this.
+        /// </summary>
+        public async Task OpenAsync()
+        {
+            try
+            {
+                Logger.Info("Initializing FilePlaybackPipeline components...");
+                
+                // Verify FilePacketSource is opened
+                if (_packetSource.TotalPackets == 0)
+                    throw new InvalidOperationException("FilePacketSource not opened. Call OpenAsync on it first.");
+                
+                // Step 1: Initialize PacketRouter
+                Logger.Info("Step 1: Initializing PacketRouter...");
+                _packetRouter = new PacketRouter();
+                Logger.Info("PacketRouter initialized");
+                
+                // Step 2: Get frequency metadata and pre-allocate routing workers
+                Logger.Info("Step 2: Pre-allocating FrequencyRoutingWorkers...");
+                var frequencies = _packetSource.GetFrequencyMetadata();
+                _packetRouter.PreAllocateFrequencies(frequencies);
+                Logger.Info($"Pre-allocated {frequencies.Count} FrequencyRoutingWorkers");
+                
+                // Step 3: Initialize AudioOutputEngine
+                Logger.Info("Step 3: Initializing AudioOutputEngine...");
+                _audioOutput = new AudioOutputEngine();
+                await _audioOutput.InitializeAsync();
+                Logger.Info("AudioOutputEngine initialized");
+                
+                // Step 4: Initialize MasterMixer with AudioOutputEngine
+                Logger.Info("Step 4: Initializing MasterMixer...");
+                _masterMixer = new MasterMixer(_audioOutput);
+                Logger.Info("MasterMixer initialized");
+                
+                // Step 5: Create FrequencyWorkers and register with MasterMixer
+                Logger.Info("Step 5: Creating FrequencyWorkers and registering with MasterMixer...");
+                foreach (var (freq, metadata) in frequencies)
+                {
+                    // Create FrequencyWorker for this frequency
+                    var frequencyWorker = new FrequencyWorker(freq);
+                    _frequencyWorkers[freq] = frequencyWorker;
+                    
+                    // Register with MasterMixer
+                    _masterMixer.RegisterFrequency(freq, frequencyWorker);
+                }
+                Logger.Info($"Registered {_frequencyWorkers.Count} FrequencyWorkers with MasterMixer");
+                
+                Logger.Info($"? Pipeline opened successfully: {_packetSource.TotalPackets} packets, Duration: {TotalDuration}");
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, "Failed to initialize pipeline");
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Starts audio playback using batched streaming for optimal performance.
+        /// </summary>
+        public async Task PlayAsync()
+        {
+            if (IsPlaying)
+            {
+                Logger.Warn("PlayAsync called but already playing");
+                return;
+            }
+
+            if (_packetRouter == null || _masterMixer == null || _audioOutput == null)
+            {
+                throw new InvalidOperationException("Pipeline not initialized. Call OpenAsync first.");
+            }
+
+            try
+            {
+                Logger.Info("Starting playback with batched streaming...");
+                
+                _playbackCts = new CancellationTokenSource();
+                IsPlaying = true;
+                IsPaused = false;
+                
+                // Start audio output
+                _audioOutput.Start();
+                
+                // Start streaming task (FilePacketSource ? PacketRouter ? FrequencyWorkers)
+                // Uses BATCHED streaming for 100x less async overhead
+                _streamingTask = Task.Run(async () => await StreamingTaskAsync(_playbackCts.Token), _playbackCts.Token);
+                
+                // Start position update task (for UI)
+                _positionUpdateTask = Task.Run(async () => await PositionUpdateTaskAsync(_playbackCts.Token), _playbackCts.Token);
+                
+                PlaybackStarted?.Invoke();
+                
+                Logger.Info("? Playback started with batched streaming");
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, "Failed to start playback");
+                IsPlaying = false;
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Pauses playback (can be resumed)
+        /// </summary>
+        public void Pause()
+        {
+            if (!IsPlaying || IsPaused)
+                return;
+
+            IsPaused = true;
+            PlaybackPaused?.Invoke();
+            Logger.Info("Playback paused");
+        }
+
+        /// <summary>
+        /// Resumes playback after pause
+        /// </summary>
+        public void Resume()
+        {
+            if (!IsPlaying || !IsPaused)
+                return;
+
+            IsPaused = false;
+            PlaybackResumed?.Invoke();
+            Logger.Info("Playback resumed");
+        }
+
+        /// <summary>
+        /// Stops playback completely
+        /// </summary>
+        public async Task StopAsync()
+        {
+            if (!IsPlaying)
+                return;
+
+            try
+            {
+                Logger.Info("Stopping playback...");
+                
+                // Cancel tasks
+                _playbackCts?.Cancel();
+                
+                // Wait for tasks to complete
+                if (_streamingTask != null)
+                    await _streamingTask;
+                if (_positionUpdateTask != null)
+                    await _positionUpdateTask;
+                
+                // Stop audio output
+                _audioOutput?.Stop();
+                
+                IsPlaying = false;
+                IsPaused = false;
+                CurrentPosition = TimeSpan.Zero;
+                
+                PlaybackStopped?.Invoke();
+                
+                Logger.Info("? Playback stopped");
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, "Error stopping playback");
+                throw;
+            }
+            finally
+            {
+                _playbackCts?.Dispose();
+                _playbackCts = null;
+            }
+        }
+
+        /// <summary>
+        /// Seeks to a specific position in the recording
+        /// </summary>
+        public async Task SeekAsync(TimeSpan position)
+        {
+            if (position < TimeSpan.Zero || position > TotalDuration)
+                throw new ArgumentOutOfRangeException(nameof(position));
+
+            var wasPlaying = IsPlaying;
+            var wasPaused = IsPaused;
+
+            // Stop current playback
+            if (IsPlaying)
+                await StopAsync();
+
+            // Update position
+            CurrentPosition = position;
+
+            // Restart if it was playing
+            if (wasPlaying)
+            {
+                await PlayAsync();
+                if (wasPaused)
+                    Pause();
+            }
+
+            Logger.Info($"Seeked to {position}");
+        }
+
+        /// <summary>
+        /// Streaming task: reads packets from FilePacketSource using batched streaming
+        /// and routes them. Uses batching to reduce async overhead by 100x.
+        /// </summary>
+        private async Task StreamingTaskAsync(CancellationToken cancellationToken)
+        {
+            try
+            {
+                Logger.Info($"Streaming task started with batched reading (PerPilotMixing={EnablePerPilotMixing})");
+                
+                var packetsProcessed = 0;
+                var batchesProcessed = 0;
+                var startTime = DateTime.UtcNow;
+                
+                const int batchSize = 100; // Process 100 packets at a time
+                
+                // Use BATCHED streaming for optimal performance
+                await foreach (var batch in _packetSource.ReadRangeBatched(CurrentPosition, batchSize, cancellationToken))
+                {
+                    // Wait if paused
+                    while (IsPaused && !cancellationToken.IsCancellationRequested)
+                    {
+                        await Task.Delay(50, cancellationToken);
+                    }
+                    
+                    if (cancellationToken.IsCancellationRequested)
+                        break;
+                    
+                    // Process entire batch (no async overhead per packet!)
+                    foreach (var packet in batch)
+                    {
+                        // Route packet to appropriate FrequencyRoutingWorker
+                        _packetRouter!.RoutePacket(packet);
+                        
+                        // Forward to FrequencyWorker for processing
+                        if (_frequencyWorkers.TryGetValue(packet.Frequency, out var freqWorker))
+                        {
+                            freqWorker.EnqueueForUser(packet.TransmitterGuid, packet);
+                            
+                            // NEW: Dynamically register UserWorkers for per-pilot mixing
+                            if (EnablePerPilotMixing && _masterMixer != null)
+                            {
+                                RegisterUserWorkerIfNeeded(packet.Frequency, packet.TransmitterGuid, freqWorker);
+                            }
+                        }
+                        
+                        packetsProcessed++;
+                    }
+                    
+                    batchesProcessed++;
+                    
+                    // Log progress every 10 batches (1000 packets)
+                    if (batchesProcessed % 10 == 0)
+                    {
+                        var elapsed = (DateTime.UtcNow - startTime).TotalSeconds;
+                        var packetsPerSecond = packetsProcessed / elapsed;
+                        Logger.Debug($"Streaming: {packetsProcessed} packets in {batchesProcessed} batches ({packetsPerSecond:F0} packets/sec)");
+                    }
+                }
+                
+                Logger.Info($"Streaming task completed: {packetsProcessed} packets in {batchesProcessed} batches");
+            }
+            catch (OperationCanceledException)
+            {
+                Logger.Info("Streaming task cancelled");
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, "Streaming task failed");
+                ErrorOccurred?.Invoke(ex);
+            }
+        }
+
+        /// <summary>
+        /// NEW: Dynamically registers UserWorkers with MasterMixer as they are created
+        /// This enables per-pilot audio mixing with instant mute/solo
+        /// </summary>
+        private void RegisterUserWorkerIfNeeded(double frequency, string pilotId, FrequencyWorker freqWorker)
+        {
+            var key = (frequency, pilotId);
+            
+            // Check if already registered
+            if (_registeredUserWorkers.Contains(key))
+                return;
+            
+            // Get UserWorkers from FrequencyWorker
+            foreach (var (workerId, userWorker) in freqWorker.GetUserWorkers())
+            {
+                if (workerId == pilotId)
+                {
+                    // Register with MasterMixer for per-pilot mixing
+                    if (_masterMixer!.RegisterUserWorker(frequency, pilotId, userWorker))
+                    {
+                        _registeredUserWorkers.Add(key);
+                        Logger.Debug($"Registered UserWorker for per-pilot mixing: Pilot={pilotId}, Frequency={frequency / 1_000_000.0:F3} MHz");
+                    }
+                    break;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Position update task: periodically updates CurrentPosition for UI
+        /// </summary>
+        private async Task PositionUpdateTaskAsync(CancellationToken cancellationToken)
+        {
+            try
+            {
+                var startTime = DateTime.UtcNow;
+                var startPosition = CurrentPosition;
+
+                while (!cancellationToken.IsCancellationRequested)
+                {
+                    if (!IsPaused)
+                    {
+                        var elapsed = DateTime.UtcNow - startTime;
+                        CurrentPosition = startPosition + elapsed;
+
+                        // Clamp to duration
+                        if (CurrentPosition > TotalDuration)
+                            CurrentPosition = TotalDuration;
+
+                        PositionChanged?.Invoke(CurrentPosition, TotalDuration);
+
+                        // Stop when reached end
+                        if (CurrentPosition >= TotalDuration)
+                        {
+                            await StopAsync();
+                            break;
+                        }
+                    }
+
+                    await Task.Delay(100, cancellationToken); // Update 10 times per second
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                Logger.Debug("Position update task cancelled");
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, "Position update task failed");
+            }
+        }
+
+        /// <summary>
+        /// Gets all available frequencies from the recording using index metadata (instant!).
+        /// No packet reads required - extracted from FilePacketSource index with player information.
+        /// </summary>
+        public List<FrequencyInfo> GetAvailableFrequencies()
+        {
+            var metadata = _packetSource.GetFrequencyMetadata();
+            
+            return metadata.Values.Select(m => new FrequencyInfo
+            {
+                Frequency = m.Frequency,
+                PacketCount = m.PacketCount,
+                DisplayName = $"{m.Frequency / 1_000_000.0:F3} MHz",
+                Modulation = GetModulationName(m.Modulation),
+                Players = m.Players.Select(p => new Models.PlayerFrequencyInfo
+                {
+                    Name = p.PlayerName,
+                    TransmitterGuid = p.TransmitterGuid,
+                    Coalition = p.Coalition ?? "Unknown",
+                    Aircraft = p.UnitType,
+                    PacketCount = p.PacketCount,
+                    FirstSeen = DateTime.MinValue, // Not tracked in index yet
+                    LastSeen = DateTime.MinValue
+                }).ToList(),
+                IsActive = false,
+                LastActivity = m.LastSeen
+            }).OrderBy(f => f.Frequency).ToList();
+        }
+        
+        private static string GetModulationName(byte modulation)
+        {
+            if (Enum.IsDefined(typeof(Modulation), (int)modulation))
+            {
+                return ((Modulation)modulation).ToString();
+            }
+            return "Unknown";
+        }
+
+        /// <summary>
+        /// Sets the frequency gate mode for instant filtering.
+        /// Changes take effect immediately with smooth fade (1.33ms).
+        /// </summary>
+        public void SetFrequencyGate(double frequency, Audio.FrequencyGateMode mode)
+        {
+            _masterMixer?.SetFrequencyGate(frequency, mode);
+            Logger.Debug($"Frequency gate set: {frequency / 1_000_000.0:F3} MHz ? {mode}");
+        }
+
+        /// <summary>
+        /// Sets the pilot gate mode for instant per-pilot filtering.
+        /// Changes take effect immediately with smooth fade (1.33ms).
+        /// </summary>
+        public void SetPilotGate(string pilotId, double frequency, Audio.PilotGateMode mode)
+        {
+            _masterMixer?.SetPilotGate(pilotId, frequency, mode);
+            Logger.Debug($"Pilot gate set: {pilotId} on {frequency / 1_000_000.0:F3} MHz ? {mode}");
+        }
+
+        public void Dispose()
+        {
+            if (_disposed)
+                return;
+
+            _playbackCts?.Cancel();
+            _playbackCts?.Dispose();
+
+            // Dispose FrequencyWorkers
+            foreach (var worker in _frequencyWorkers.Values)
+            {
+                _ = worker.DisposeAsync();
+            }
+            _frequencyWorkers.Clear();
+
+            _masterMixer?.Dispose();
+            _audioOutput?.Dispose();
+            _packetRouter?.Dispose();
+            
+            // Note: Don't dispose _packetSource as it's shared and managed by the caller
+
+            _disposed = true;
+            Logger.Debug("FilePlaybackPipeline disposed");
+        }
+    }
+    
+    /// <summary>
+    /// Frequency information for pipeline display
+    /// </summary>
+    public class FrequencyInfo
+    {
+        public double Frequency { get; set; }
+        public string Modulation { get; set; } = string.Empty;
+        public string DisplayName { get; set; } = string.Empty;
+        public int PacketCount { get; set; }
+        public List<Models.PlayerFrequencyInfo> Players { get; set; } = new();
+        public bool IsActive { get; set; }
+        public DateTime LastActivity { get; set; }
+    }
+}

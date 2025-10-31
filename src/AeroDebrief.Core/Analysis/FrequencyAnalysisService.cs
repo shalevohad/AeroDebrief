@@ -59,7 +59,9 @@ namespace AeroDebrief.Core.Analysis
         {
             // Update analysis every 500ms for smooth real-time updates
             _analysisTimer = new Timer(UpdateAnalysis, null, Timeout.Infinite, 500);
+#if DEBUG
             Logger.Debug("FrequencyAnalysisService initialized");
+#endif
         }
 
         /// <summary>
@@ -87,7 +89,7 @@ namespace AeroDebrief.Core.Analysis
                 _isAnalyzing = true;
             }
 
-            Logger.Info($"Starting frequency analysis for: {filePath}");
+            Logger.Info($"Starting frequency analysis: {Path.GetFileName(filePath)}");
 
             try
             {
@@ -126,7 +128,7 @@ namespace AeroDebrief.Core.Analysis
                 // Start real-time analysis timer
                 _analysisTimer.Change(500, 500);
 
-                Logger.Info($"Analysis initialized with {frequencies.Count} frequency channels");
+                Logger.Info($"Analysis initialized: {frequencies.Count} frequency channels found");
                 return frequencies;
             }
             catch (Exception ex)
@@ -160,7 +162,9 @@ namespace AeroDebrief.Core.Analysis
                 }
             }
 
-            Logger.Debug($"Updated selected frequencies: {_selectedFrequencies.Count} channels selected");
+#if DEBUG
+            Logger.Debug($"Updated selected frequencies: {_selectedFrequencies.Count} channels");
+#endif
             
             // Notify listeners of the update
             AnalysisUpdated?.Invoke(this, new FrequencyAnalysisUpdatedEventArgs(ChannelAnalysis));
@@ -296,7 +300,9 @@ namespace AeroDebrief.Core.Analysis
                 }
             }
 
-            Logger.Info("Frequency analysis stopped");
+#if DEBUG
+            Logger.Debug("Frequency analysis stopped");
+#endif
         }
 
         private void UpdateAnalysis(object? state)
@@ -343,7 +349,9 @@ namespace AeroDebrief.Core.Analysis
             _analysisTimer?.Dispose();
             _disposed = true;
 
+#if DEBUG
             Logger.Debug("FrequencyAnalysisService disposed");
+#endif
         }
     }
 

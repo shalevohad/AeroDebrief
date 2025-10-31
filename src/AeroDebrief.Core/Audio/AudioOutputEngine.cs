@@ -5,110 +5,66 @@ using AeroDebrief.Core.Helpers;
 
 namespace AeroDebrief.Core.Audio
 {
-    /// <summary>Handles audio output with automatic fallback to simpler methods</summary>
-    public sealed class AudioOutputEngine : IDisposable
+    /// <summary>Handles audio output using WASAPI</summary>
+    public sealed class AudioOutputEngine : IAudioOutputEngine
     {
         private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
         
         private WasapiOut? _wasapiOut;
         private BufferedWaveProvider? _waveProvider;
-        private SimpleAudioOutputEngine? _fallbackEngine;
-        private bool _useSimpleFallback = false;
         private bool _disposed;
         private long _totalBytesWritten = 0;
-        private DateTime _lastAudioWrite = DateTime.MinValue;
-        private readonly Queue<byte[]> _audioQueue = new();
-        private readonly object _queueLock = new();
-        private Task? _playbackTask;
-        private CancellationTokenSource? _playbackCts;
-        private volatile bool _isSeekInProgress = false; // Add seek state tracking
+        private readonly object _wasapiLock = new();
+        private volatile bool _isSeekInProgress = false;
 
         public async Task InitializeAsync()
         {
             try
             {
-                Logger.Info("Initializing AudioOutputEngine with WASAPI...");
+                Logger.Info("Initializing WASAPI audio output engine...");
                 await InitializeWasapiAsync();
+                Logger.Info("WASAPI audio engine initialized successfully");
             }
-            catch (Exception wasapiEx)
+            catch (Exception ex)
             {
-                Logger.Warn(wasapiEx, "WASAPI initialization failed, falling back to SimpleAudioOutputEngine...");
-                
-                try
-                {
-                    await InitializeSimpleFallbackAsync();
-                    _useSimpleFallback = true;
-                    Logger.Info("? Successfully initialized with SimpleAudioOutputEngine fallback");
-                }
-                catch (Exception fallbackEx)
-                {
-                    Logger.Error(fallbackEx, "Both WASAPI and SimpleAudioOutputEngine initialization failed");
-                    throw new InvalidOperationException(
-                        $"Audio initialization failed. WASAPI: {wasapiEx.Message}, Fallback: {fallbackEx.Message}", 
-                        wasapiEx);
-                }
+                Logger.Error(ex, "WASAPI initialization failed - no audio output available");
+                throw new InvalidOperationException(
+                    "Audio initialization failed - check audio drivers and device", 
+                    ex);
             }
         }
 
         private async Task InitializeWasapiAsync()
         {
-            // Select the default multimedia render device explicitly and log details
             var enumerator = new MMDeviceEnumerator();
             var device = enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
 
             _wasapiOut = new WasapiOut(device, AudioClientShareMode.Shared, false, 50);
-
-            // Use PCM 16-bit mono @ 48kHz; the audio engine will upmix/resample as needed
             var waveFormat = new WaveFormat(Constants.OUTPUT_SAMPLE_RATE, 16, 1);
             _waveProvider = new BufferedWaveProvider(waveFormat)
             {
-                // Important for streaming: fill reads with silence instead of returning 0,
-                // otherwise WASAPI may stop or output nothing when buffer underruns.
-                ReadFully = true, // CHANGED: Fill reads completely to prevent gaps
-                BufferLength = waveFormat.AverageBytesPerSecond * 5, // INCREASED: More buffering
-                DiscardOnBufferOverflow = false // Changed: don't discard audio data
+                ReadFully = true,
+                BufferLength = waveFormat.AverageBytesPerSecond * 10,
+                DiscardOnBufferOverflow = true
             };
 
-            Logger.Info($"???  WASAPI Buffer: {_waveProvider.BufferLength} bytes ({_waveProvider.BufferLength / waveFormat.AverageBytesPerSecond}s)");
-
             _wasapiOut.Init(_waveProvider);
-
-            // Set default volume to full volume initially for debugging
             _wasapiOut.Volume = 1.0f;
-            Logger.Info($"?? WASAPI Volume: {_wasapiOut.Volume:F2}");
 
-            Logger.Info(
-                $"WASAPI initialized on device: '{device.FriendlyName}'. " +
-                $"Provider: {waveFormat.SampleRate}Hz, {waveFormat.BitsPerSample}-bit, {waveFormat.Channels}ch | " +
-                $"Device MixFormat: {device.AudioClient.MixFormat.SampleRate}Hz, " +
-                $"{device.AudioClient.MixFormat.BitsPerSample}-bit, {device.AudioClient.MixFormat.Channels}ch | " +
-                $"Buffer Length: {_waveProvider.BufferLength} bytes, Volume: {_wasapiOut.Volume}");
+            Logger.Info($"WASAPI initialized: {device.FriendlyName} ({waveFormat.SampleRate}Hz, {waveFormat.BitsPerSample}-bit, {waveFormat.Channels}ch)");
+#if DEBUG
+            Logger.Debug($"WASAPI buffer: {_waveProvider.BufferLength} bytes ({_waveProvider.BufferLength / waveFormat.AverageBytesPerSecond}s)");
+#endif
 
-            await Task.CompletedTask; // For consistency with async pattern
-        }
-
-        private async Task InitializeSimpleFallbackAsync()
-        {
-            _fallbackEngine = new SimpleAudioOutputEngine();
-            await _fallbackEngine.InitializeAsync();
-            Logger.Info("SimpleAudioOutputEngine initialized as fallback");
+            await Task.CompletedTask;
         }
 
         public void Start() 
         {
             try
             {
-                if (_useSimpleFallback)
-                {
-                    _fallbackEngine?.Start();
-                    StartFallbackPlaybackTask();
-                    Logger.Info("SimpleAudioOutputEngine fallback started");
-                }
-                else
-                {
-                    _wasapiOut?.Play();
-                    Logger.Info("WASAPI playback started");
-                }
+                _wasapiOut?.Play();
+                Logger.Info("Audio playback started (WASAPI)");
             }
             catch (Exception ex)
             {
@@ -121,17 +77,10 @@ namespace AeroDebrief.Core.Audio
         {
             try
             {
-                if (_useSimpleFallback)
-                {
-                    _ = StopFallbackPlaybackTaskAsync(); // Fire and forget to avoid blocking
-                    _fallbackEngine?.Stop();
-                    Logger.Info("SimpleAudioOutputEngine fallback stopped");
-                }
-                else
-                {
-                    _wasapiOut?.Stop();
-                    Logger.Info("WASAPI playback stopped");
-                }
+                _wasapiOut?.Stop();
+#if DEBUG
+                Logger.Debug("Audio playback stopped");
+#endif
             }
             catch (Exception ex)
             {
@@ -143,89 +92,70 @@ namespace AeroDebrief.Core.Audio
         {
             var clampedVolume = Math.Clamp(volume, 0.0f, 1.0f);
             
-            if (_useSimpleFallback)
+            if (_wasapiOut != null)
             {
-                _fallbackEngine?.SetMasterVolume(clampedVolume);
-                Logger.Info($"SimpleAudioOutputEngine volume set to: {clampedVolume:F2}");
+                lock (_wasapiLock)
+                {
+                    _wasapiOut.Volume = clampedVolume;
+                }
             }
-            else if (_wasapiOut != null)
-            {
-                _wasapiOut.Volume = clampedVolume;
-                Logger.Info($"WASAPI volume set to: {clampedVolume:F2}");
-            }
+            
+#if DEBUG
+            Logger.Debug($"Master volume set to {clampedVolume:F2}");
+#endif
         }
 
         public void ClearBuffer() 
         {
             try
             {
-                _isSeekInProgress = true; // Signal that we're seeking
+                _isSeekInProgress = true;
                 
-                if (_useSimpleFallback)
+                if (_waveProvider != null)
                 {
-                    // For fallback engine: clear the queue and stop/restart playback to flush buffers
-                    lock (_queueLock)
+                    lock (_wasapiLock)
                     {
-                        _audioQueue.Clear();
-                        Logger.Debug("SimpleAudioOutputEngine queue cleared");
-                    }
-                    
-                    // Restart the fallback engine to ensure all buffers are flushed
-                    try
-                    {
-                        _fallbackEngine?.Stop();
-                        Task.Delay(50).Wait(); // Small delay to let system flush
-                        _fallbackEngine?.Start();
-                        Logger.Debug("SimpleAudioOutputEngine restarted to flush buffers");
-                    }
-                    catch (Exception ex)
-                    {
-                        Logger.Warn(ex, "Error restarting SimpleAudioOutputEngine during buffer clear");
-                    }
-                }
-                else if (_waveProvider != null)
-                {
-                    // For WASAPI: clear the buffer and restart playback to flush system buffers
-                    var wasPlaying = _wasapiOut?.PlaybackState == PlaybackState.Playing;
-                    
-                    try
-                    {
-                        _wasapiOut?.Stop();
-                        _waveProvider.ClearBuffer();
-                        Logger.Debug("WASAPI buffer cleared");
+                        var wasPlaying = _wasapiOut?.PlaybackState == PlaybackState.Playing;
                         
-                        // Add a small delay to allow system to flush its internal buffers
-                        Task.Delay(100).Wait();
-                        
-                        if (wasPlaying)
+                        try
                         {
-                            _wasapiOut?.Play();
-                            Logger.Debug("WASAPI playback restarted after buffer clear");
+                            _wasapiOut?.Stop();
+                            _waveProvider.ClearBuffer();
+                            _ = Task.Delay(100);
+                            
+                            if (wasPlaying)
+                                _wasapiOut?.Play();
                         }
-                    }
-                    catch (Exception ex)
-                    {
-                        Logger.Warn(ex, "Error restarting WASAPI during buffer clear");
-                        // Try to restart anyway
-                        if (wasPlaying)
+                        catch (Exception ex)
                         {
-                            try { _wasapiOut?.Play(); } catch { }
+                            Logger.Warn("Error restarting WASAPI during buffer clear");
+#if DEBUG
+                            Logger.Debug(ex, "WASAPI restart details");
+#endif
+                            if (wasPlaying)
+                            {
+                                try { _wasapiOut?.Play(); } catch { }
+                            }
                         }
                     }
                 }
                 
-                Logger.Info("Audio buffers cleared and output restarted for seek operation");
+#if DEBUG
+                Logger.Debug("Audio buffers cleared for seek operation");
+#endif
             }
             catch (Exception ex)
             {
-                Logger.Warn(ex, "Error clearing audio buffer");
+                Logger.Warn("Error clearing audio buffer");
+#if DEBUG
+                Logger.Debug(ex, "Buffer clear details");
+#endif
             }
             finally
             {
-                // Add a delay before allowing new audio to prevent overlap
                 _ = Task.Run(async () =>
                 {
-                    await Task.Delay(150); // Allow time for system to fully flush
+                    await Task.Delay(150);
                     _isSeekInProgress = false;
                 });
             }
@@ -233,256 +163,182 @@ namespace AeroDebrief.Core.Audio
 
         public async Task WriteAudioAsync(byte[] audioData)
         {
-            if (audioData == null || audioData.Length == 0)
-            {
-                Logger.Trace("Skipping audio write: empty data");
-                return;
-            }
+            await WriteAudioAsync(audioData, isSilence: false, chunkEndTime: default, positionUpdater: null);
+        }
 
-            // Skip audio writes during seek operations to prevent old audio from playing
-            if (_isSeekInProgress)
-            {
-                Logger.Trace("Skipping audio write: seek in progress");
+        /// <summary>
+        /// Writes audio data to the output device with proper timing for both audio and silence
+        /// </summary>
+        /// <param name="audioData">Audio data to write</param>
+        /// <param name="isSilence">Whether this is a silence chunk (affects timing)</param>
+        /// <param name="chunkEndTime">End time of this chunk for position tracking during silence</param>
+        /// <param name="positionUpdater">Optional callback to update position during silence playback</param>
+        public async Task WriteAudioAsync(byte[] audioData, bool isSilence, TimeSpan chunkEndTime = default, Action<TimeSpan>? positionUpdater = null)
+        {
+            if (audioData == null || audioData.Length == 0 || _isSeekInProgress)
                 return;
-            }
 
             try
             {
-                // Log audio data statistics for debugging
                 _totalBytesWritten += audioData.Length;
-                _lastAudioWrite = DateTime.UtcNow;
-                
-                // Calculate audio statistics for logging using safe AudioHelpers
-                // Note: audioData should already be decoded PCM from AudioProcessingEngine.ProcessPacket()
-                // but we check format to be safe
-                short[] pcmSamples;
-                if (AudioHelpers.IsOpusEncodedByteArray(audioData))
+
+                // For silence chunks, enforce duration with incremental position updates
+                if (isSilence)
                 {
-                    // Unexpected: should have been decoded before reaching here
-                    Logger.Warn($"Received Opus-encoded audio data ({audioData.Length} bytes) - decoding now, but this indicates upstream issue");
-                    pcmSamples = AudioHelpers.DecodeAudioToPcm(audioData);
+                    var durationMs = (audioData.Length / 2.0) / Constants.OUTPUT_SAMPLE_RATE * 1000.0;
+                    Logger.Debug($"Playing silence chunk: {audioData.Length} bytes (~{durationMs:F1}ms)");
+                    
+                    // Update position incrementally during silence
+                    if (positionUpdater != null && chunkEndTime != default)
+                    {
+                        var startTime = chunkEndTime - TimeSpan.FromMilliseconds(durationMs);
+                        var updateIntervalMs = 20;
+                        var totalSteps = (int)(durationMs / updateIntervalMs);
+                        
+                        for (int step = 0; step < totalSteps && !_isSeekInProgress; step++)
+                        {
+                            await Task.Delay(updateIntervalMs);
+                            
+                            var progress = (step + 1) / (double)totalSteps;
+                            var currentPos = startTime + TimeSpan.FromMilliseconds(durationMs * progress);
+                            positionUpdater(currentPos);
+                        }
+                        
+                        if (!_isSeekInProgress)
+                        {
+                            positionUpdater(chunkEndTime);
+                        }
+                    }
+                    else
+                    {
+                        await Task.Delay((int)durationMs);
+                    }
+                    
+                    return;
                 }
-                else
-                {
-                    // Expected path: already decoded PCM bytes
-                    pcmSamples = AudioHelpers.ConvertBytesToPcm16(audioData);
-                }
+
+#if DEBUG
+                var pcmSamples = AudioHelpers.IsOpusEncodedByteArray(audioData) 
+                    ? AudioHelpers.DecodeAudioToPcm(audioData)
+                    : AudioHelpers.ConvertBytesToPcm16(audioData);
                 
                 var maxAmplitude = 0;
-                var nonZeroSamples = 0;
-                
                 foreach (var sample in pcmSamples)
                 {
-                    // Use safe Math.Abs that handles Int16.MinValue correctly
                     var absSample = sample == short.MinValue ? short.MaxValue : Math.Abs(sample);
                     maxAmplitude = Math.Max(maxAmplitude, absSample);
-                    if (absSample > 100) // Consider samples above background noise level
-                        nonZeroSamples++;
                 }
 
-                // Critical audio output log
-                var engineType = _useSimpleFallback ? "SimpleEngine" : "WASAPI";
-                var amplitudePercent = (maxAmplitude / 32767.0) * 100.0;
-                Logger.Info($"?? OUTPUT: {engineType} - {audioData.Length} bytes, " +
-                           $"amplitude: {maxAmplitude}/32767 ({amplitudePercent:F1}%), " +
-                           $"active: {nonZeroSamples}/{pcmSamples.Length}");
-
-                // Critical warning if no audio
+                Logger.Debug($"[WASAPI] Writing {audioData.Length} bytes, amplitude: {maxAmplitude}/32767");
+                
                 if (maxAmplitude == 0)
                 {
-                    Logger.Error($"? SILENT OUTPUT: All {pcmSamples.Length} samples are zero!");
+                    Logger.Warn($"Silent audio output detected ({pcmSamples.Length} samples) - consider marking as silence");
                 }
-                else if (maxAmplitude < 500)
-                {
-                    Logger.Warn($"??  QUIET OUTPUT: Max amplitude only {maxAmplitude}/32767 ({amplitudePercent:F1}%) - may be inaudible");
-                }
+#endif
 
-                // --- DEBUG: dump PCM bytes to WAV for inspection (post-conversion, pre-output)
-                DebugAudioDumper.DumpPcmBytesAsWav(audioData, Constants.OUTPUT_SAMPLE_RATE, "output_preplay");
-
-                if (_useSimpleFallback)
+                if (_waveProvider != null && !_isSeekInProgress)
                 {
-                    // Queue audio for the fallback engine (only if not seeking)
-                    if (!_isSeekInProgress)
+                    // Wait if buffer is too full
+                    while (!_isSeekInProgress && _waveProvider != null)
                     {
-                        lock (_queueLock)
+                        double bufferUsage;
+                        lock (_wasapiLock)
                         {
-                            _audioQueue.Enqueue((byte[])audioData.Clone());
+                            if (_waveProvider == null) break;
+                            bufferUsage = (_waveProvider.BufferedBytes / (double)_waveProvider.BufferLength) * 100.0;
                         }
-                        Logger.Debug($"Queued {audioData.Length} bytes for SimpleAudioOutputEngine, max amplitude: {maxAmplitude}, active samples: {nonZeroSamples}/{audioData.Length / 2}");
+                        
+                        if (bufferUsage < 70.0)
+                            break;
+                        
+                        await Task.Delay(5);
                     }
-                }
-                else
-                {
-                    // Use WASAPI (only if not seeking)
-                    if (_waveProvider != null && !_isSeekInProgress)
+                    
+                    // Write audio data
+                    lock (_wasapiLock)
                     {
+                        if (_waveProvider == null || _isSeekInProgress)
+                            return;
+
                         var availableBytes = _waveProvider.BufferLength - _waveProvider.BufferedBytes;
+                        var currentBufferUsage = (_waveProvider.BufferedBytes / (double)_waveProvider.BufferLength) * 100.0;
                         
                         if (availableBytes < audioData.Length)
                         {
-                            Logger.Warn($"WASAPI buffer overflow: need {audioData.Length} bytes, only {availableBytes} available. Buffer status: {_waveProvider.BufferedBytes}/{_waveProvider.BufferLength}");
-                            
-                            // Clear some old data to make room if buffer is too full
-                            if (_waveProvider.BufferedBytes > _waveProvider.BufferLength * 0.8)
+                            if (currentBufferUsage > 90)
                             {
+                                Logger.Warn($"Audio buffer critically full ({currentBufferUsage:F1}%), clearing to prevent overflow");
                                 _waveProvider.ClearBuffer();
-                                Logger.Info("Cleared WASAPI buffer due to overflow");
                             }
-                        }
-
-                        _waveProvider.AddSamples(audioData, 0, audioData.Length);
-                        
-                        // Detailed WASAPI write logging
-                        var bufferUsagePercent = (_waveProvider.BufferedBytes / (double)_waveProvider.BufferLength) * 100.0;
-                        var bufferTimeMs = (_waveProvider.BufferedBytes / (double)_waveProvider.WaveFormat.AverageBytesPerSecond) * 1000.0;
-                        
-                        Logger.Info($"?? WASAPI WRITE SUCCESS: " +
-                                   $"wrote {audioData.Length} bytes, " +
-                                   $"amplitude {maxAmplitude}/32767, " +
-                                   $"buffer: {_waveProvider.BufferedBytes}/{_waveProvider.BufferLength} ({bufferUsagePercent:F1}%, {bufferTimeMs:F0}ms), " +
-                                   $"playback: {_wasapiOut?.PlaybackState}");
-                        
-                        // Warn if buffer is getting too full
-                        if (bufferUsagePercent > 80)
-                        {
-                            Logger.Warn($"??  WASAPI buffer filling up: {bufferUsagePercent:F1}%");
-                        }
-                    }
-                }
-
-                // Log detailed statistics periodically
-                if (_totalBytesWritten % (48000 * 2) == 0) // Every ~1 second of audio
-                {
-                    Logger.Info($"Audio output stats ({(_useSimpleFallback ? "SimpleEngine" : "WASAPI")}): {_totalBytesWritten} total bytes, " +
-                               $"max amplitude: {maxAmplitude}/32767, active samples: {nonZeroSamples}/{audioData.Length / 2}");
-                }
-
-                // Warn if audio seems too quiet
-                if (maxAmplitude > 0 && maxAmplitude < 1000)
-                {
-                    Logger.Warn($"Audio amplitude seems low: max {maxAmplitude}/32767. Audio may be too quiet to hear.");
-                }
-
-                // Warn if no audio activity
-                if (nonZeroSamples == 0)
-                {
-                    Logger.Warn("No significant audio activity detected in this packet (all samples near zero)");
-                }
-
-            }
-            catch (Exception ex)
-            {
-                Logger.Error(ex, $"Failed to write audio data: {audioData?.Length} bytes");
-            }
-
-            await Task.CompletedTask; // For async consistency
-        }
-
-        private void StartFallbackPlaybackTask()
-        {
-            _playbackCts = new CancellationTokenSource();
-            _playbackTask = Task.Run(async () =>
-            {
-                Logger.Debug("Started SimpleAudioOutputEngine playback task");
-                
-                while (!_playbackCts.Token.IsCancellationRequested)
-                {
-                    try
-                    {
-                        byte[]? audioData = null;
-                        
-                        lock (_queueLock)
-                        {
-                            if (_audioQueue.Count > 0)
+                            else
                             {
-                                audioData = _audioQueue.Dequeue();
+#if DEBUG
+                                Logger.Debug($"Audio buffer full, skipping write ({currentBufferUsage:F1}%)");
+#endif
+                                return;
                             }
                         }
-                        
-                        if (audioData != null && !_isSeekInProgress)
-                        {
-                            await _fallbackEngine!.PlayAudioAsync(audioData);
-                        }
-                        else
-                        {
-                            // No audio data, wait a bit
-                            await Task.Delay(10, _playbackCts.Token);
-                        }
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        break;
-                    }
-                    catch (Exception ex)
-                    {
-                        Logger.Error(ex, "Error in SimpleAudioOutputEngine playback task");
-                        await Task.Delay(100, _playbackCts.Token);
-                    }
-                }
-                
-                Logger.Debug("SimpleAudioOutputEngine playback task ended");
-            }, _playbackCts.Token);
-        }
 
-        private async Task StopFallbackPlaybackTaskAsync()
-        {
-            try
-            {
-                _playbackCts?.Cancel();
-                
-                if (_playbackTask != null && !_playbackTask.IsCompleted)
-                {
-                    using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-                    await _playbackTask.WaitAsync(timeoutCts.Token);
+                        if (audioData.Length <= 0 || audioData.Length > _waveProvider.BufferLength)
+                        {
+                            Logger.Error($"Invalid audio data length: {audioData.Length}");
+                            return;
+                        }
+
+                        try
+                        {
+                            _waveProvider.AddSamples(audioData, 0, audioData.Length);
+                        }
+                        catch (Exception ex)
+                        {
+                            Logger.Error("Failed to add samples to audio buffer");
+#if DEBUG
+                            Logger.Debug(ex, $"Buffer state: {_waveProvider.BufferedBytes}/{_waveProvider.BufferLength}");
+#endif
+                            try { _waveProvider.ClearBuffer(); } catch { }
+                            return;
+                        }
+                        
+#if DEBUG
+                        var bufferTimeMs = (_waveProvider.BufferedBytes / (double)_waveProvider.WaveFormat.AverageBytesPerSecond) * 1000.0;
+                        if (currentBufferUsage > 85)
+                        {
+                            Logger.Debug($"Buffer filling: {currentBufferUsage:F1}% ({bufferTimeMs:F0}ms)");
+                        }
+#endif
+                    }
                 }
-            }
-            catch (OperationCanceledException)
-            {
-                Logger.Debug("SimpleAudioOutputEngine playback task cancellation completed");
             }
             catch (Exception ex)
             {
-                Logger.Warn(ex, "Error stopping SimpleAudioOutputEngine playback task");
+                Logger.Error("Failed to write audio data");
+#if DEBUG
+                Logger.Debug(ex, "Audio write details");
+#endif
             }
-            finally
-            {
-                _playbackCts?.Dispose();
-                _playbackCts = null;
-                _playbackTask = null;
-            }
-        }
 
-        private void StopFallbackPlaybackTask()
-        {
-            // Synchronous version - just fire and forget the async version
-            _ = StopFallbackPlaybackTaskAsync();
+            await Task.CompletedTask;
         }
 
         public void Dispose()
         {
             if (_disposed) return;
 
-            Logger.Info($"Disposing AudioOutputEngine ({(_useSimpleFallback ? "SimpleEngine" : "WASAPI")}). Total bytes written: {_totalBytesWritten}, last write: {_lastAudioWrite}");
+            Logger.Info($"Disposing audio output engine (wrote {_totalBytesWritten} bytes total)");
 
             try
             {
-                if (_useSimpleFallback)
-                {
-                    _ = StopFallbackPlaybackTaskAsync(); // Use async version to prevent blocking
-                    _fallbackEngine?.Dispose();
-                }
-                else
-                {
-                    _wasapiOut?.Stop();
-                    _wasapiOut?.Dispose();
-                }
-                
+                _wasapiOut?.Stop();
+                _wasapiOut?.Dispose();
                 _waveProvider = null;
             }
             catch (Exception ex)
             {
-                Logger.Warn(ex, "Error during AudioOutputEngine disposal");
+                Logger.Warn("Error during audio engine disposal");
+#if DEBUG
+                Logger.Debug(ex, "Disposal details");
+#endif
             }
 
             _disposed = true;

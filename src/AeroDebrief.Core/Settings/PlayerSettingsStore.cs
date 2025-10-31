@@ -6,6 +6,8 @@ using System.IO;
 using System.Threading;
 using NLog;
 using SharpConfig;
+using AeroDebrief.Core;
+using AeroDebrief.Core.Helpers;
 
 namespace AeroDebrief.Core.Settings
 {
@@ -77,6 +79,7 @@ namespace AeroDebrief.Core.Settings
 
         private PlayerSettingsStore()
         {
+            // Check for command-line override first
             var args = Environment.GetCommandLineArgs();
             foreach (var arg in args)
                 if (arg.Trim().StartsWith("-playercfg="))
@@ -86,18 +89,30 @@ namespace AeroDebrief.Core.Settings
                     Logger.Info($"Found -playercfg loading: {Path + ConfigFileName}");
                 }
 
+            // If no command-line override, use configs folder in application directory
+            if (string.IsNullOrEmpty(Path))
+            {
+                Path = System.IO.Path.Combine(AppContext.BaseDirectory, Constants.CONFIG_FOLDER);
+                if (!Directory.Exists(Path))
+                {
+                    Directory.CreateDirectory(Path);
+                    Logger.Info($"Created configs directory: {Path}");
+                }
+                Path = Path + System.IO.Path.DirectorySeparatorChar;
+            }
+
             try
             {
-                var count = 0;
-                while (IsFileLocked(new FileInfo(Path + ConfigFileName)) && count < 10)
+                var configPath = Path + ConfigFileName;
+                
+                // Use centralized file locking helper
+                if (!FileHelpers.WaitForFileUnlock(configPath, maxWaitMs: 2000, checkIntervalMs: 200))
                 {
-                    Logger.Warn($"Config file {Path + ConfigFileName} is locked. Waiting...");
-                    Thread.Sleep(200);
-                    count++;
+                    Logger.Warn($"Config file {configPath} remained locked after waiting");
                 }
 
-                _configuration = Configuration.LoadFromFile(Path + ConfigFileName);
-                Logger.Info($"Loaded player config from {Path + ConfigFileName}");
+                _configuration = Configuration.LoadFromFile(configPath);
+                Logger.Info($"Loaded player config from {configPath}");
                 
                 // Validate the loaded configuration
                 ValidateConfiguration();
@@ -209,23 +224,6 @@ namespace AeroDebrief.Core.Settings
             SetPlayerSetting(PlayerSettingKeys.WindowX, int.Parse(defaultPlayerSettings[PlayerSettingKeys.WindowX.ToString()]));
             SetPlayerSetting(PlayerSettingKeys.WindowY, int.Parse(defaultPlayerSettings[PlayerSettingKeys.WindowY.ToString()]));
             SetPlayerSetting(PlayerSettingKeys.SelectedTab, int.Parse(defaultPlayerSettings[PlayerSettingKeys.SelectedTab.ToString()]));
-        }
-
-        public static bool IsFileLocked(FileInfo file)
-        {
-            if (!file.Exists) return false;
-            try
-            {
-                using (var stream = file.Open(FileMode.Open, FileAccess.Read, FileShare.None))
-                {
-                    stream.Close();
-                }
-            }
-            catch (IOException)
-            {
-                return true;
-            }
-            return false;
         }
 
         private SharpConfig.Setting GetSetting(string section, string setting)

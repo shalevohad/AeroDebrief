@@ -47,22 +47,14 @@ namespace AeroDebrief.Core.Helpers
 
         /// <summary>
         /// Theme helpers: expose available theme files and apply/save a selected theme
-        /// These bridge ThemeManager and RecorderSettingsStore for the UI.
         /// </summary>
         public static IEnumerable<string> GetAvailableThemeFiles()
         {
             return ThemeManager.GetAvailableSchemeFiles();
         }
-        
-        public static string GetRecorderThemeFile()
-        {
-            // Return recorder setting only. Delegate/owner should fetch from the correct store (player or recorder).
-            return RecorderSettingsStore.Instance.GetRecorderSettingString(RecorderSettingKeys.ThemeFile);
-        }
 
         public static string GetPlayerThemeFile()
         {
-            // Return Player setting only. Delegate/owner should fetch from the correct store (player or recorder).
             return PlayerSettingsStore.Instance.GetPlayerSettingString(PlayerSettingKeys.ThemeFile);
         }
 

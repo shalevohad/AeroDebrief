@@ -5,6 +5,8 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Shapes;
 using AeroDebrief.UI.ViewModels;
+using AeroDebrief.UI.Helpers;
+using FontAwesome.WPF;
 
 namespace AeroDebrief.UI.Controls
 {
@@ -74,13 +76,7 @@ namespace AeroDebrief.UI.Controls
                     HorizontalAlignment = HorizontalAlignment.Center
                 };
 
-                var iconText = new TextBlock
-                {
-                    Text = "???",
-                    FontSize = 32,
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    Margin = new Thickness(0, 0, 0, 8)
-                };
+                var iconText = IconHelper.CreateFaIcon(FontAwesomeIcon.Music, 32, TryFindResource("TextSecondaryBrush") as Brush ?? Brushes.Gray);
 
                 var titleText = new TextBlock
                 {

@@ -1,6 +1,7 @@
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Models.Player;
 using AeroDebrief.Core.Models;
 using AeroDebrief.Core.Audio;
+using AeroDebrief.Core.IO;
 using NLog;
 
 namespace AeroDebrief.Core.Analysis
@@ -257,72 +258,68 @@ namespace AeroDebrief.Core.Analysis
             
             try
             {
-                using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
-                using var br = new BinaryReader(fs);
-
-                while (fs.Position < fs.Length && !cancellationToken.IsCancellationRequested)
+                Logger.Info($"Analyzing frequency modulations from: {filePath}");
+                
+                // Use centralized RecordingFileReader - eliminates duplicate header handling
+                foreach (var metadata in RecordingFileReader.EnumeratePackets(filePath, cancellationToken))
                 {
-                    if (AudioPacketMetadata.TryReadMetadata(br, out var metadata) && metadata != null)
+                    var modulation = Enum.IsDefined(typeof(Modulation), (int)metadata.Modulation) 
+                        ? (Modulation)metadata.Modulation 
+                        : Modulation.DISABLED;
+                    
+                    var key = (metadata.Frequency, modulation);
+                    
+                    // Create or get frequency-modulation combination
+                    if (!combinations.ContainsKey(key))
                     {
-                        var modulation = Enum.IsDefined(typeof(Modulation), (int)metadata.Modulation) 
-                            ? (Modulation)metadata.Modulation 
-                            : Modulation.DISABLED;
-                        
-                        var key = (metadata.Frequency, modulation);
-                        
-                        // Create or get frequency-modulation combination
-                        if (!combinations.ContainsKey(key))
-                        {
-                            combinations[key] = new FrequencyModulationInfo(metadata.Frequency, modulation);
-                        }
+                        combinations[key] = new FrequencyModulationInfo(metadata.Frequency, modulation);
+                    }
 
-                        // Track player statistics for this frequency-modulation-transmitter combination
-                        var playerKey = (metadata.Frequency, modulation, metadata.TransmitterGuid);
-                        if (!playerStats.ContainsKey(playerKey))
+                    // Track player statistics for this frequency-modulation-transmitter combination
+                    var playerKey = (metadata.Frequency, modulation, metadata.TransmitterGuid);
+                    if (!playerStats.ContainsKey(playerKey))
+                    {
+                        playerStats[playerKey] = new PlayerStatsCollector
                         {
-                            playerStats[playerKey] = new PlayerStatsCollector
+                            TransmitterGuid = metadata.TransmitterGuid,
+                            Name = metadata.PlayerData?.GetDisplayName() ?? metadata.TransmitterGuid,
+                            Coalition = metadata.PlayerData?.GetCoalitionName() ?? "Unknown",
+                            Aircraft = metadata.PlayerData?.AircraftInfo?.UnitType ?? "Unknown",
+                            FirstSeen = metadata.Timestamp,
+                            LastSeen = metadata.Timestamp,
+                            PacketCount = 1
+                        };
+                    }
+                    else
+                    {
+                        var stats = playerStats[playerKey];
+                        stats.PacketCount++;
+                        stats.LastSeen = metadata.Timestamp;
+                        
+                        // Update info if we got better data
+                        if (metadata.PlayerData != null)
+                        {
+                            var displayName = metadata.PlayerData.GetDisplayName();
+                            if (!string.IsNullOrEmpty(displayName) && displayName != metadata.TransmitterGuid)
                             {
-                                TransmitterGuid = metadata.TransmitterGuid,
-                                Name = metadata.PlayerData?.GetDisplayName() ?? metadata.TransmitterGuid,
-                                Coalition = metadata.PlayerData?.GetCoalitionName() ?? "Unknown",
-                                Aircraft = metadata.PlayerData?.AircraftInfo?.UnitType ?? "Unknown",
-                                FirstSeen = metadata.Timestamp,
-                                LastSeen = metadata.Timestamp,
-                                PacketCount = 1
-                            };
-                        }
-                        else
-                        {
-                            var stats = playerStats[playerKey];
-                            stats.PacketCount++;
-                            stats.LastSeen = metadata.Timestamp;
+                                stats.Name = displayName;
+                            }
                             
-                            // Update info if we got better data
-                            if (metadata.PlayerData != null)
+                            var coalition = metadata.PlayerData.GetCoalitionName();
+                            if (!string.IsNullOrEmpty(coalition) && coalition != "Unknown")
                             {
-                                var displayName = metadata.PlayerData.GetDisplayName();
-                                if (!string.IsNullOrEmpty(displayName) && displayName != metadata.TransmitterGuid)
-                                {
-                                    stats.Name = displayName;
-                                }
-                                
-                                var coalition = metadata.PlayerData.GetCoalitionName();
-                                if (!string.IsNullOrEmpty(coalition) && coalition != "Unknown")
-                                {
-                                    stats.Coalition = coalition;
-                                }
-                                
-                                var aircraft = metadata.PlayerData.AircraftInfo?.UnitType;
-                                if (!string.IsNullOrEmpty(aircraft) && aircraft != "Unknown")
-                                {
-                                    stats.Aircraft = aircraft;
-                                }
+                                stats.Coalition = coalition;
+                            }
+                            
+                            var aircraft = metadata.PlayerData.AircraftInfo?.UnitType;
+                            if (!string.IsNullOrEmpty(aircraft) && aircraft != "Unknown")
+                            {
+                                stats.Aircraft = aircraft;
                             }
                         }
-                        
-                        processedPackets++;
                     }
-                    else break;
+                    
+                    processedPackets++;
                 }
 
                 // Convert player statistics to FrequencyModulationInfo players
@@ -331,7 +328,7 @@ namespace AeroDebrief.Core.Analysis
                     var key = (freq, mod);
                     if (combinations.ContainsKey(key))
                     {
-                        var playerInfo = new PlayerFrequencyInfo
+                        var playerInfo = new Models.PlayerFrequencyInfo
                         {
                             Name = stats.Name,
                             TransmitterGuid = stats.TransmitterGuid,
@@ -344,7 +341,7 @@ namespace AeroDebrief.Core.Analysis
                         
                         // Create a new record with updated players list
                         var existingInfo = combinations[key];
-                        var updatedPlayers = new List<PlayerFrequencyInfo>(existingInfo.Players) { playerInfo };
+                        var updatedPlayers = new List<Models.PlayerFrequencyInfo>(existingInfo.Players) { playerInfo };
                         combinations[key] = existingInfo with { Players = updatedPlayers };
                     }
                 }
@@ -367,28 +364,24 @@ namespace AeroDebrief.Core.Analysis
         {
             try
             {
-                using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
-                using var br = new BinaryReader(fs);
-
+                Logger.Info($"Calculating duration for: {filePath}");
+                
                 DateTime? first = null, last = null;
                 TimeSpan lastDuration = TimeSpan.Zero;
                 var processedPackets = 0;
 
-                while (fs.Position < fs.Length)
+                // Use centralized RecordingFileReader - eliminates duplicate header handling
+                foreach (var metadata in RecordingFileReader.EnumeratePackets(filePath))
                 {
-                    if (AudioPacketMetadata.TryReadMetadata(br, out var metadata) && metadata != null)
+                    first ??= metadata.Timestamp;
+                    last = metadata.Timestamp;
+                    
+                    if (metadata.AudioPayload?.Length > 0)
                     {
-                        first ??= metadata.Timestamp;
-                        last = metadata.Timestamp;
-                        
-                        if (metadata.AudioPayload?.Length > 0)
-                        {
-                            int samples = metadata.AudioPayload.Length / 2;
-                            lastDuration = TimeSpan.FromSeconds((double)samples / metadata.SampleRate);
-                        }
-                        processedPackets++;
+                        int samples = metadata.AudioPayload.Length / 2;
+                        lastDuration = TimeSpan.FromSeconds((double)samples / metadata.SampleRate);
                     }
-                    else break;
+                    processedPackets++;
                 }
 
                 var totalDuration = first.HasValue && last.HasValue 
@@ -407,28 +400,8 @@ namespace AeroDebrief.Core.Analysis
 
         public static IEnumerable<AudioPacketMetadata> ReadAllPackets(string filePath, CancellationToken cancellationToken = default)
         {
-            using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
-            using var br = new BinaryReader(fs);
-
-            var processedPackets = 0;
-            while (fs.Position < fs.Length && !cancellationToken.IsCancellationRequested)
-            {
-                if (AudioPacketMetadata.TryReadMetadata(br, out var metadata) && metadata != null)
-                {
-                    processedPackets++;
-                    yield return metadata;
-                }
-                else 
-                {
-                    Logger.Debug($"Finished reading packets after processing {processedPackets} packets");
-                    yield break;
-                }
-            }
-            
-            if (cancellationToken.IsCancellationRequested)
-            {
-                Logger.Info($"Packet reading cancelled after processing {processedPackets} packets");
-            }
+            // Delegate to centralized RecordingFileReader - eliminates duplicate implementation
+            return RecordingFileReader.EnumeratePackets(filePath, cancellationToken);
         }
 
         /// <summary>

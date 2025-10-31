@@ -31,7 +31,12 @@ namespace AeroDebrief.Core{
                 LineOfSightLoss = 0.0f,
                 Name = string.IsNullOrEmpty(name) ? ("RecordingClient_" + Environment.MachineName) : name,
             };
-            Logger.Info($"RecordingClientState re-initialized with GUID {_instance.ClientGuid} and name {_instance.Name}");
+            
+#if DEBUG
+            Logger.Debug($"RecordingClient initialized: {_instance.ClientGuid} ({_instance.Name})");
+#else
+            Logger.Info($"Recording client initialized: {_instance.Name}");
+#endif
 
             return _instance;
         }

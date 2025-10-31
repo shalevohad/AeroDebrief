@@ -6,6 +6,7 @@ using NLog;
 using System.Timers;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Models.EventMessages;
 using System.Net;
+using System.Text;
 using System.Collections.Concurrent;
 using SRSTCPClientStatusMessage = Ciribob.DCS.SimpleRadio.Standalone.Common.Models.EventMessages.TCPClientStatusMessage;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Models.Player;
@@ -123,13 +124,84 @@ namespace AeroDebrief.Core{
             }
 
             var settings = RecorderSettingsStore.Instance;
-            _outputFile = filePath ?? settings.GetRecorderSettingString(RecorderSettingKeys.RecordingFile);
+            var requestedPath = filePath ?? settings.GetRecorderSettingString(RecorderSettingKeys.RecordingFile);
+
+            // Build an output filename that includes server IP, port and start timestamp
+            var ipForName = _serverEndpoint?.Address.ToString() ?? settings.GetRecorderSettingString(RecorderSettingKeys.ServerIp) ?? string.Empty;
+            var portForName = _serverEndpoint?.Port ?? settings.GetRecorderSettingInt(RecorderSettingKeys.ServerPort);
+            var startTime = DateTime.UtcNow;
+            var timestampForName = startTime.ToString("yyyyMMddTHHmmssZ");
+
+            // Sanitize pieces for filename
+            string Sanitize(string s)
+            {
+                if (string.IsNullOrEmpty(s)) return string.Empty;
+                var invalid = Path.GetInvalidFileNameChars();
+                var sb = new StringBuilder(s.Length);
+                foreach (var c in s)
+                {
+                    if (invalid.Contains(c) || c == ':' || c == '\\' || c == '/')
+                        sb.Append('-');
+                    else
+                        sb.Append(c);
+                }
+                return sb.ToString();
+            }
+
+            var dir = Path.GetDirectoryName(requestedPath) ?? string.Empty;
+            var baseName = Path.GetFileNameWithoutExtension(requestedPath) ?? "recording";
+            var ext = Path.GetExtension(requestedPath);
+            // Use .adb extension for recording files
+            if (string.IsNullOrEmpty(ext) || !ext.Equals(".adb", StringComparison.OrdinalIgnoreCase))
+                ext = ".adb";
+
+            var sanitizedIp = Sanitize(ipForName);
+            var sanitizedBase = Sanitize(baseName);
+
+            var finalName = $"{sanitizedBase}_srv_{sanitizedIp}_{portForName}_t{timestampForName}{ext}";
+            _outputFile = string.IsNullOrEmpty(dir) ? finalName : Path.Combine(dir, finalName);
+
             Logger.Info($"Starting recording to file: {_outputFile}");
 
             try
             {
                 _fileStream = new FileStream(_outputFile, FileMode.Create, FileAccess.Write);
                 _recordingCts = new CancellationTokenSource();
+
+                // Write a small header to the recording file so CLI/players can know which server
+                // this recording originated from and when it started.
+                try
+                {
+                    var ip = _serverEndpoint?.Address.ToString() ?? settings.GetRecorderSettingString(RecorderSettingKeys.ServerIp) ?? string.Empty;
+                    var portVal = _serverEndpoint?.Port ?? settings.GetRecorderSettingInt(RecorderSettingKeys.ServerPort);
+                    var startTicks = startTime.Ticks;
+
+                    var headerStartPos = _fileStream!.Position;
+                    
+                    using var bw = new BinaryWriter(_fileStream!, Encoding.UTF8, leaveOpen: true);
+                    
+                    // CRITICAL: BinaryWriter.Write(string) automatically writes length-prefix
+                    // Format: [length:7-bit-encoded-int][string-bytes]
+                    // This is read by BinaryReader.ReadString() which expects this format
+                    bw.Write(Constants.RECORDING_FILE_MAGIC);  // e.g., "AERO_REC_V1"
+                    bw.Write(ip);                               // Server IP
+                    bw.Write(portVal);                          // Port (int32)
+                    bw.Write(startTicks);                       // Start time (int64 ticks)
+                    
+                    var headerEndPos = _fileStream.Position;
+                    var headerSize = headerEndPos - headerStartPos;
+
+                    Logger.Info($"? Recording header written successfully:");
+                    Logger.Info($"   Magic: '{Constants.RECORDING_FILE_MAGIC}'");
+                    Logger.Info($"   Server: {ip}:{portVal}");
+                    Logger.Info($"   Start: {new DateTime(startTicks, DateTimeKind.Utc):o}");
+                    Logger.Info($"   Header size: {headerSize} bytes (position: {headerStartPos} -> {headerEndPos})");
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error(ex, "Failed to write recording header to file - file may not be readable!");
+                    throw; // CRITICAL: Don't continue if header write fails
+                }
 
                 _writerRunning = true;
                 _writerTask = Task.Run(() => WriterLoop(_recordingCts.Token));

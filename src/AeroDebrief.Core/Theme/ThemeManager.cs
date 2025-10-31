@@ -34,8 +34,8 @@ namespace AeroDebrief.Core{
 
         static ThemeManager()
         {
-            // Default themes folder is next to the application executable in "themes"
-            ThemesFolder = System.IO.Path.Combine(AppContext.BaseDirectory, "themes");
+            // Themes folder is now under configs/themes using central constant
+            ThemesFolder = System.IO.Path.Combine(AppContext.BaseDirectory, Constants.CONFIG_FOLDER, "themes");
             if (!Directory.Exists(ThemesFolder)) Directory.CreateDirectory(ThemesFolder);
 
             // Ensure built-in defaults exist

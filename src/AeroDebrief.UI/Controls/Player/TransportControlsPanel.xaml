@@ -1,0 +1,106 @@
+<UserControl x:Class="AeroDebrief.UI.Controls.Player.TransportControlsPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:fa="http://schemas.fontawesome.io/icons/"
+             mc:Ignorable="d" 
+             d:DesignHeight="200" d:DesignWidth="80"
+             Focusable="True">
+    
+    <UserControl.Resources>
+        <!-- Icon Button Style -->
+        <Style x:Key="TransportIconButton" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Foreground" Value="#1976D2"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Width" Value="44"/>
+            <Setter Property="Height" Value="44"/>
+            <Setter Property="Margin" Value="0,4"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                Padding="{TemplateBinding Padding}"
+                                CornerRadius="22">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                            VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#141976D2"/>
+                    <Setter Property="Foreground" Value="#2196F3"/>
+                </Trigger>
+                <Trigger Property="IsPressed" Value="True">
+                    <Setter Property="Background" Value="#281976D2"/>
+                    <Setter Property="Foreground" Value="#0D47A1"/>
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Foreground" Value="#BDBDBD"/>
+                    <Setter Property="Opacity" Value="0.5"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+    </UserControl.Resources>
+    
+    <!-- Transport Controls Container -->
+    <StackPanel x:Name="ControlsContainer"
+                Orientation="{Binding Orientation, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Background="Transparent">
+        
+        <!-- Play/Pause Button -->
+        <Button x:Name="PlayPauseButton"
+                Style="{StaticResource TransportIconButton}"
+                Click="PlayPauseButton_Click"
+                IsEnabled="{Binding CanPlay, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                ToolTip="Play/Pause (Space)">
+            <fa:FontAwesome x:Name="PlayPauseIcon" 
+                          Icon="Play" 
+                          FontSize="24"/>
+        </Button>
+        
+        <!-- Stop Button -->
+        <Button x:Name="StopButton"
+                Style="{StaticResource TransportIconButton}"
+                Click="StopButton_Click"
+                IsEnabled="{Binding CanStop, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                ToolTip="Stop (Escape)">
+            <fa:FontAwesome x:Name="StopIcon" 
+                          Icon="Stop" 
+                          FontSize="24" 
+                          Foreground="#D32F2F"/>
+        </Button>
+        
+        <!-- Skip Backward Button (Optional - can be hidden) -->
+        <Button x:Name="SkipBackwardButton"
+                Style="{StaticResource TransportIconButton}"
+                Click="SkipBackwardButton_Click"
+                IsEnabled="{Binding CanSeek, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                ToolTip="Skip Backward 10s (Left Arrow)"
+                Visibility="{Binding ShowSkipButtons, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource BoolToVisibilityConverter}}">
+            <fa:FontAwesome Icon="Backward" 
+                          FontSize="20"/>
+        </Button>
+        
+        <!-- Skip Forward Button (Optional - can be hidden) -->
+        <Button x:Name="SkipForwardButton"
+                Style="{StaticResource TransportIconButton}"
+                Click="SkipForwardButton_Click"
+                IsEnabled="{Binding CanSeek, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                ToolTip="Skip Forward 10s (Right Arrow)"
+                Visibility="{Binding ShowSkipButtons, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource BoolToVisibilityConverter}}">
+            <fa:FontAwesome Icon="Forward" 
+                          FontSize="20"/>
+        </Button>
+    </StackPanel>
+</UserControl>

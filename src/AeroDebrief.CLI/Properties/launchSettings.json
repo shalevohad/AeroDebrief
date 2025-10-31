@@ -1,0 +1,11 @@
+{
+  "profiles": {
+    "AeroDebrief.CLI": {
+      "commandName": "Project"
+    },
+    "PreFlight": {
+      "commandName": "Project",
+      "commandLineArgs": "88.99.165.102 5072"
+    }
+  }
+}

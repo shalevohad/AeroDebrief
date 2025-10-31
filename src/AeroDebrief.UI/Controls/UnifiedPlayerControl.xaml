@@ -1,0 +1,105 @@
+﻿<UserControl x:Class="AeroDebrief.UI.Controls.UnifiedPlayerControl"
+         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+         xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+         xmlns:local="clr-namespace:AeroDebrief.UI.Controls"
+         xmlns:player="clr-namespace:AeroDebrief.UI.Controls.Player"
+         xmlns:vm="clr-namespace:AeroDebrief.UI.ViewModels"
+         mc:Ignorable="d" 
+         d:DesignHeight="800" d:DesignWidth="1200"
+         Background="{StaticResource PrimaryBackgroundBrush}"
+         d:DataContext="{d:DesignInstance Type=vm:UnifiedPlayerViewModel, IsDesignTimeCreatable=True}">
+    
+<Grid Margin="16">
+    <Grid.RowDefinitions>
+        <RowDefinition Height="Auto"/> <!-- Header -->
+        <RowDefinition Height="*"/>    <!-- Main content -->
+    </Grid.RowDefinitions>
+    
+    <!-- HEADER SECTION - Now using PlayerHeaderControl component -->
+    <player:PlayerHeaderControl Grid.Row="0"
+                               StatusMessage="{Binding StatusMessage}"
+                               SourceName="{Binding CurrentSourceName}"
+                               CurrentMode="{Binding CurrentMode}"
+                               IsIdle="{Binding IsIdle}"
+                               ChangeSourceCommand="{Binding ChangeSourceCommand}"
+                               OpenSettingsCommand="{Binding OpenSettingsCommand}"
+                               SourceTypeSelected="OnSourceTypeSelected"
+                               FilePanelRequested="OnFilePanelRequested"/>
+    
+    <!-- MAIN CONTENT AREA -->
+    <Grid Grid.Row="1">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto"/> <!-- Transport controls -->
+            <ColumnDefinition Width="*" MinWidth="400"/> <!-- Waveform -->
+            <ColumnDefinition Width="8"/> <!-- Splitter -->
+            <ColumnDefinition Width="350" MinWidth="250" MaxWidth="500"/> <!-- Mixer -->
+        </Grid.ColumnDefinitions>
+        
+        <!-- TRANSPORT CONTROLS - Now using TransportControlsPanel component -->
+        <player:TransportControlsPanel Grid.Column="0"
+                                      IsPlaying="{Binding IsPlaying}"
+                                      IsPaused="{Binding IsPaused}"
+                                      CanPlay="{Binding CanExecutePlay}"
+                                      CanPause="{Binding CanExecutePause}"
+                                      CanStop="{Binding CanExecuteStop}"
+                                      Orientation="Vertical"
+                                      ShowSkipButtons="False"
+                                      EnableKeyboardShortcuts="True"
+                                      PlayRequested="OnPlayRequested"
+                                      PauseRequested="OnPauseRequested"
+                                      StopRequested="OnStopRequested"
+                                      Margin="0,0,8,0"/>
+        
+        <!-- WAVEFORM DISPLAY - Now using WaveformDisplayPanel component -->
+        <player:WaveformDisplayPanel Grid.Column="1"
+                                    x:Name="WaveformPanel"
+                                    WaveformData="{Binding WaveformData}"
+                                    FrequencyWaveforms="{Binding FrequencyWaveforms}"
+                                    PlayheadPosition="{Binding PlayheadPositionNormalized}"
+                                    ZoomStartTime="{Binding ZoomStartTime, Mode=TwoWay}"
+                                    ZoomEndTime="{Binding ZoomEndTime, Mode=TwoWay}"
+                                    TotalDuration="{Binding TotalDuration}"
+                                    IsLoading="{Binding IsLoadingWaveform}"
+                                    LoadingProgress="{Binding WaveformGenerationProgress}"
+                                    EngineType="{Binding WaveformEngineText}"
+                                    IsUsingGpu="{Binding IsUsingGpu}"
+                                    BufferStartPosition="{Binding BufferStartPosition}"
+                                    BufferEndPosition="{Binding BufferEndPosition}"
+                                    ShowEngineStatus="True"
+                                    ShowZoomControls="True"
+                                    ShowMinimap="True"
+                                    MinimapHeight="80"
+                                    SeekRequested="OnSeekRequested"
+                                    ZoomChanged="OnZoomChanged"
+                                    WaveformSizeChanged="OnWaveformSizeChanged"/>
+        
+        <!-- GRID SPLITTER -->
+        <GridSplitter Grid.Column="2" 
+                     Width="2"
+                     HorizontalAlignment="Center" 
+                     VerticalAlignment="Stretch"
+                     Background="{StaticResource BorderBrush}"/>
+        
+        <!-- FREQUENCY MIXER - Now using FrequencyMixerPanel component -->
+        <player:FrequencyMixerPanel Grid.Column="3"
+                                   Frequencies="{Binding Frequencies}"
+                                   SelectAllCommand="{Binding SelectAllFrequenciesCommand}"
+                                   SelectNoneCommand="{Binding SelectNoFrequenciesCommand}"
+                                   FrequencySelectionChanged="OnFrequencySelectionChanged"
+                                   MixerValueChanged="OnMixerValueChanged"
+                                   MixerBooleanChanged="OnMixerBooleanChanged"/>
+    </Grid>
+    
+    <!-- FILE SOURCE PANEL OVERLAY - Now using FileSourcePanelOverlay component -->
+    <player:FileSourcePanelOverlay Grid.Row="0" Grid.RowSpan="2"
+                                  x:Name="FileOverlay"
+                                  IsOpen="{Binding IsFileSourcePanelOpen, Mode=TwoWay}"
+                                  PanelWidth="400"
+                                  PanelTitle="Select Recording File"
+                                  EnableKeyboardShortcuts="True"
+                                  CloseOnClickOutside="True"
+                                  PanelClosed="OnFileSourcePanelClosed"/>
+</Grid>
+</UserControl>

@@ -113,7 +113,9 @@ namespace AeroDebrief.Core.Helpers
                 }
             }
 
-            Logger.Debug($"Resampled audio from {inputSampleRate}Hz to {outputSampleRate}Hz: {inputAudio.Length} -> {outputLength} samples");
+#if DEBUG
+            Logger.Debug($"Resampled audio: {inputSampleRate}Hz -> {outputSampleRate}Hz ({inputAudio.Length} -> {outputLength} samples)");
+#endif
             return outputAudio;
         }
 
@@ -144,36 +146,22 @@ namespace AeroDebrief.Core.Helpers
             if (audioData == null || audioData.Length == 0)
                 return false;
 
-            // Multiple detection methods for robustness
-            
-            // Method 1: Size-based heuristic
-            // PCM audio for 20ms at 48kHz mono 16-bit = 1920 bytes
-            // OPUS for same duration is typically 60-200 bytes
-            const int expectedPcmSize = Constants.OUTPUT_SAMPLE_RATE * Constants.OPUS_FRAME_DURATION_MS / 1000 * 2; // 1920 bytes
-            const int opusMaxSize = 400; // Conservative threshold
+            // Size-based heuristic: PCM=1920 bytes, OPUS=60-400 bytes
+            const int expectedPcmSize = Constants.OUTPUT_SAMPLE_RATE * Constants.OPUS_FRAME_DURATION_MS / 1000 * 2;
+            const int opusMaxSize = 400;
             
             if (audioData.Length <= opusMaxSize && audioData.Length < expectedPcmSize / 3)
-            {
-                //Logger.Debug($"Detected OPUS by size: {audioData.Length} bytes (expected PCM: {expectedPcmSize})");
                 return true;
-            }
 
-            // Method 2: Check for OPUS header patterns (first few bytes)
-            // OPUS packets often start with specific bit patterns
+            // Check for OPUS header patterns
             if (audioData.Length >= 2)
             {
                 byte firstByte = audioData[0];
-                // Check for OPUS configuration bits in first byte
-                // This is a simplified check - OPUS has complex headers
-                if ((firstByte & 0x80) != 0) // Check if it looks like OPUS config
-                {
-                    //Logger.Debug($"Detected OPUS by header pattern: 0x{firstByte:X2}");
+                if ((firstByte & 0x80) != 0)
                     return true;
-                }
             }
 
-            // Method 3: Fallback - assume smaller packets are OPUS
-            return audioData.Length < 500; // Conservative threshold
+            return audioData.Length < 500;
         }
 
         #endregion
@@ -181,7 +169,7 @@ namespace AeroDebrief.Core.Helpers
         #region Opus Decoding
 
         /// <summary>
-        /// Decodes audio payload to PCM Int16 samples, automatically detecting format (Opus or raw PCM)
+        /// Decodes audio payload to PCM Int16 samples, automatically detecting format
         /// </summary>
         /// <param name="audioData">Audio data (Opus-encoded or raw PCM bytes)</param>
         /// <returns>PCM Int16 samples</returns>
@@ -190,15 +178,10 @@ namespace AeroDebrief.Core.Helpers
             if (audioData == null || audioData.Length == 0)
                 return Array.Empty<short>();
 
-            // Auto-detect format and decode
             if (IsOpusEncodedByteArray(audioData))
-            {
                 return DecodeOpusToPcm(audioData);
-            }
             else
-            {
                 return ConvertBytesToPcm16(audioData);
-            }
         }
 
         /// <summary>
@@ -211,31 +194,66 @@ namespace AeroDebrief.Core.Helpers
             if (opusData == null || opusData.Length == 0)
                 return Array.Empty<short>();
 
+            // Safety check: reject suspiciously large packets
+            if (opusData.Length > 2000)
+            {
+#if DEBUG
+                Logger.Warn($"Opus packet too large ({opusData.Length} bytes), skipping to prevent decoder crash");
+#endif
+                return Array.Empty<short>();
+            }
+
             try
             {
                 using var decoder = Ciribob.DCS.SimpleRadio.Standalone.Common.Audio.Opus.Core.OpusDecoder.Create(
-                    Constants.OUTPUT_SAMPLE_RATE, 1); // 48kHz mono
+                    Constants.OUTPUT_SAMPLE_RATE, 1);
                 
-                // CRITICAL FIX: Match SimpleRawExport's FEC setting for consistent decoding
                 decoder.ForwardErrorCorrection = false;
 
-                // Allocate buffer for decoded PCM (max 120ms = 5760 samples @ 48kHz)
-                var pcmBuffer = new short[Constants.OPUS_FRAME_SIZE * 6]; // Conservative size
+                var pcmBuffer = new short[Constants.OPUS_FRAME_SIZE * 6];
+                
+                if (pcmBuffer.Length == 0)
+                {
+#if DEBUG
+                    Logger.Error("PCM buffer has zero length");
+#endif
+                    return Array.Empty<short>();
+                }
+
                 var samplesDecoded = decoder.DecodeShort(opusData, pcmBuffer, pcmBuffer.Length, false);
+
+                if (samplesDecoded < 0)
+                {
+#if DEBUG
+                    Logger.Warn($"Opus decoder returned negative sample count: {samplesDecoded}");
+#endif
+                    return Array.Empty<short>();
+                }
+
+                if (samplesDecoded > pcmBuffer.Length)
+                {
+                    Logger.Error($"Opus decoder buffer overflow prevented: {samplesDecoded} > {pcmBuffer.Length}");
+                    return Array.Empty<short>();
+                }
 
                 if (samplesDecoded > 0)
                 {
                     var result = new short[samplesDecoded];
                     Array.Copy(pcmBuffer, result, samplesDecoded);
-                    //Logger.Debug($"Decoded Opus packet: {opusData.Length} bytes -> {samplesDecoded} samples");
                     return result;
                 }
 
+#if DEBUG
                 Logger.Warn($"Opus decoder returned 0 samples for {opusData.Length} bytes");
+#endif
             }
             catch (Exception ex)
             {
-                Logger.Warn(ex, $"Failed to decode Opus packet (size: {opusData.Length} bytes), returning empty");
+#if DEBUG
+                Logger.Warn(ex, $"Failed to decode Opus packet ({opusData.Length} bytes)");
+#else
+                Logger.Warn($"Failed to decode audio packet ({opusData.Length} bytes)");
+#endif
             }
 
             return Array.Empty<short>();
@@ -253,7 +271,9 @@ namespace AeroDebrief.Core.Helpers
 
             if (pcmBytes.Length % 2 != 0)
             {
-                Logger.Warn($"PCM byte array has odd length ({pcmBytes.Length}), truncating last byte");
+#if DEBUG
+                Logger.Warn($"PCM byte array has odd length ({pcmBytes.Length}), truncating");
+#endif
             }
 
             var sampleCount = pcmBytes.Length / 2;
@@ -283,23 +303,28 @@ namespace AeroDebrief.Core.Helpers
         }
 
         /// <summary>
-        /// Calculates normalized amplitude (0.0 to 1.0) from PCM Int16 samples
+        /// Calculates normalized peak amplitude (0.0 to 1.0) from PCM Int16 samples
         /// </summary>
         /// <param name="pcmSamples">PCM Int16 samples</param>
-        /// <returns>Normalized amplitude in range [0.0, 1.0]</returns>
+        /// <returns>Normalized peak amplitude in range [0.0, 1.0]</returns>
         public static float CalculateNormalizedAmplitude(short[] pcmSamples)
         {
             if (pcmSamples == null || pcmSamples.Length == 0)
                 return 0f;
 
-            double totalAmplitude = 0.0;
+            // Calculate peak amplitude (maximum absolute value)
+            int maxAmplitude = 0;
             foreach (var sample in pcmSamples)
             {
                 // Cast to int before taking Abs to avoid Int16.MinValue negation overflow
-                totalAmplitude += Math.Abs((int)sample);
+                int absSample = Math.Abs((int)sample);
+                maxAmplitude = Math.Max(maxAmplitude, absSample);
             }
 
-            return (float)(totalAmplitude / pcmSamples.Length / 32768.0);
+            // Normalize to [0.0, 1.0] range
+            var normalized = maxAmplitude / 32768.0f;
+            
+            return normalized;
         }
 
         #endregion
@@ -317,7 +342,7 @@ namespace AeroDebrief.Core.Helpers
         {
             try
             {
-                Logger.Info($"Exporting audio from {sourceFilePath} to {outputWavPath}");
+                Logger.Info($"Exporting audio to WAV: {System.IO.Path.GetFileName(outputWavPath)}");
                 
                 var audioData = new List<float>();
                 var packetsProcessed = 0;
@@ -333,12 +358,10 @@ namespace AeroDebrief.Core.Helpers
                     {
                         if (packet.AudioPayload?.Length > 0)
                         {
-                            // Decode audio automatically (handles both Opus and raw PCM)
                             var pcmSamples = DecodeAudioToPcm(packet.AudioPayload);
                             
                             if (pcmSamples.Length > 0)
                             {
-                                // Convert PCM Int16 to float for accumulation
                                 var floatSamples = new float[pcmSamples.Length];
                                 for (int i = 0; i < pcmSamples.Length; i++)
                                 {
@@ -360,14 +383,13 @@ namespace AeroDebrief.Core.Helpers
                 
                 if (audioData.Count > 0)
                 {
-                    // Convert to PCM16 and write WAV file
                     var pcmData = AudioConverter.FloatToPcm16(audioData.ToArray());
                     
                     using var waveFileWriter = new WaveFileWriter(outputWavPath, 
                         new WaveFormat(Constants.OUTPUT_SAMPLE_RATE, 16, 1));
                     waveFileWriter.Write(pcmData, 0, pcmData.Length);
                     
-                    Logger.Info($"Exported {audioData.Count} samples from {packetsProcessed} packets ({opusPacketsDecoded} Opus, {pcmPacketsProcessed} PCM) to {outputWavPath}");
+                    Logger.Info($"Exported {packetsProcessed} packets ({opusPacketsDecoded} Opus, {pcmPacketsProcessed} PCM) to WAV");
                 }
                 else
                 {
@@ -377,7 +399,7 @@ namespace AeroDebrief.Core.Helpers
             }
             catch (Exception ex)
             {
-                Logger.Error(ex, $"Failed to export audio to WAV: {outputWavPath}");
+                Logger.Error(ex, "Failed to export audio to WAV");
                 throw;
             }
         }
@@ -404,7 +426,6 @@ namespace AeroDebrief.Core.Helpers
                     {
                         if (packet.AudioPayload?.Length > 0)
                         {
-                            // Decode audio (handles both Opus and PCM)
                             var pcmSamples = DecodeAudioToPcm(packet.AudioPayload);
                             totalSamples += pcmSamples.Length;
                             packetsAnalyzed++;
@@ -415,19 +436,19 @@ namespace AeroDebrief.Core.Helpers
                 
                 if (totalSamples > 0)
                 {
-                    // WAV file size = header (44 bytes) + (samples * 2 bytes per sample for 16-bit)
                     const int wavHeaderSize = 44;
-                    var estimatedSize = wavHeaderSize + (totalSamples * 2);
-                    
-                    Logger.Debug($"Estimated WAV export size: {estimatedSize} bytes from {totalSamples} samples in {packetsAnalyzed} packets");
-                    return estimatedSize;
+                    return wavHeaderSize + (totalSamples * 2);
                 }
                 
-                return -1; // No exportable data found
+                return -1;
             }
             catch (Exception ex)
             {
-                Logger.Error(ex, $"Failed to estimate WAV export size for: {sourceFilePath}");
+#if DEBUG
+                Logger.Error(ex, "Failed to estimate WAV export size");
+#else
+                Logger.Warn("Failed to estimate WAV export size");
+#endif
                 return -1;
             }
         }

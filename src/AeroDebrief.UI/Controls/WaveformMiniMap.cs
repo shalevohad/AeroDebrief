@@ -103,11 +103,19 @@ namespace AeroDebrief.UI.Controls
         public event EventHandler<MarkerEventArgs>? MarkerClicked;
 
         private Rectangle? _viewportIndicator;
+        private TextBlock? _viewportStartTime;
+        private TextBlock? _viewportEndTime;
         private Line? _playheadLine;
+        private TextBlock? _playheadTimeText;
         private bool _isDraggingViewport;
+        private bool _isResizingLeft;
+        private bool _isResizingRight;
         private Point _dragStartPoint;
         private double _dragStartZoomStart;
         private double _dragStartZoomEnd;
+        private DateTime _lastDragEventTime = DateTime.MinValue;
+        private const double ResizeEdgeThreshold = 8; // Pixels from edge to consider as resize area
+        private const int DragThrottleMs = 50; // Throttle drag events to max 20 per second
 
         // Zoom history management
         private readonly Stack<ZoomHistoryEntry> _zoomHistory = new();
@@ -290,7 +298,30 @@ namespace AeroDebrief.UI.Controls
                 var viewportLeft = Canvas.GetLeft(_viewportIndicator);
                 var viewportRight = viewportLeft + _viewportIndicator.Width;
 
-                if (position.X >= viewportLeft && position.X <= viewportRight)
+                // Check if near left edge (resize left)
+                if (Math.Abs(position.X - viewportLeft) < ResizeEdgeThreshold)
+                {
+                    _isResizingLeft = true;
+                    _dragStartPoint = position;
+                    _dragStartZoomStart = ZoomStartTime;
+                    _dragStartZoomEnd = ZoomEndTime;
+                    CaptureMouse();
+                    Cursor = Cursors.SizeWE;
+                    return;
+                }
+                // Check if near right edge (resize right)
+                else if (Math.Abs(position.X - viewportRight) < ResizeEdgeThreshold)
+                {
+                    _isResizingRight = true;
+                    _dragStartPoint = position;
+                    _dragStartZoomStart = ZoomStartTime;
+                    _dragStartZoomEnd = ZoomEndTime;
+                    CaptureMouse();
+                    Cursor = Cursors.SizeWE;
+                    return;
+                }
+                // Check if inside viewport (move)
+                else if (position.X >= viewportLeft && position.X <= viewportRight)
                 {
                     // Start dragging viewport
                     _isDraggingViewport = true;
@@ -353,37 +384,104 @@ namespace AeroDebrief.UI.Controls
 
         private void OnMouseMove(object sender, MouseEventArgs e)
         {
-            if (!_isDraggingViewport)
-                return;
-
             var currentPosition = e.GetPosition(this);
-            var deltaX = currentPosition.X - _dragStartPoint.X;
-            var deltaNormalized = deltaX / ActualWidth;
 
-            var newStartTime = Math.Clamp(_dragStartZoomStart + deltaNormalized, 0.0, 1.0);
-            var newEndTime = Math.Clamp(_dragStartZoomEnd + deltaNormalized, 0.0, 1.0);
+            // Throttle drag events to prevent overwhelming the zoom system
+            var now = DateTime.UtcNow;
+            var shouldThrottle = (now - _lastDragEventTime).TotalMilliseconds < DragThrottleMs;
 
-            // Ensure we don't exceed boundaries
-            var zoomRange = ZoomEndTime - ZoomStartTime;
-            if (newEndTime > 1.0)
+            // Handle viewport resizing
+            if (_isResizingLeft)
             {
-                newEndTime = 1.0;
-                newStartTime = 1.0 - zoomRange;
+                if (shouldThrottle)
+                    return; // Skip this drag event
+                _lastDragEventTime = now;
+
+                var deltaX = currentPosition.X - _dragStartPoint.X;
+                var deltaNormalized = deltaX / ActualWidth;
+
+                var newStartTime = Math.Clamp(_dragStartZoomStart + deltaNormalized, 0.0, _dragStartZoomEnd - 0.01);
+                
+                MinimapDragged?.Invoke(this, new MiniMapDragEventArgs(newStartTime, _dragStartZoomEnd));
+                return;
             }
-            if (newStartTime < 0.0)
+            
+            if (_isResizingRight)
             {
-                newStartTime = 0.0;
-                newEndTime = zoomRange;
+                if (shouldThrottle)
+                    return; // Skip this drag event
+                _lastDragEventTime = now;
+
+                var deltaX = currentPosition.X - _dragStartPoint.X;
+                var deltaNormalized = deltaX / ActualWidth;
+
+                var newEndTime = Math.Clamp(_dragStartZoomEnd + deltaNormalized, _dragStartZoomStart + 0.01, 1.0);
+                
+                MinimapDragged?.Invoke(this, new MiniMapDragEventArgs(_dragStartZoomStart, newEndTime));
+                return;
             }
 
-            MinimapDragged?.Invoke(this, new MiniMapDragEventArgs(newStartTime, newEndTime));
+            // Handle viewport dragging
+            if (_isDraggingViewport)
+            {
+                if (shouldThrottle)
+                    return; // Skip this drag event
+                _lastDragEventTime = now;
+
+                var deltaX = currentPosition.X - _dragStartPoint.X;
+                var deltaNormalized = deltaX / ActualWidth;
+
+                var newStartTime = Math.Clamp(_dragStartZoomStart + deltaNormalized, 0.0, 1.0);
+                var newEndTime = Math.Clamp(_dragStartZoomEnd + deltaNormalized, 0.0, 1.0);
+
+                // Ensure we don't exceed boundaries
+                var zoomRange = ZoomEndTime - ZoomStartTime;
+                if (newEndTime > 1.0)
+                {
+                    newEndTime = 1.0;
+                    newStartTime = 1.0 - zoomRange;
+                }
+                if (newStartTime < 0.0)
+                {
+                    newStartTime = 0.0;
+                    newEndTime = zoomRange;
+                }
+
+                MinimapDragged?.Invoke(this, new MiniMapDragEventArgs(newStartTime, newEndTime));
+                return;
+            }
+
+            // Update cursor based on position relative to viewport
+            if (_viewportIndicator != null && ActualWidth > 0)
+            {
+                var viewportLeft = Canvas.GetLeft(_viewportIndicator);
+                var viewportRight = viewportLeft + _viewportIndicator.Width;
+
+                // Show resize cursor near edges
+                if (Math.Abs(currentPosition.X - viewportLeft) < ResizeEdgeThreshold ||
+                    Math.Abs(currentPosition.X - viewportRight) < ResizeEdgeThreshold)
+                {
+                    Cursor = Cursors.SizeWE;
+                }
+                // Show move cursor inside viewport
+                else if (currentPosition.X >= viewportLeft && currentPosition.X <= viewportRight)
+                {
+                    Cursor = Cursors.SizeAll;
+                }
+                else
+                {
+                    Cursor = Cursors.Hand;
+                }
+            }
         }
 
         private void OnMouseUp(object sender, MouseButtonEventArgs e)
         {
-            if (_isDraggingViewport)
+            if (_isDraggingViewport || _isResizingLeft || _isResizingRight)
             {
                 _isDraggingViewport = false;
+                _isResizingLeft = false;
+                _isResizingRight = false;
                 ReleaseMouseCapture();
                 Cursor = Cursors.Hand;
             }
@@ -391,9 +489,11 @@ namespace AeroDebrief.UI.Controls
 
         private void OnMouseLeave(object sender, MouseEventArgs e)
         {
-            if (_isDraggingViewport)
+            if (_isDraggingViewport || _isResizingLeft || _isResizingRight)
             {
                 _isDraggingViewport = false;
+                _isResizingLeft = false;
+                _isResizingRight = false;
                 ReleaseMouseCapture();
                 Cursor = Cursors.Hand;
             }
@@ -466,25 +566,20 @@ namespace AeroDebrief.UI.Controls
                     if (dataIndex >= WaveformData.Length)
                         dataIndex = WaveformData.Length - 1;
 
-                    // Calculate RMS
+                    // CRITICAL FIX: Use max value instead of RMS
+                    // The data is ALREADY RMS from GPU shader, so we just need the peak in this window
                     var startIdx = Math.Max(0, dataIndex - pointsPerPixel / 2);
                     var endIdx = Math.Min(WaveformData.Length - 1, dataIndex + pointsPerPixel / 2);
 
-                    var rms = 0.0;
-                    var count = 0;
+                    var maxValue = 0.0;
                     for (int i = startIdx; i <= endIdx; i++)
                     {
-                        rms += WaveformData[i] * WaveformData[i];
-                        count++;
+                        maxValue = Math.Max(maxValue, Math.Abs(WaveformData[i]));
                     }
 
-                    if (count > 0)
-                    {
-                        rms = Math.Sqrt(rms / count);
-                        var normalizedAmplitude = rms / maxAmplitude;
-                        var y = centerY - (normalizedAmplitude * scaleY);
-                        points.Add(new Point(x, y));
-                    }
+                    var normalizedAmplitude = maxValue / maxAmplitude;
+                    var y = centerY - (normalizedAmplitude * scaleY);
+                    points.Add(new Point(x, y));
                 }
 
                 if (points.Count > 0)
@@ -572,24 +667,20 @@ namespace AeroDebrief.UI.Controls
                     if (dataIndex >= waveformData.Length)
                         dataIndex = waveformData.Length - 1;
 
+                    // CRITICAL FIX: Use max value instead of RMS
+                    // The data is ALREADY RMS from GPU shader, so we just need the peak in this window
                     var startIdx = Math.Max(0, dataIndex - pointsPerPixel / 2);
                     var endIdx = Math.Min(waveformData.Length - 1, dataIndex + pointsPerPixel / 2);
 
-                    var rms = 0.0;
-                    var count = 0;
+                    var maxValue = 0.0;
                     for (int i = startIdx; i <= endIdx; i++)
                     {
-                        rms += waveformData[i] * waveformData[i];
-                        count++;
+                        maxValue = Math.Max(maxValue, Math.Abs(waveformData[i]));
                     }
 
-                    if (count > 0)
-                    {
-                        rms = Math.Sqrt(rms / count);
-                        var normalizedAmplitude = rms / globalMaxAmplitude;
-                        var y = centerY - (normalizedAmplitude * scaleY);
-                        points.Add(new Point(x, y));
-                    }
+                    var normalizedAmplitude = maxValue / globalMaxAmplitude;
+                    var y = centerY - (normalizedAmplitude * scaleY);
+                    points.Add(new Point(x, y));
                 }
 
                 if (points.Count > 0)
@@ -616,9 +707,21 @@ namespace AeroDebrief.UI.Controls
 
         private void UpdateViewportIndicator()
         {
+            // Remove existing viewport elements
             if (_viewportIndicator != null)
             {
                 Children.Remove(_viewportIndicator);
+                _viewportIndicator = null;
+            }
+            if (_viewportStartTime != null)
+            {
+                Children.Remove(_viewportStartTime);
+                _viewportStartTime = null;
+            }
+            if (_viewportEndTime != null)
+            {
+                Children.Remove(_viewportEndTime);
+                _viewportEndTime = null;
             }
 
             if (ActualWidth <= 0 || ActualHeight <= 0)
@@ -646,6 +749,7 @@ namespace AeroDebrief.UI.Controls
                 return;
             }
 
+            // Create viewport rectangle
             _viewportIndicator = new Rectangle
             {
                 Fill = _viewportBrush,
@@ -658,8 +762,52 @@ namespace AeroDebrief.UI.Controls
 
             Canvas.SetLeft(_viewportIndicator, leftX);
             Canvas.SetTop(_viewportIndicator, 0);
-
             Children.Add(_viewportIndicator);
+
+            // Add time labels if we have TotalDuration
+            if (TotalDuration.TotalSeconds > 0)
+            {
+                // Calculate actual times
+                var startTime = TimeSpan.FromTicks((long)(TotalDuration.Ticks * ZoomStartTime));
+                var endTime = TimeSpan.FromTicks((long)(TotalDuration.Ticks * ZoomEndTime));
+
+                // Format time strings
+                var startTimeString = startTime.ToString(@"hh\:mm\:ss\.f");
+                var endTimeString = endTime.ToString(@"hh\:mm\:ss\.f");
+
+                // Create start time label (left side)
+                _viewportStartTime = new TextBlock
+                {
+                    Text = startTimeString,
+                    FontSize = 8,
+                    FontFamily = new FontFamily("Consolas"),
+                    Foreground = new SolidColorBrush(Colors.White),
+                    Background = _viewportBorderBrush,
+                    Padding = new Thickness(3, 1, 3, 1)
+                };
+
+                _viewportStartTime.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                Canvas.SetLeft(_viewportStartTime, leftX + 2);
+                Canvas.SetTop(_viewportStartTime, 2);
+                Children.Add(_viewportStartTime);
+
+                // Create end time label (right side)
+                _viewportEndTime = new TextBlock
+                {
+                    Text = endTimeString,
+                    FontSize = 8,
+                    FontFamily = new FontFamily("Consolas"),
+                    Foreground = new SolidColorBrush(Colors.White),
+                    Background = _viewportBorderBrush,
+                    Padding = new Thickness(3, 1, 3, 1)
+                };
+
+                _viewportEndTime.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                var endTimeWidth = _viewportEndTime.DesiredSize.Width;
+                Canvas.SetLeft(_viewportEndTime, rightX - endTimeWidth - 2);
+                Canvas.SetTop(_viewportEndTime, 2);
+                Children.Add(_viewportEndTime);
+            }
         }
 
         private void UpdatePlayhead()
@@ -667,12 +815,26 @@ namespace AeroDebrief.UI.Controls
             if (_playheadLine != null)
             {
                 Children.Remove(_playheadLine);
+                _playheadLine = null;
+            }
+
+            if (_playheadTimeText != null)
+            {
+                Children.Remove(_playheadTimeText);
+                _playheadTimeText = null;
             }
 
             if (ActualWidth <= 0 || ActualHeight <= 0)
                 return;
 
-            var x = PlayheadPosition * ActualWidth;
+            // Convert from percentage (0-100) to normalized (0-1) if needed
+            var normalizedPosition = PlayheadPosition;
+            if (normalizedPosition > 1.0)
+            {
+                normalizedPosition = normalizedPosition / 100.0;
+            }
+
+            var x = normalizedPosition * ActualWidth;
 
             _playheadLine = new Line
             {
@@ -685,6 +847,42 @@ namespace AeroDebrief.UI.Controls
             };
 
             Children.Add(_playheadLine);
+
+            // Add current playtime display at the bottom of the playhead line
+            if (TotalDuration.TotalSeconds > 0)
+            {
+                // Calculate current time
+                var currentTime = TimeSpan.FromTicks((long)(TotalDuration.Ticks * normalizedPosition));
+                var timeString = currentTime.ToString(@"hh\:mm\:ss\.f");
+
+                _playheadTimeText = new TextBlock
+                {
+                    Text = timeString,
+                    FontSize = 9,
+                    FontFamily = new FontFamily("Consolas"),
+                    Foreground = new SolidColorBrush(Colors.White),
+                    Background = _playheadBrush,
+                    Padding = new Thickness(4, 2, 4, 2)
+                };
+
+                // Measure the text size
+                _playheadTimeText.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                var textWidth = _playheadTimeText.DesiredSize.Width;
+
+                // Position at the bottom of the playhead, centered on the line
+                var textX = x - (textWidth / 2);
+                
+                // Keep text within bounds
+                if (textX < 2)
+                    textX = 2;
+                else if (textX + textWidth > ActualWidth - 2)
+                    textX = ActualWidth - textWidth - 2;
+
+                Canvas.SetLeft(_playheadTimeText, textX);
+                Canvas.SetBottom(_playheadTimeText, 2);
+
+                Children.Add(_playheadTimeText);
+            }
         }
 
         #region Activity Heatmap
@@ -746,24 +944,19 @@ namespace AeroDebrief.UI.Controls
                         if (dataIndex >= freqData.WaveformData.Length)
                             dataIndex = freqData.WaveformData.Length - 1;
 
-                        // Calculate RMS in small window
+                        // CRITICAL FIX: Use max value instead of RMS
+                        // The data is ALREADY RMS from GPU shader, so we just need the peak in this window
                         var windowSize = Math.Max(1, freqData.WaveformData.Length / width);
                         var startIdx = Math.Max(0, dataIndex - windowSize / 2);
                         var endIdx = Math.Min(freqData.WaveformData.Length - 1, dataIndex + windowSize / 2);
 
-                        double rms = 0;
-                        var count = 0;
+                        double maxValue = 0;
                         for (int i = startIdx; i <= endIdx; i++)
                         {
-                            rms += freqData.WaveformData[i] * freqData.WaveformData[i];
-                            count++;
+                            maxValue = Math.Max(maxValue, Math.Abs(freqData.WaveformData[i]));
                         }
 
-                        if (count > 0)
-                        {
-                            rms = Math.Sqrt(rms / count);
-                            _activityIntensityCache[x] = Math.Max(_activityIntensityCache[x], rms);
-                        }
+                        _activityIntensityCache[x] = Math.Max(_activityIntensityCache[x], maxValue);
                     }
                 }
             }
@@ -779,19 +972,13 @@ namespace AeroDebrief.UI.Controls
                     var startIdx = Math.Max(0, dataIndex - windowSize / 2);
                     var endIdx = Math.Min(WaveformData.Length - 1, dataIndex + windowSize / 2);
 
-                    double rms = 0;
-                    var count = 0;
+                    double maxValue = 0;
                     for (int i = startIdx; i <= endIdx; i++)
                     {
-                        rms += WaveformData[i] * WaveformData[i];
-                        count++;
+                        maxValue = Math.Max(maxValue, Math.Abs(WaveformData[i]));
                     }
 
-                    if (count > 0)
-                    {
-                        rms = Math.Sqrt(rms / count);
-                        _activityIntensityCache[x] = rms;
-                    }
+                    _activityIntensityCache[x] = maxValue;
                 }
             }
 
@@ -1008,8 +1195,8 @@ namespace AeroDebrief.UI.Controls
             if (TotalDuration.TotalSeconds == 0)
                 return;
 
-            // Create time text
-            var timeString = TotalDuration.ToString(@"mm\:ss\.fff");
+            // Create time text with hh:mm:ss.f format
+            var timeString = TotalDuration.ToString(@"hh\:mm\:ss\.f");
             
             _endingTimeText = new TextBlock
             {

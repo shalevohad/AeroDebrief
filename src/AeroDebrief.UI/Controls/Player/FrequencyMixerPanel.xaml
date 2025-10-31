@@ -1,0 +1,61 @@
+<UserControl x:Class="AeroDebrief.UI.Controls.Player.FrequencyMixerPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:local="clr-namespace:AeroDebrief.UI.Controls"
+             mc:Ignorable="d" 
+             d:DesignHeight="600" d:DesignWidth="350">
+    
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/> <!-- Header with bulk actions -->
+            <RowDefinition Height="*"/>    <!-- Frequency tree -->
+        </Grid.RowDefinitions>
+        
+        <!-- Header with Bulk Action Buttons -->
+        <Grid Grid.Row="0" Margin="0,0,0,8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            
+            <TextBlock Grid.Column="0" 
+                       Style="{StaticResource SubHeaderTextStyle}" 
+                       Text="Frequencies &amp; Mixer"
+                       VerticalAlignment="Center"/>
+            
+            <StackPanel Grid.Column="1" 
+                        Orientation="Horizontal"
+                        HorizontalAlignment="Right">
+                <Button x:Name="SelectAllButton"
+                        Content="All" 
+                        Click="SelectAllButton_Click"
+                        Command="{Binding SelectAllCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                        Style="{StaticResource ModernSecondaryButton}"
+                        FontSize="10"
+                        Padding="8,4"
+                        Margin="0,0,4,0"
+                        ToolTip="Select all frequencies"/>
+                
+                <Button x:Name="SelectNoneButton"
+                        Content="None" 
+                        Click="SelectNoneButton_Click"
+                        Command="{Binding SelectNoneCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                        Style="{StaticResource ModernSecondaryButton}"
+                        FontSize="10"
+                        Padding="8,4"
+                        ToolTip="Deselect all frequencies"/>
+            </StackPanel>
+        </Grid>
+        
+        <!-- Frequency Tree View -->
+        <local:FrequencyTreeView x:Name="FrequencyTree"
+                               Grid.Row="1"
+                               Frequencies="{Binding Frequencies, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                               FrequencySelectionChanged="FrequencyTree_SelectionChanged"
+                               MixerValueChanged="FrequencyTree_MixerValueChanged"
+                               MixerBooleanChanged="FrequencyTree_MixerBooleanChanged"
+                               Margin="0"/>
+    </Grid>
+</UserControl>

@@ -1,0 +1,145 @@
+<UserControl x:Class="AeroDebrief.UI.Controls.Player.PlayerHeaderControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:converters="clr-namespace:AeroDebrief.UI.Helpers"
+             xmlns:fa="http://schemas.fontawesome.io/icons/"
+             mc:Ignorable="d" 
+             d:DesignHeight="80" d:DesignWidth="1000">
+    
+    <UserControl.Resources>
+        <!-- Converters -->
+        <converters:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisConverter"/>
+        <BooleanToVisibilityConverter x:Key="BoolToVisConverter"/>
+    </UserControl.Resources>
+    
+    <Border Style="{StaticResource ModernCard}" Margin="0,0,0,16">
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            
+            <!-- Idle Mode: Source Selection -->
+            <StackPanel Grid.Column="0" 
+                        Orientation="Vertical"
+                        Visibility="{Binding IsIdle, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource BoolToVisConverter}}">
+                <TextBlock Style="{StaticResource HeaderTextStyle}" 
+                           Text="AeroDebrief Player"/>
+                <TextBlock Style="{StaticResource BodyTextStyle}" 
+                           Text="{Binding StatusMessage, RelativeSource={RelativeSource AncestorType=UserControl}, FallbackValue='Ready - Select a source to begin'}"
+                           Margin="0,4,0,0"/>
+            </StackPanel>
+            
+            <!-- Active Mode: File/Server Info -->
+            <StackPanel Grid.Column="0" 
+                        Orientation="Vertical"
+                        Visibility="{Binding IsIdle, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource InverseBoolToVisConverter}}">
+                <TextBlock Style="{StaticResource HeaderTextStyle}" 
+                           Text="AeroDebrief Player"/>
+                
+                <!-- Source Name with Mode Badge -->
+                <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                    <TextBlock Style="{StaticResource BodyTextStyle}"
+                               Text="{Binding SourceName, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                               FontWeight="SemiBold"
+                               Foreground="{StaticResource AccentBrush}"
+                               VerticalAlignment="Center"/>
+                    
+                    <!-- Mode Badge -->
+                    <Border Background="{Binding CurrentMode, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource ModeColorConverter}}"
+                            CornerRadius="10"
+                            Padding="8,2"
+                            Margin="10,0,0,0"
+                            VerticalAlignment="Center">
+                        <TextBlock Text="{Binding CurrentMode, RelativeSource={RelativeSource AncestorType=UserControl}}" 
+                                   FontSize="10" 
+                                   FontWeight="Bold"
+                                   Foreground="White"/>
+                    </Border>
+                </StackPanel>
+                
+                <TextBlock Style="{StaticResource BodyTextStyle}" 
+                           Text="{Binding StatusMessage, RelativeSource={RelativeSource AncestorType=UserControl}, FallbackValue='Ready'}"
+                           Margin="0,4,0,0"/>
+            </StackPanel>
+            
+            <!-- Action Buttons -->
+            <StackPanel Grid.Column="1" 
+                        Orientation="Horizontal" 
+                        VerticalAlignment="Center">
+                
+                <!-- Idle Mode: Source Selection Buttons -->
+                <StackPanel Orientation="Horizontal"
+                            Visibility="{Binding IsIdle, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource BoolToVisConverter}}">
+                    <Button x:Name="ServerSourceButton"
+                            Style="{StaticResource ModernSecondaryButton}"
+                            Margin="0,0,8,0"
+                            Click="ServerSourceButton_Click">
+                        <StackPanel Orientation="Horizontal">
+                            <fa:FontAwesome Icon="Server" 
+                                          FontSize="14" 
+                                          Margin="0,0,6,0"
+                                          VerticalAlignment="Center"/>
+                            <TextBlock Text="SRS Server"
+                                     VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+
+                    <Button x:Name="FileSourceButton"
+                            Style="{StaticResource ModernSecondaryButton}"
+                            Margin="0,0,8,0"
+                            Click="FileSourceButton_Click">
+                        <StackPanel Orientation="Horizontal">
+                            <fa:FontAwesome Icon="FolderOpen" 
+                                          FontSize="14" 
+                                          Margin="0,0,6,0"
+                                          VerticalAlignment="Center"/>
+                            <TextBlock Text="Recording File"
+                                     VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+
+                <!-- Active Mode: Change Source & File Panel Buttons -->
+                <StackPanel Orientation="Horizontal"
+                            Visibility="{Binding IsIdle, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource InverseBoolToVisConverter}}">
+                    <Button Content="Change Source"
+                            Command="{Binding ChangeSourceCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                            Style="{StaticResource ModernSecondaryButton}"
+                            Margin="0,0,8,0"/>
+
+                    <Button x:Name="OpenFilePanelButton"
+                            Style="{StaticResource ModernButton}"
+                            ToolTip="Open file selection &amp; bookmarks"
+                            Margin="0,0,6,0"
+                            Click="OpenFilePanelButton_Click">
+                        <StackPanel Orientation="Horizontal">
+                            <fa:FontAwesome Icon="FolderOpen" 
+                                          FontSize="14" 
+                                          Margin="0,0,8,0"
+                                          VerticalAlignment="Center"/>
+                            <TextBlock Text="Recording File"
+                                     VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+
+                <!-- Settings Button (Always Visible) -->
+                <Button Command="{Binding OpenSettingsCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                        Style="{StaticResource ModernButton}"
+                        ToolTip="Open Settings">
+                    <StackPanel Orientation="Horizontal">
+                        <fa:FontAwesome Icon="Cog" 
+                                      FontSize="14" 
+                                      Margin="0,0,6,0"
+                                      VerticalAlignment="Center"/>
+                        <TextBlock Text="Settings"
+                                   VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+        </Grid>
+    </Border>
+</UserControl>

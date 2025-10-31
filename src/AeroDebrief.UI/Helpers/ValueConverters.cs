@@ -1,5 +1,6 @@
 using System;
 using System.Globalization;
+using System.IO;
 using System.Windows;
 using System.Windows.Data;
 
@@ -56,6 +57,61 @@ namespace AeroDebrief.UI.Helpers
                 return visibility == Visibility.Visible;
             }
             return false;
+        }
+    }
+
+    /// <summary>
+    /// Extracts the filename from a full file path
+    /// </summary>
+    public class FileNameConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            if (value is string path && !string.IsNullOrEmpty(path))
+            {
+                try
+                {
+                    return Path.GetFileName(path);
+                }
+                catch
+                {
+                    return path;
+                }
+            }
+            return string.Empty;
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            throw new NotImplementedException();
+        }
+    }
+
+    /// <summary>
+    /// Extracts the directory path from a full file path
+    /// </summary>
+    public class FilePathConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            if (value is string path && !string.IsNullOrEmpty(path))
+            {
+                try
+                {
+                    var directory = Path.GetDirectoryName(path);
+                    return string.IsNullOrEmpty(directory) ? path : directory;
+                }
+                catch
+                {
+                    return path;
+                }
+            }
+            return string.Empty;
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            throw new NotImplementedException();
         }
     }
 }

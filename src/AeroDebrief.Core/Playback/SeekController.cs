@@ -14,6 +14,20 @@ namespace AeroDebrief.Core.Playback
         
         public bool IsUserSeeking { get; private set; }
 
+        public bool HasPendingSeek()
+        {
+            return _seekRequested;
+        }
+
+        public void ClearSeek()
+        {
+            lock (_seekLock)
+            {
+                _seekRequested = false;
+            }
+            Logger.Debug("Seek request cleared");
+        }
+
         public void SeekTo(TimeSpan position, TimeSpan totalDuration)
         {
             position = TimeSpan.FromTicks(Math.Clamp(position.Ticks, 0, totalDuration.Ticks));
@@ -48,7 +62,7 @@ namespace AeroDebrief.Core.Playback
             }
         }
 
-        public bool HandleSeekIfRequested(List<AudioPacketMetadata> packets, ref int currentIndex, ref DateTime startTime)
+        public bool HandleSeekIfRequested(List<AudioPacketMetadata> packets, ref int currentIndex, ref TimeSpan currentPlaybackPosition)
         {
             if (!_seekRequested || packets.Count == 0) return false;
 
@@ -83,9 +97,9 @@ namespace AeroDebrief.Core.Playback
             
             currentIndex = newIndex;
             
-            // Reset timing to account for the new position
+            // Update the playback position to the new seek position
             var actualSeekTime = packets[currentIndex].Timestamp - recordingStart;
-            startTime = DateTime.UtcNow.Subtract(actualSeekTime);
+            currentPlaybackPosition = actualSeekTime;
             
             Logger.Info($"Seek executed - jumped to packet index {currentIndex} at position {actualSeekTime} (requested: {seekPos})");
             return true;
