@@ -40,7 +40,7 @@ AeroDebrief includes a state-of-the-art GPU-accelerated waveform rendering engin
 - **Automatic fallback** to CPU rendering if GPU is unavailable
 - **DirectX 11 compute shaders** for maximum Windows compatibility
 
-For more information, see [GPU Waveform Rendering Implementation](docs/GPU-Waveform-Rendering-Implementation.md)
+For more information, see the technical documentation in [DOC/core-audio.md](DOC/core-audio.md)
 
 * ## Notes and limitations
 - AeroDebrief only receives voice and metadata exposed over the network by an SRS-style server. That means you must be participating in or connected to a multiplayer session using an external voice relay (SRS) or equivalent.
@@ -53,7 +53,7 @@ For more information, see [GPU Waveform Rendering Implementation](docs/GPU-Wavef
 
 AeroDebrief is built as a modular .NET 9 solution with clear separation of concerns.
 
-For detailed technical documentation, see [Technical Architecture](docs/Technical-Architecture.md)
+For detailed technical documentation, see [Technical Architecture](DOC/architecture.md)
 
 ---
 
@@ -169,7 +169,7 @@ dotnet run --project src/AeroDebrief.UI
 * Real-time waveform updates with thousands of packets
 * Multi-frequency visualization with independent channel rendering
 
-See [GPU-Waveform-Rendering-Implementation.md](docs/GPU-Waveform-Rendering-Implementation.md) for technical details
+See [Core Audio Systems](DOC/core-audio.md) for technical details on audio processing and GPU acceleration
 
 ### Multi-Frequency Recording
 * Captures all active SRS frequencies simultaneously
@@ -204,16 +204,49 @@ See [GPU-Waveform-Rendering-Implementation.md](docs/GPU-Waveform-Rendering-Imple
 
 ## Documentation
 
-* [Technical Architecture](docs/Technical-Architecture.md) - Complete system architecture overview
-* [GPU Waveform Rendering](docs/GPU-Waveform-Rendering-Implementation.md) - GPU acceleration implementation details
-* [Analytics Developer Guide](docs/Analytics-Developer-Guide.md) - Extending the analytics system
-* [Analytics TODO](docs/Analytics-TODO.md) - Planned features and enhancements
-* [Cleanup Summary](docs/Cleanup-Summary.md) - Recent project reorganization
+### For Users
+* **[Installation Guide](docs/INSTALLATION.md)** - Complete installation instructions
+* **[User Guide](docs/USER_GUIDE.md)** - How to use AeroDebrief
+  - Recording and playback
+  - Understanding the interface
+  - Analytics and insights
+  - Troubleshooting and FAQ
+
+### For Developers
+* **[Developer Guide](docs/DEVELOPER_GUIDE.md)** - Development documentation
+  - Architecture overview
+  - Building and testing
+  - Extending AeroDebrief
+* **[Contributing Guide](docs/CONTRIBUTING.md)** - How to contribute
+  - Development process
+  - Coding standards
+  - Pull request guidelines
+
+### Technical Documentation
+* [Architecture](DOC/architecture.md) - System architecture and design
+* [Core Audio](DOC/core-audio.md) - Audio processing and GPU acceleration
+* [Analysis Systems](DOC/analysis.md) - Frequency analysis implementation
+* [UI Integration](DOC/ui.md) - User interface architecture
+* [Integrations](DOC/integrations.md) - External integration patterns
+* [DevOps](DOC/devops.md) - Build and CI/CD
 
 ---
 
 ## Contributing
-Contributions and corrections are welcome. If you plan to add or improve integrations (for example TacView integration), please follow the existing project structure and add clear documentation and tests where possible.
+
+Contributions and corrections are welcome! We appreciate:
+- Bug fixes and feature implementations
+- Documentation improvements
+- Test coverage enhancements
+- Performance optimizations
+
+Please see the [Contributing Guide](docs/CONTRIBUTING.md) for:
+- Code of conduct
+- Development workflow
+- Coding standards
+- Pull request process
+
+If you plan to add or improve integrations (for example TacView integration), please follow the existing project structure and add clear documentation and tests where possible.
 
 ## License
 
