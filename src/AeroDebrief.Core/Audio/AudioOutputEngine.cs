@@ -230,11 +230,6 @@ namespace AeroDebrief.Core.Audio
                 }
 
                 Logger.Debug($"[WASAPI] Writing {audioData.Length} bytes, amplitude: {maxAmplitude}/32767");
-                
-                if (maxAmplitude == 0)
-                {
-                    Logger.Warn($"Silent audio output detected ({pcmSamples.Length} samples) - consider marking as silence");
-                }
 #endif
 
                 if (_waveProvider != null && !_isSeekInProgress)

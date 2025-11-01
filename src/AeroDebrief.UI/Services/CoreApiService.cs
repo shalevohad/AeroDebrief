@@ -573,10 +573,10 @@ namespace AeroDebrief.UI.Services
                     _channelMixer.SetupChannel(frequency, displayName);
                 }
                 
-                // ✅ NEW: Use GPU layered rendering if available
+                // ✅ NEW: Use GPU layered rendering if available - FIRE AND FORGET for non-blocking UI
                 if (_waveformGenerator is GpuWaveformGenerator gpuGen && gpuGen.IsUsingLayeredRendering && _packetSource != null)
                 {
-                    logger.Info($"✨ Adding GPU layer for frequency {frequency:F1} Hz");
+                    logger.Info($"✨ Queueing GPU layer creation for frequency {frequency:F1} Hz (non-blocking)");
                     
                     // Get frequency color from stored colors
                     var color = _frequencyColors.TryGetValue(frequency, out var storedColor) 
@@ -586,21 +586,37 @@ namespace AeroDebrief.UI.Services
                     var freqInfo = GetAvailableFrequencies().FirstOrDefault(f => Math.Abs(f.Frequency - frequency) < 0.1);
                     var displayName = freqInfo?.DisplayName ?? $"{frequency / 1_000_000.0:F3} MHz";
                     
-                    try
+                    // 🔥 CRITICAL FIX: Create GPU layer in background task (non-blocking)
+                    _ = Task.Run(async () =>
                     {
-                        var layerId = await gpuGen.AddLayerAsync(
-                            frequency,
-                            displayName,
-                            color,
-                            _packetSource,
-                            progress: null);
-                        
-                        logger.Info($"✅ GPU layer created: {displayName} (LayerId: {layerId})");
-                    }
-                    catch (Exception ex)
-                    {
-                        logger.Error(ex, $"Failed to create GPU layer for {displayName}");
-                    }
+                        try
+                        {
+                            logger.Info($"🎨 Creating GPU layer for {displayName} (background task)...");
+                            var startTime = DateTime.UtcNow;
+                            
+                            var layerId = await gpuGen.AddLayerAsync(
+                                frequency,
+                                displayName,
+                                color,
+                                _packetSource,
+                                progress: null);
+                            
+                            var elapsed = (DateTime.UtcNow - startTime).TotalMilliseconds;
+                            logger.Info($"✅ GPU layer created: {displayName} (LayerId: {layerId}) in {elapsed:F0}ms");
+                            
+                            // Trigger UI update on UI thread
+                            System.Windows.Application.Current?.Dispatcher.BeginInvoke(() =>
+                            {
+                                OnWaveformUpdated();
+                            });
+                        }
+                        catch (Exception ex)
+                        {
+                            logger.Error(ex, $"Failed to create GPU layer for {displayName}");
+                        }
+                    });
+                    
+                    logger.Info($"✅ GPU layer creation queued (UI remains responsive)");
                 }
                 else
                 {
@@ -620,7 +636,7 @@ namespace AeroDebrief.UI.Services
                     });
                 }
                 
-                // Enable frequency in playback pipeline
+                // Enable frequency in playback pipeline (instant - no waiting)
                 _pipeline?.SetFrequencyGate(frequency, AeroDebrief.Core.Audio.FrequencyGateMode.Allow);
             }
             else
@@ -638,6 +654,9 @@ namespace AeroDebrief.UI.Services
                     {
                         logger.Info($"🗑️ Removing GPU layer for frequency {frequency:F1} Hz");
                         gpuGen.RemoveLayer(layer.LayerId);
+                        
+                        // Trigger immediate UI update
+                        OnWaveformUpdated();
                     }
                 }
                 else
@@ -667,6 +686,30 @@ namespace AeroDebrief.UI.Services
                 _waveformData = new float[_waveformGenerator.MaxDataPoints];
                 _waveformGenerator.Clear();
                 logger.Info("🔥 No frequencies selected - waveform cleared");
+            }
+            
+            // Return immediately - GPU layer creation continues in background
+            await Task.CompletedTask;
+        }
+
+        /// <summary>
+        /// Triggers waveform updated event (used after GPU layer creation)
+        /// </summary>
+        private void OnWaveformUpdated()
+        {
+            try
+            {
+                // Get channels from the waveform generator (using the IWaveformGenerator interface)
+                var channels = _waveformGenerator != null 
+                    ? ((IWaveformGenerator)_waveformGenerator).Channels 
+                    : new Dictionary<double, WaveformChannel>();
+                    
+                WaveformUpdated?.Invoke(new WaveformUpdatedEventArgs(channels));
+            }
+            catch (Exception ex)
+            {
+                var logger = NLog.LogManager.GetCurrentClassLogger();
+                logger.Error(ex, "Error triggering waveform update");
             }
         }
 

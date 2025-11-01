@@ -249,6 +249,11 @@ namespace AeroDebrief.UI.ViewModels
             }
         }
 
+        /// <summary>
+        /// Exposes whether the waveform manager is using GPU so the UI can bind to it.
+        /// </summary>
+        public bool IsUsingGpu => _waveformManager?.IsUsingGpu ?? false;
+
         public System.Windows.Media.Brush WaveformEngineColor
         {
             get
@@ -526,6 +531,9 @@ namespace AeroDebrief.UI.ViewModels
             // Update UI with waveform data
             OnPropertyChanged(nameof(WaveformData));
             OnPropertyChanged(nameof(FrequencyWaveforms));
+            
+            // GPU availability/state may have changed during generation
+            OnPropertyChanged(nameof(IsUsingGpu));
         }
 
         private void OnLayerAdded(object? sender, LayerAddedEventArgs e)
@@ -549,6 +557,9 @@ namespace AeroDebrief.UI.ViewModels
                 Logger.Info($"? All {expectedLayerCount} GPU layers ready - updating display");
                 _ = RefreshGpuLayerDisplay();
             }
+            
+            // Notify UI that GPU state/visibility may have changed
+            OnPropertyChanged(nameof(IsUsingGpu));
         }
         
         /// <summary>
@@ -612,6 +623,9 @@ namespace AeroDebrief.UI.ViewModels
             
             // Update waveform display
             _ = UpdateWaveformDisplayAsync();
+            
+            // Notify UI that GPU state/visibility may have changed
+            OnPropertyChanged(nameof(IsUsingGpu));
         }
 
         #endregion
@@ -870,30 +884,61 @@ namespace AeroDebrief.UI.ViewModels
             try
             {
                 CurrentMode = PlayerMode.Playback;
-                StatusMessage = "Loading file...";
+                CurrentSourceName = System.IO.Path.GetFileName(filePath);
                 IsBuffering = true;
+                StatusMessage = "Loading file...";
+                ProgressPercent = 0;
                 
-                Logger.Info("======== LOADING FILE (Service Architecture) ========", filePath);
+                Logger.Info($"======== LOADING FILE (Service Architecture): {filePath} ========$");
                 
-                // Create progress reporter for status updates
+                // Create progress reporter for status updates - update every 5% of file load
+                int lastProgress = 0;
                 var progress = new Progress<string>(status =>
                 {
-                    // Marshal to UI thread
-                    System.Windows.Application.Current?.Dispatcher?.InvokeAsync(() =>
+                    // Parse progress from status messages like "Loading frequencies... 45%"
+                    if (status.Contains("%"))
                     {
-                        StatusMessage = status;
-                    });
+                        // Extract percentage from message
+                        if (int.TryParse(
+                            System.Text.RegularExpressions.Regex.Match(status, @"\d+").Value, 
+                            out int percent))
+                        {
+                            // Only update UI every 5% to reduce dispatcher overhead
+                            if (Math.Abs(percent - lastProgress) >= 5 || percent == 0 || percent == 100)
+                            {
+                                lastProgress = percent;
+                                // Marshal to UI thread
+                                System.Windows.Application.Current?.Dispatcher?.InvokeAsync(() =>
+                                {
+                                    ProgressPercent = percent;
+                                    StatusMessage = status;
+                                }, System.Windows.Threading.DispatcherPriority.Background);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // Status message without percentage
+                        System.Windows.Application.Current?.Dispatcher?.InvokeAsync(() =>
+                        {
+                            StatusMessage = status;
+                        }, System.Windows.Threading.DispatcherPriority.Background);
+                    }
                 });
                 
-                // Delegate to session manager with progress reporting
+                // Load file asynchronously on background thread
+                // This keeps UI responsive while loading
                 await _sessionManager.LoadFileAsync(filePath, progress);
                 
-                // Session loaded event will trigger next steps
+                Logger.Info("? File load completed - session loaded event should have fired");
+                
+                // Session loaded event will trigger next steps (frequency loading, waveform generation)
             }
             catch (Exception ex)
             {
                 Logger.Error(ex, "Failed to load file");
                 StatusMessage = $"Error loading file: {ex.Message}";
+                ProgressPercent = 0;
                 IsBuffering = false;
                 CurrentMode = PlayerMode.Idle;
             }
@@ -992,29 +1037,45 @@ namespace AeroDebrief.UI.ViewModels
                 {
                     Frequencies.Clear();
                     MixerChannels.Clear();
+                    StatusMessage = "Analyzing frequencies...";
+                    ProgressPercent = 30;
                 });
                 
-                // Delegate to frequency manager
+                // Delegate to frequency manager - runs on background thread
+                Logger.Info("Starting frequency analysis...");
                 await _frequencyManager.LoadFrequenciesAsync(
                     _sessionManager.PacketSource!,
                     _sessionManager.Pipeline!);
                 
-                // Initialize waveform generator after frequency loading
+                // Update UI on completion
+                await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+                {
+                    ProgressPercent = 50;
+                    StatusMessage = "Initializing waveform generator...";
+                });
+                
+                // Initialize waveform generator after frequency loading - runs on background
                 _analysisService = new FrequencyAnalysisService();
                 _waveformManager.Initialize(_analysisService);
                 
                 // Initialize mixer controller
                 _mixerController.Initialize();
-                
+
+                // Notify UI that GPU availability may have changed
+                OnPropertyChanged(nameof(IsUsingGpu));
+
                 // Update UI properties
                 OnPropertyChanged(nameof(WaveformEngineIcon));
                 OnPropertyChanged(nameof(WaveformEngineText));
                 OnPropertyChanged(nameof(WaveformEngineColor));
                 OnPropertyChanged(nameof(WaveformEngineTooltip));
                 
-                // Bind frequency collections
+                // Bind frequency collections on UI thread
                 await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
                 {
+                    ProgressPercent = 60;
+                    StatusMessage = "Building frequency list...";
+                    
                     // Copy frequencies from manager to UI observable collection
                     foreach (var group in _frequencyManager.Frequencies)
                     {
@@ -1026,20 +1087,33 @@ namespace AeroDebrief.UI.ViewModels
                     {
                         MixerChannels.Add(channel);
                     }
+                    
+                    ProgressPercent = 80;
+                    StatusMessage = "Generating initial waveform...";
                 });
                 
-                // Generate initial waveform (empty until frequencies selected)
+                // Generate initial waveform (empty until frequencies selected) - runs on background
                 await GenerateWaveformAsync();
                 
-                IsBuffering = false;
+                // Final update on UI thread
+                await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+                {
+                    IsBuffering = false;
+                    ProgressPercent = 100;
+                    StatusMessage = $"File loaded with {_frequencyManager.Frequencies.Count} frequencies. Select frequencies to visualize.";
+                });
                 
-                Logger.Info($"? File loaded successfully");
+                Logger.Info($"? File loaded successfully with {_frequencyManager.Frequencies.Count} frequency groups");
             }
             catch (Exception ex)
             {
                 Logger.Error(ex, "Failed to load frequencies");
-                StatusMessage = $"Error loading frequencies: {ex.Message}";
-                IsBuffering = false;
+                await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+                {
+                    StatusMessage = $"Error loading frequencies: {ex.Message}";
+                    ProgressPercent = 0;
+                    IsBuffering = false;
+                });
             }
         }
 
@@ -1091,6 +1165,7 @@ namespace AeroDebrief.UI.ViewModels
                 WaveformData = new float[_waveformManager.MaxDataPoints];
                 FrequencyWaveforms = null;
                 StatusMessage = "No frequencies selected";
+                ProgressPercent = 0;
                 Logger.Debug("No frequencies selected - waveform cleared");
                 return;
             }
@@ -1117,32 +1192,55 @@ namespace AeroDebrief.UI.ViewModels
 
             try
             {
-                StatusMessage = "Generating waveform...";
+                StatusMessage = $"Generating waveform for {_frequencyManager.SelectedFrequencies.Count} frequencies...";
                 IsLoadingWaveform = true;
+                WaveformGenerationProgress = 0;
                 
+                // Create progress reporter with throttling to reduce UI updates
+                int lastReportedProgress = 0;
                 var progress = new Progress<double>(percent =>
                 {
-                    WaveformGenerationProgress = percent;
-                    StatusMessage = $"Generating waveform... {percent:F0}%";
+                    // Only update UI every 5% to reduce dispatcher overhead
+                    int roundedPercent = (int)Math.Round(percent / 5) * 5;
+                    if (roundedPercent != lastReportedProgress)
+                    {
+                        lastReportedProgress = roundedPercent;
+                        
+                        // Use Background priority so UI thread doesn't get blocked
+                        System.Windows.Application.Current?.Dispatcher?.InvokeAsync(() =>
+                        {
+                            WaveformGenerationProgress = percent;
+                            StatusMessage = $"Generating waveform... {percent:F0}%";
+                        }, System.Windows.Threading.DispatcherPriority.Background);
+                    }
                 });
 
-                // Delegate to waveform manager
+                Logger.Info($"Starting waveform generation for {_frequencyManager.SelectedFrequencies.Count} frequencies...");
+
+                // Delegate to waveform manager - runs on background thread via Task.Run
                 var waveformData = await _waveformManager.GenerateWaveformAsync(
                     _sessionManager.PacketSource!,
                     _frequencyManager.SelectedFrequencies.ToHashSet(),
                     progress);
                 
-                WaveformData = waveformData.CombinedWaveform;
+                await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+                {
+                    WaveformData = waveformData.CombinedWaveform;
+                    WaveformGenerationProgress = 100;
+                });
 
                 // CRITICAL FIX: If using GPU layers, they're still being generated in the background
                 // We need to wait a moment for them to be ready before trying to display them
                 if (_waveformManager.IsUsingLayeredRendering)
                 {
-                    Logger.Info($"?? GPU layered rendering active - layers will be added asynchronously");
+                    Logger.Info($"? GPU layered rendering active - layers will be added asynchronously");
                     
-                    // Clear the waveform data temporarily to show loading state
-                    FrequencyWaveforms = null;
-                    StatusMessage = "GPU layers generating...";
+                    await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+                    {
+                        // Clear the waveform data temporarily to show loading state
+                        FrequencyWaveforms = null;
+                        StatusMessage = $"GPU layers generating... (0/{_frequencyManager.SelectedFrequencies.Count})";
+                    });
                     
                     // The layers will be populated via the OnLayerAdded event handler
                     // which calls UpdateWaveformDisplayAsync()
@@ -1151,10 +1249,10 @@ namespace AeroDebrief.UI.ViewModels
                 }
 
                 // CPU rendering path (fallback)
+                Logger.Info($"? Using CPU rendering for waveform display");
                 var freqWaveforms = new System.Collections.Generic.Dictionary<double, Controls.FrequencyWaveformData>();
-                Logger.Info($"?? Using CPU rendering for waveform display");
                 
-                // Fallback to CPU rendering
+                // Fallback to CPU rendering - runs on background thread
                 foreach (var frequency in _frequencyManager.SelectedFrequencies.OrderBy(f => f))
                 {
                     var channelWaveform = _waveformManager.GetChannelWaveform(frequency);
@@ -1179,21 +1277,28 @@ namespace AeroDebrief.UI.ViewModels
                     }
                 }
 
-                FrequencyWaveforms = freqWaveforms;
-                
-                OnPropertyChanged(nameof(WaveformData));
-                OnPropertyChanged(nameof(FrequencyWaveforms));
-
-                IsLoadingWaveform = false;
-                StatusMessage = $"{freqWaveforms.Count} frequency waveforms displayed";
+                // Update UI on completion
+                await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+                {
+                    FrequencyWaveforms = freqWaveforms;
+                    OnPropertyChanged(nameof(WaveformData));
+                    OnPropertyChanged(nameof(FrequencyWaveforms));
+                    IsLoadingWaveform = false;
+                    WaveformGenerationProgress = 100;
+                    StatusMessage = $"? {freqWaveforms.Count} frequency waveforms displayed";
+                });
                 
                 Logger.Info($"? Waveform generated: {freqWaveforms.Count} frequency waveforms");
             }
             catch (Exception ex)
             {
                 Logger.Error(ex, "Waveform generation failed");
-                StatusMessage = "Waveform generation failed";
-                IsLoadingWaveform = false;
+                await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+                {
+                    StatusMessage = $"Error: Waveform generation failed - {ex.Message}";
+                    IsLoadingWaveform = false;
+                    ProgressPercent = 0;
+                });
             }
         }
 

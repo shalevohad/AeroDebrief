@@ -16,6 +16,16 @@ namespace AeroDebrief.UI.Controls
     /// </summary>
     public class WaveformMiniMap : Canvas
     {
+        // Helper to safely clamp doubles when caller-provided bounds may be invalid
+        private static double SafeClamp(double value, double min, double max)
+        {
+            if (double.IsNaN(value)) value = 0.0;
+            if (double.IsNaN(min)) min = 0.0;
+            if (double.IsNaN(max)) max = min;
+            if (max < min) max = min;
+            return Math.Clamp(value, min, max);
+        }
+
         public static readonly DependencyProperty WaveformDataProperty =
             DependencyProperty.Register(nameof(WaveformData), typeof(float[]), typeof(WaveformMiniMap),
                 new PropertyMetadata(null, OnWaveformDataChanged));
@@ -339,7 +349,9 @@ namespace AeroDebrief.UI.Controls
             RecordZoomHistory();
 
             var zoomRange = ZoomEndTime - ZoomStartTime;
-            var newStartTime = Math.Clamp(normalizedX - zoomRange / 2.0, 0.0, 1.0 - zoomRange);
+            // Ensure zoomRange is sane
+            zoomRange = Math.Clamp(zoomRange, 0.0, 1.0);
+            var newStartTime = SafeClamp(normalizedX - zoomRange / 2.0, 0.0, 1.0 - zoomRange);
             var newEndTime = newStartTime + zoomRange;
 
             MinimapClicked?.Invoke(this, new MiniMapClickEventArgs(newStartTime, newEndTime));
@@ -400,7 +412,9 @@ namespace AeroDebrief.UI.Controls
                 var deltaX = currentPosition.X - _dragStartPoint.X;
                 var deltaNormalized = deltaX / ActualWidth;
 
-                var newStartTime = Math.Clamp(_dragStartZoomStart + deltaNormalized, 0.0, _dragStartZoomEnd - 0.01);
+                var upper = _dragStartZoomEnd - 0.01;
+                upper = Math.Max(0.0, upper);
+                var newStartTime = SafeClamp(_dragStartZoomStart + deltaNormalized, 0.0, upper);
                 
                 MinimapDragged?.Invoke(this, new MiniMapDragEventArgs(newStartTime, _dragStartZoomEnd));
                 return;
@@ -415,7 +429,9 @@ namespace AeroDebrief.UI.Controls
                 var deltaX = currentPosition.X - _dragStartPoint.X;
                 var deltaNormalized = deltaX / ActualWidth;
 
-                var newEndTime = Math.Clamp(_dragStartZoomEnd + deltaNormalized, _dragStartZoomStart + 0.01, 1.0);
+                var lower = _dragStartZoomStart + 0.01;
+                lower = Math.Min(lower, 1.0);
+                var newEndTime = SafeClamp(_dragStartZoomEnd + deltaNormalized, lower, 1.0);
                 
                 MinimapDragged?.Invoke(this, new MiniMapDragEventArgs(_dragStartZoomStart, newEndTime));
                 return;
@@ -431,8 +447,8 @@ namespace AeroDebrief.UI.Controls
                 var deltaX = currentPosition.X - _dragStartPoint.X;
                 var deltaNormalized = deltaX / ActualWidth;
 
-                var newStartTime = Math.Clamp(_dragStartZoomStart + deltaNormalized, 0.0, 1.0);
-                var newEndTime = Math.Clamp(_dragStartZoomEnd + deltaNormalized, 0.0, 1.0);
+                var newStartTime = SafeClamp(_dragStartZoomStart + deltaNormalized, 0.0, 1.0);
+                var newEndTime = SafeClamp(_dragStartZoomEnd + deltaNormalized, 0.0, 1.0);
 
                 // Ensure we don't exceed boundaries
                 var zoomRange = ZoomEndTime - ZoomStartTime;

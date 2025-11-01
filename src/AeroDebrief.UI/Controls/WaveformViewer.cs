@@ -543,11 +543,40 @@ namespace AeroDebrief.UI.Controls
             var centerY = ActualHeight / 2;
             
             // Calculate visible data range based on zoom
-            var startIndex = (int)(ZoomStartTime * WaveformData.Length);
-            var endIndex = (int)(ZoomEndTime * WaveformData.Length);
-            startIndex = Math.Clamp(startIndex, 0, WaveformData.Length - 1);
-            endIndex = Math.Clamp(endIndex, startIndex + 1, WaveformData.Length);
+            // Defensive guards to avoid ArgumentOutOfRange from Math.Clamp when lengths are zero
+            var dataLen = WaveformData.Length;
+            if (dataLen <= 0) return;
+
+            var startIndex = (int)(ZoomStartTime * dataLen);
+            var endIndex = (int)(ZoomEndTime * dataLen);
+
+            // Ensure clamp bounds are valid - CRITICAL FIX: use proper min/max values
+            // Math.Clamp requires: min <= max, so we must ensure startIndex <= endIndex before clamping
+            startIndex = Math.Clamp(startIndex, 0, dataLen - 1);
             
+            // CRITICAL: Ensure endIndex is at least startIndex+1 but no more than dataLen
+            // First clamp with proper bounds, then ensure minimum of startIndex+1
+            endIndex = Math.Max(startIndex + 1, Math.Min(endIndex, dataLen));
+            
+            // Safeguard: if endIndex <= startIndex after clamping, we can't slice
+            if (endIndex <= startIndex)
+            {
+                // Try to give at least 1 sample to render
+                endIndex = Math.Min(startIndex + 1, dataLen);
+                if (endIndex <= startIndex)
+                {
+                    // Still can't create a valid range - bail out
+                    return;
+                }
+            }
+
+            // CRITICAL FIX: Check slice bounds before creating slice
+            if (startIndex < 0 || endIndex > dataLen || startIndex >= endIndex)
+            {
+                Logger.Error($"Invalid slice indices: start={startIndex}, end={endIndex}, dataLen={dataLen}");
+                return;
+            }
+
             var visibleData = WaveformData[startIndex..endIndex];
             var maxAmplitude = visibleData.Max(Math.Abs);
 
@@ -778,10 +807,21 @@ namespace AeroDebrief.UI.Controls
 
             // Calculate visible data range based on zoom
             var waveformData = layerData.WaveformData;
-            var startIndex = (int)(ZoomStartTime * waveformData.Length);
-            var endIndex = (int)(ZoomEndTime * waveformData.Length);
-            startIndex = Math.Clamp(startIndex, 0, waveformData.Length - 1);
-            endIndex = Math.Clamp(endIndex, startIndex + 1, waveformData.Length);
+            var dataLen = waveformData.Length;
+            if (dataLen <= 0 || ActualWidth <= 0) return;
+
+            var startIndex = (int)(ZoomStartTime * dataLen);
+            var endIndex = (int)(ZoomEndTime * dataLen);
+
+            var maxStart = Math.Max(0, dataLen - 1);
+            startIndex = Math.Clamp(startIndex, 0, maxStart);
+
+            endIndex = Math.Clamp(endIndex, startIndex + 1, dataLen);
+            if (endIndex <= startIndex)
+            {
+                endIndex = Math.Min(startIndex + 1, dataLen);
+                if (endIndex <= startIndex) return;
+            }
             
             var visibleData = waveformData[startIndex..endIndex];
             var pointsPerPixel = Math.Max(1, (int)(visibleData.Length / ActualWidth));
@@ -856,15 +896,25 @@ namespace AeroDebrief.UI.Controls
         private void DrawFrequencyWaveform(FrequencyWaveformData freqData, double centerY, double scaleY, float globalMaxAmplitude)
         {
             var waveformData = freqData.WaveformData;
-            if (waveformData == null || waveformData.Length == 0)
+            if (waveformData == null || waveformData.Length == 0 || ActualWidth <= 0)
                 return;
 
             // Calculate visible data range based on zoom
-            var startIndex = (int)(ZoomStartTime * waveformData.Length);
-            var endIndex = (int)(ZoomEndTime * waveformData.Length);
-            startIndex = Math.Clamp(startIndex, 0, waveformData.Length - 1);
-            endIndex = Math.Clamp(endIndex, startIndex + 1, waveformData.Length);
-            
+            var dataLen = waveformData.Length;
+            if (dataLen <= 0) return;
+
+            var startIndex = (int)(ZoomStartTime * dataLen);
+            var endIndex = (int)(ZoomEndTime * dataLen);
+
+            var maxStart = Math.Max(0, dataLen - 1);
+            startIndex = Math.Clamp(startIndex, 0, maxStart);
+            endIndex = Math.Clamp(endIndex, startIndex + 1, dataLen);
+            if (endIndex <= startIndex)
+            {
+                endIndex = Math.Min(startIndex + 1, dataLen);
+                if (endIndex <= startIndex) return;
+            }
+
             var visibleData = waveformData[startIndex..endIndex];
             var pointsPerPixel = Math.Max(1, (int)(visibleData.Length / ActualWidth));
             

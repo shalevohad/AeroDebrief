@@ -128,6 +128,26 @@ namespace AeroDebrief.UI.Controls.Player
                 new PropertyMetadata(false, OnIsUsingGpuChanged));
 
         /// <summary>
+        /// Engine status color as a DependencyProperty so bindings update correctly.
+        /// </summary>
+        public static readonly DependencyProperty EngineStatusColorProperty =
+            DependencyProperty.Register(
+                nameof(EngineStatusColor),
+                typeof(Brush),
+                typeof(WaveformDisplayPanel),
+                new PropertyMetadata(new SolidColorBrush(Color.FromRgb(255, 152, 0))));
+
+        /// <summary>
+        /// Engine status tooltip as a DependencyProperty so bindings update correctly.
+        /// </summary>
+        public static readonly DependencyProperty EngineStatusTooltipProperty =
+            DependencyProperty.Register(
+                nameof(EngineStatusTooltip),
+                typeof(string),
+                typeof(WaveformDisplayPanel),
+                new PropertyMetadata("CPU-based waveform rendering\nGPU not available or disabled"));
+
+        /// <summary>
         /// Gets or sets whether to show the engine status badge.
         /// </summary>
         public static readonly DependencyProperty ShowEngineStatusProperty =
@@ -257,6 +277,18 @@ namespace AeroDebrief.UI.Controls.Player
             set => SetValue(IsUsingGpuProperty, value);
         }
 
+        public Brush EngineStatusColor
+        {
+            get => (Brush)GetValue(EngineStatusColorProperty);
+            set => SetValue(EngineStatusColorProperty, value);
+        }
+
+        public string EngineStatusTooltip
+        {
+            get => (string)GetValue(EngineStatusTooltipProperty);
+            set => SetValue(EngineStatusTooltipProperty, value);
+        }
+
         public bool ShowEngineStatus
         {
             get => (bool)GetValue(ShowEngineStatusProperty);
@@ -292,20 +324,6 @@ namespace AeroDebrief.UI.Controls.Player
             get => (double)GetValue(BufferEndPositionProperty);
             set => SetValue(BufferEndPositionProperty, value);
         }
-
-        /// <summary>
-        /// Gets the engine status color based on whether GPU is being used.
-        /// </summary>
-        public Brush EngineStatusColor => IsUsingGpu
-            ? new SolidColorBrush(Color.FromRgb(33, 150, 243))  // Vibrant Blue for GPU
-            : new SolidColorBrush(Color.FromRgb(255, 152, 0)); // Orange for CPU
-
-        /// <summary>
-        /// Gets the engine status tooltip.
-        /// </summary>
-        public string EngineStatusTooltip => IsUsingGpu
-            ? "GPU-accelerated waveform rendering\nHardware-accelerated, 10-50x faster than CPU"
-            : "CPU-based waveform rendering\nGPU not available or disabled";
 
         #endregion
 
@@ -345,10 +363,10 @@ namespace AeroDebrief.UI.Controls.Player
         public WaveformDisplayPanel()
         {
             InitializeComponent();
-            
+
             // Wire up size change events for GPU compositor
             WaveformDisplay.SizeChanged += WaveformDisplay_SizeChanged;
-            
+
             // Update engine icon when loaded
             this.Loaded += WaveformDisplayPanel_Loaded;
         }
@@ -363,6 +381,7 @@ namespace AeroDebrief.UI.Controls.Player
         private void WaveformDisplayPanel_Loaded(object sender, RoutedEventArgs e)
         {
             UpdateEngineIcon();
+            UpdateEngineStatusVisuals();
         }
 
         /// <summary>
@@ -495,8 +514,7 @@ namespace AeroDebrief.UI.Controls.Player
             if (d is WaveformDisplayPanel panel)
             {
                 panel.UpdateEngineIcon();
-                panel.OnPropertyChanged(nameof(EngineStatusColor));
-                panel.OnPropertyChanged(nameof(EngineStatusTooltip));
+                panel.UpdateEngineStatusVisuals();
             }
         }
 
@@ -505,8 +523,7 @@ namespace AeroDebrief.UI.Controls.Player
             if (d is WaveformDisplayPanel panel)
             {
                 panel.UpdateEngineIcon();
-                panel.OnPropertyChanged(nameof(EngineStatusColor));
-                panel.OnPropertyChanged(nameof(EngineStatusTooltip));
+                panel.UpdateEngineStatusVisuals();
             }
         }
 
@@ -525,7 +542,7 @@ namespace AeroDebrief.UI.Controls.Player
             try
             {
                 var token = (EngineType ?? "CPU").Trim().ToLowerInvariant();
-                FontAwesomeIcon faIcon = IsUsingGpu 
+                FontAwesomeIcon faIcon = IsUsingGpu
                     ? FontAwesomeIcon.Microchip  // GPU icon
                     : FontAwesomeIcon.Desktop;   // CPU icon
 
@@ -544,6 +561,22 @@ namespace AeroDebrief.UI.Controls.Player
         }
 
         /// <summary>
+        /// Updates engine status color and tooltip so UI bindings update immediately.
+        /// </summary>
+        private void UpdateEngineStatusVisuals()
+        {
+            // Choose colors consistent with previous implementation
+            var gpuBrush = new SolidColorBrush(Color.FromRgb(33, 150, 243)); // Vibrant Blue for GPU
+            var cpuBrush = new SolidColorBrush(Color.FromRgb(255, 152, 0));  // Orange for CPU
+
+            EngineStatusColor = IsUsingGpu ? (Brush)gpuBrush : (Brush)cpuBrush;
+
+            EngineStatusTooltip = IsUsingGpu
+                ? "GPU-accelerated waveform rendering\nHardware-accelerated, 10-50x faster than CPU"
+                : "CPU-based waveform rendering\nGPU not available or disabled";
+        }
+
+        /// <summary>
         /// Updates GPU composite texture if GPU rendering is active.
         /// </summary>
         private void UpdateGpuCompositeIfNeeded()
@@ -558,32 +591,6 @@ namespace AeroDebrief.UI.Controls.Player
         private void RaiseZoomChangedEvent()
         {
             this.RaiseZoomChanged(ZoomStartTime, ZoomEndTime, 1.0 / (ZoomEndTime - ZoomStartTime));
-        }
-
-        /// <summary>
-        /// Notifies property change for dynamic properties.
-        /// </summary>
-        private void OnPropertyChanged(string propertyName)
-        {
-            // Trigger property changed notification only if we have a valid dependency property
-            var property = GetPropertyForName(propertyName);
-            if (property != null)
-            {
-                GetBindingExpression(property)?.UpdateTarget();
-            }
-        }
-
-        /// <summary>
-        /// Gets the dependency property for a given property name.
-        /// </summary>
-        private DependencyProperty? GetPropertyForName(string propertyName)
-        {
-            return propertyName switch
-            {
-                nameof(EngineStatusColor) => null, // Computed property
-                nameof(EngineStatusTooltip) => null, // Computed property
-                _ => null
-            };
         }
 
         #endregion
