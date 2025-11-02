@@ -1,27 +1,57 @@
 -- AeroDebrief Sync - Main Entry Point
 -- Synchronizes AeroDebrief voice playback with Tacview
 
+-- Note: lua-strict is disabled to allow access to Tacview's built-in global modules (JSON, etc.)
+-- If you want to re-enable strict mode, uncomment the line below and add local declarations for all globals
+-- require("lua-strict")
+
+local Tacview = require("Tacview190")
+
+-- Log that main.lua is being executed
+Tacview.Log.Info("AeroDebrief Sync: main.lua loaded, creating addon table...")
+
 local AeroDebriefSync = {}
 
--- Module dependencies
+-- Module dependencies - pass Tacview to each module
 local config = require("config")
+config.SetTacview(Tacview)
+
 local tcpServer = require("tcp_server")
+tcpServer.SetTacview(Tacview)
+
 local protocol = require("protocol")
+protocol.SetTacview(Tacview)
+
 local stateManager = require("state_manager")
+
 local pilotExtractor = require("pilot_extractor")
+pilotExtractor.SetTacview(Tacview)
+
 local panManager = require("pan_manager")
+panManager.SetTacview(Tacview)
+
 local menuUI = require("menu_ui")
+menuUI.SetTacview(Tacview)
+
 local visualEffects = require("visual_effects")
+visualEffects.SetTacview(Tacview)
+
 local utils = require("utils")
+
+Tacview.Log.Info("AeroDebrief Sync: All modules loaded successfully")
 
 -- State
 local isInitialized = false
 
 ----------------------------------------------------------------
--- Initialize addon
+-- Initialize addon (called immediately on load)
 ----------------------------------------------------------------
 
-function AeroDebriefSync:OnInitialize()
+local function Initialize()
+    if isInitialized then
+        return
+    end
+    
     Tacview.Log.Info("==============================================")
     Tacview.Log.Info("AeroDebrief Sync: Initializing...")
     Tacview.Log.Info("==============================================")
@@ -39,7 +69,7 @@ function AeroDebriefSync:OnInitialize()
     
     if not success then
         Tacview.Log.Error(string.format("Failed to start TCP server: %s", tostring(err)))
-        Tacview.UI.MessageBox.Error("Failed to start AeroDebrief Sync TCP server. Check port " .. config.Port)
+        -- Don't show message box during auto-init, just log
         return
     end
     
@@ -49,11 +79,11 @@ function AeroDebriefSync:OnInitialize()
     panManager.Initialize()
     
     -- Register menu
-    menuUI.RegisterMenu(self)
+    menuUI.RegisterMenu(AeroDebriefSync)
     
     -- Set message handler for incoming messages from AeroDebrief
     tcpServer.SetMessageHandler(function(message)
-        self:OnMessageReceived(message)
+        AeroDebriefSync:OnMessageReceived(message)
     end)
     
     isInitialized = true
@@ -64,6 +94,18 @@ function AeroDebriefSync:OnInitialize()
     Tacview.Log.Info(string.format("  Update rate: %d Hz", config.UpdateRate))
     Tacview.Log.Info(string.format("  Visual effects: enabled"))
     Tacview.Log.Info("==============================================")
+end
+
+-- Initialize immediately when the addon loads
+Initialize()
+
+----------------------------------------------------------------
+-- Tacview lifecycle handlers
+----------------------------------------------------------------
+
+function AeroDebriefSync:OnInitialize()
+    -- This may be called by Tacview, but we've already initialized
+    Tacview.Log.Debug("AeroDebrief Sync: OnInitialize called (already initialized)")
 end
 
 ----------------------------------------------------------------
@@ -80,8 +122,8 @@ function AeroDebriefSync:OnUpdate(dt, absoluteTime)
     
     -- Get current mission state
     local currentTime = Tacview.Context.GetAbsoluteTime()
-    local isPlaying = Tacview.Context.GetPlaybackState() == Tacview.Context.PlaybackState.Playing
-    local playbackSpeed = Tacview.Context.GetPlaybackSpeed() or 1.0
+    local isPlaying = Tacview.Context.Playback.IsPlaying()
+    local playbackSpeed = Tacview.Context.Playback.GetPlaybackSpeed() or 1.0
     
     -- Check if state has changed (including playback speed)
     local stateChanged = stateManager.HasStateChanged(
@@ -117,7 +159,7 @@ function AeroDebriefSync:OnPlaybackStateChange(isPlaying)
     Tacview.Log.Debug(string.format("Playback state changed: %s", isPlaying and "playing" or "paused"))
     
     local currentTime = Tacview.Context.GetAbsoluteTime()
-    local playbackSpeed = Tacview.Context.GetPlaybackSpeed() or 1.0
+    local playbackSpeed = Tacview.Context.Playback.GetPlaybackSpeed() or 1.0
     local playbackState = isPlaying and "playing" or "paused"
     
     -- Broadcast state change
@@ -188,7 +230,7 @@ function AeroDebriefSync:OnMessageReceived(message)
     local decoded = protocol.Decode(message)
     
     if not decoded then
-        Tacview.Log.Warn("Failed to decode message from AeroDebrief")
+        Tacview.Log.Warning("Failed to decode message from AeroDebrief")
         return
     end
     
@@ -284,9 +326,9 @@ function AeroDebriefSync:OnShutdown()
 end
 
 ----------------------------------------------------------------
--- Register addon with Tacview
+-- Return addon table (Tacview auto-registers it)
 ----------------------------------------------------------------
 
-Tacview.AddOns.Register(AeroDebriefSync)
+Tacview.Log.Info("AeroDebrief Sync: Returning addon table to Tacview...")
 
 return AeroDebriefSync

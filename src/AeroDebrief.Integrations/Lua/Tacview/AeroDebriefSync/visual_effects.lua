@@ -3,6 +3,13 @@
 
 local VisualEffects = {}
 
+-- Tacview API (will be set by main.lua)
+local Tacview = nil
+
+function VisualEffects.SetTacview(tacviewInstance)
+    Tacview = tacviewInstance
+end
+
 -- Configuration
 local Config = {
     -- Text label settings
@@ -223,7 +230,7 @@ function DrawRadioWaveEffect(transform, transmission, absoluteTime)
         color,
         2.0  -- Line width
     )
-}
+end
 
 ----------------------------------------------------------------
 -- Helper: Find Tacview object ID from pilot ID (GUID)

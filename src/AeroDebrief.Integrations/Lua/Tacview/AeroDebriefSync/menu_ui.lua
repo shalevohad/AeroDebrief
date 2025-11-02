@@ -2,6 +2,13 @@
 
 local MenuUI = {}
 
+-- Tacview API (will be set by main.lua)
+local Tacview = nil
+
+function MenuUI.SetTacview(tacviewInstance)
+    Tacview = tacviewInstance
+end
+
 local Config = require("config")
 local TcpServer = require("tcp_server")
 local PanManager = require("pan_manager")
@@ -38,20 +45,19 @@ function MenuUI.RegisterMenu(addon)
         MenuUI.ShowPanConfiguration()
     end)
     
-    MenuItems.AutoPan = Tacview.UI.Menus.AddOption(MenuItems.Root, "Auto Pan Mode", function()
+    -- Pan mode options (checkable)
+    local panMode = PanManager.GetMode()
+    MenuItems.AutoPan = Tacview.UI.Menus.AddOption(MenuItems.Root, "Auto Pan Mode", panMode == "auto", function()
         PanManager.SetMode("auto")
         MenuUI.UpdatePanModeMenu()
         Tacview.Log.Info("Pan mode set to Auto")
     end)
     
-    MenuItems.ManualPan = Tacview.UI.Menus.AddOption(MenuItems.Root, "Manual Pan Mode", function()
+    MenuItems.ManualPan = Tacview.UI.Menus.AddOption(MenuItems.Root, "Manual Pan Mode", panMode == "manual", function()
         PanManager.SetMode("manual")
         MenuUI.UpdatePanModeMenu()
         Tacview.Log.Info("Pan mode set to Manual")
     end)
-    
-    -- Update initial pan mode state
-    MenuUI.UpdatePanModeMenu()
     
     Tacview.UI.Menus.AddSeparator(MenuItems.Root)
     
@@ -69,7 +75,8 @@ function MenuUI.RegisterMenu(addon)
     -- Visual effects submenu
     MenuItems.VisualEffects = Tacview.UI.Menus.AddMenu(MenuItems.Root, "Visual Effects")
     
-    MenuItems.ToggleTextLabels = Tacview.UI.Menus.AddOption(MenuItems.VisualEffects, "Show Frequency Labels", function()
+    local visualConfig = VisualEffects.GetConfig()
+    MenuItems.ToggleTextLabels = Tacview.UI.Menus.AddOption(MenuItems.VisualEffects, "Show Frequency Labels", visualConfig.enableTextLabels, function()
         local currentConfig = VisualEffects.GetConfig()
         local newEnabled = not currentConfig.enableTextLabels
         VisualEffects.SetTextLabelsEnabled(newEnabled)
@@ -77,7 +84,7 @@ function MenuUI.RegisterMenu(addon)
         Tacview.Log.Info(string.format("Frequency labels: %s", newEnabled and "enabled" or "disabled"))
     end)
     
-    MenuItems.ToggleRadioWaves = Tacview.UI.Menus.AddOption(MenuItems.VisualEffects, "Show Radio Waves", function()
+    MenuItems.ToggleRadioWaves = Tacview.UI.Menus.AddOption(MenuItems.VisualEffects, "Show Radio Waves", visualConfig.enableRadioWaves, function()
         local currentConfig = VisualEffects.GetConfig()
         local newEnabled = not currentConfig.enableRadioWaves
         VisualEffects.SetRadioWavesEnabled(newEnabled)
@@ -88,9 +95,6 @@ function MenuUI.RegisterMenu(addon)
     Tacview.UI.Menus.AddCommand(MenuItems.VisualEffects, "Configure Effect Settings...", function()
         MenuUI.ShowVisualEffectsDialog()
     end)
-    
-    -- Update initial visual effects state
-    MenuUI.UpdateVisualEffectsMenu()
     
     Tacview.UI.Menus.AddSeparator(MenuItems.Root)
     
@@ -107,7 +111,7 @@ function MenuUI.RegisterMenu(addon)
     
     MenuItems.SaveSettings = Tacview.UI.Menus.AddCommand(MenuItems.Settings, "Save Settings", function()
         Config.Save()
-        Tacview.UI.MessageBox("Settings saved successfully.")
+        Tacview.UI.MessageBox.Info("Settings saved successfully.")
     end)
     
     Tacview.UI.Menus.AddSeparator(MenuItems.Root)
@@ -150,7 +154,7 @@ function MenuUI.ShowPanConfiguration()
     message = message .. "Use the menu to switch between Auto and Manual pan modes.\n"
     message = message .. "In Manual mode, pan values can be configured from AeroDebrief UI."
     
-    Tacview.UI.MessageBox(message)
+    Tacview.UI.MessageBox.Info(message)
 end
 
 ----------------------------------------------------------------
@@ -164,7 +168,7 @@ function MenuUI.ShowPilotFrequencyConfiguration()
     message = message .. "• AeroDebrief UI (recommended)\n\n"
     message = message .. "Changes in either location will sync automatically."
     
-    Tacview.UI.MessageBox(message)
+    Tacview.UI.MessageBox.Info(message)
 end
 
 ----------------------------------------------------------------
@@ -178,7 +182,7 @@ function MenuUI.ShowGeneralFrequencyConfiguration()
     message = message .. "Default: All disabled (no audio from non-selected pilots)\n\n"
     message = message .. "Configure from AeroDebrief UI for best experience."
     
-    Tacview.UI.MessageBox(message)
+    Tacview.UI.MessageBox.Info(message)
 end
 
 ----------------------------------------------------------------
@@ -188,44 +192,19 @@ end
 function MenuUI.ShowVisualEffectsDialog()
     local currentConfig = VisualEffects.GetConfig()
     
-    -- Create dialog
-    local dialog = {
-        title = "Visual Effects Configuration",
-        fields = {
-            {
-                name = "textLabelHeight",
-                label = "Label Height (meters):",
-                type = "number",
-                value = currentConfig.textLabelHeight,
-                min = 10,
-                max = 200
-            },
-            {
-                name = "radioWaveRadius",
-                label = "Radio Wave Radius (meters):",
-                type = "number",
-                value = currentConfig.radioWaveRadius,
-                min = 50,
-                max = 500
-            }
-        }
-    }
+    -- Show current settings
+    local message = "Visual Effects Configuration\n\n"
+    message = message .. string.format("Current Settings:\n")
+    message = message .. string.format("• Label Height: %.0f meters\n", currentConfig.textLabelHeight)
+    message = message .. string.format("• Radio Wave Radius: %.0f meters\n\n", currentConfig.radioWaveRadius)
+    message = message .. "To change settings:\n"
+    message = message .. "1. Close this dialog\n"
+    message = message .. "2. Edit config in addon folder\n"
+    message = message .. "3. Restart Tacview\n\n"
+    message = message .. "Or use the checkboxes in the Visual Effects menu\n"
+    message = message .. "to enable/disable effects."
     
-    -- Show dialog
-    local result = Tacview.UI.MessageBox.InputDialog(dialog)
-    
-    if result then
-        -- Apply new settings
-        VisualEffects.SetTextLabelHeight(result.textLabelHeight)
-        VisualEffects.SetRadioWaveRadius(result.radioWaveRadius)
-        
-        Tacview.UI.MessageBox("Visual effects settings updated")
-        Tacview.Log.Info(string.format(
-            "Visual effects updated: label height=%.0f, wave radius=%.0f",
-            result.textLabelHeight,
-            result.radioWaveRadius
-        ))
-    end
+    Tacview.UI.MessageBox.Info(message)
 end
 
 ----------------------------------------------------------------
@@ -243,7 +222,7 @@ function MenuUI.ShowSettings()
     message = message .. string.format("Update Rate: %d Hz\n", Config.UpdateRate)
     message = message .. string.format("Auto-Reconnect: %s\n", tostring(Config.AutoReconnect))
     
-    Tacview.UI.MessageBox(message)
+    Tacview.UI.MessageBox.Info(message)
 end
 
 ----------------------------------------------------------------
@@ -259,7 +238,7 @@ function MenuUI.ShowPortConfiguration()
     message = message .. "4. Restart Tacview\n\n"
     message = message .. "Note: Both Tacview and AeroDebrief must use the same port."
     
-    Tacview.UI.MessageBox(message)
+    Tacview.UI.MessageBox.Info(message)
 end
 
 ----------------------------------------------------------------
@@ -267,17 +246,32 @@ end
 ----------------------------------------------------------------
 
 function MenuUI.ShowUpdateRateDialog()
-    local newRate = Tacview.UI.MessageBox.InputNumber(
-        "Enter update rate in Hz (1-60):",
-        Config.UpdateRate,
-        1,
-        60
+    -- Show a simple message box asking for input
+    local message = string.format(
+        "Current update rate: %d Hz\n\n" ..
+        "Enter new update rate (1-60 Hz):\n" ..
+        "(Type the number and press OK)",
+        Config.UpdateRate
     )
     
-    if newRate then
-        Config.UpdateRate = newRate
-        Tacview.UI.MessageBox(string.format("Update rate changed to %d Hz", newRate))
-        Tacview.Log.Info(string.format("Update rate changed to: %d Hz", newRate))
+    -- Use InputText for text input
+    local newRateStr = Tacview.UI.MessageBox.InputText(
+        "Change Update Rate",
+        message,
+        tostring(Config.UpdateRate)
+    )
+    
+    if newRateStr then
+        local newRate = tonumber(newRateStr)
+        
+        if newRate and newRate >= 1 and newRate <= 60 then
+            Config.UpdateRate = math.floor(newRate)
+            Tacview.UI.MessageBox.Info(string.format("Update rate changed to %d Hz", Config.UpdateRate))
+            Tacview.Log.Info(string.format("Update rate changed to: %d Hz", Config.UpdateRate))
+        else
+            Tacview.UI.MessageBox.Error("Invalid input. Please enter a number between 1 and 60.")
+            Tacview.Log.Warning(string.format("Invalid update rate input: %s", tostring(newRateStr)))
+        end
     end
 end
 
@@ -298,7 +292,7 @@ function MenuUI.ShowAbout()
     message = message .. "For more information, visit:\n"
     message = message .. "https://github.com/shalevohad/AeroDebrief"
     
-    Tacview.UI.MessageBox(message)
+    Tacview.UI.MessageBox.Info(message)
 end
 
 return MenuUI

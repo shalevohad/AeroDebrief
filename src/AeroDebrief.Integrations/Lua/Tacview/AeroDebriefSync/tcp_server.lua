@@ -3,14 +3,25 @@
 
 local TcpServer = {}
 
--- LuaSocket library
-local socket = require("socket")
+-- Tacview API (will be set by main.lua)
+local Tacview = nil
 
--- Server state
-local serverSocket = nil
-local clients = {}
-local isRunning = false
-local messageHandler = nil
+function TcpServer.SetTacview(tacviewInstance)
+    Tacview = tacviewInstance
+end
+
+-- Ensure the addon's `lib` and `socket` directories are on package.path/package.cpath so bundled LuaSocket can be found.
+local function setupPaths()
+    -- Addon's root directory
+    local addonPath = "D:/Games/DCS World OpenBeta/Game/DCS-BIOS/" --@TODO: Make this dynamic?
+
+    package.path = package.path .. ";" .. addonPath .. "Lua/?.lua"
+    package.cpath = package.cpath .. ";" .. addonPath .. "Lua/?.dll"
+
+    -- Log the updated paths for debugging
+    Tacview.Log.Info("Updated package.path: " .. package.path)
+    Tacview.Log.Info("Updated package.cpath: " .. package.cpath)
+end
 
 ----------------------------------------------------------------
 -- Start TCP Server
@@ -20,6 +31,17 @@ function TcpServer.Start(port, bindAddress)
     if isRunning then
         return false, "Server is already running"
     end
+    
+    setupPaths() -- Ensure paths are set before loading LuaSocket
+    
+    -- Load LuaSocket
+    local socketStatus, socket = pcall(require, "socket")
+    if not socketStatus then
+        return false, "Failed to load LuaSocket: " .. tostring(socket)
+    end
+
+    -- Save the socket reference
+    TcpServer.socket = socket
     
     -- Create TCP server socket
     serverSocket = socket.tcp()

@@ -2,6 +2,13 @@
 
 local Config = {}
 
+-- Tacview API (will be set by main.lua)
+local Tacview = nil
+
+function Config.SetTacview(tacviewInstance)
+    Tacview = tacviewInstance
+end
+
 -- Default configuration values
 local DEFAULT_PORT = 52001
 local DEFAULT_BIND_ADDRESS = "127.0.0.1"

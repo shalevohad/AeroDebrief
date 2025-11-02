@@ -3,6 +3,13 @@
 
 local PilotExtractor = {}
 
+-- Tacview API (will be set by main.lua)
+local Tacview = nil
+
+function PilotExtractor.SetTacview(tacviewInstance)
+    Tacview = tacviewInstance
+end
+
 ----------------------------------------------------------------
 -- Extract pilot information from object
 ----------------------------------------------------------------

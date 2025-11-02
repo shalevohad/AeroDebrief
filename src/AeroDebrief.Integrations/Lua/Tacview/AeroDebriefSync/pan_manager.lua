@@ -3,6 +3,13 @@
 
 local PanManager = {}
 
+-- Tacview API (will be set by main.lua)
+local Tacview = nil
+
+function PanManager.SetTacview(tacviewInstance)
+    Tacview = tacviewInstance
+end
+
 -- Pan mode: "auto" or "manual"
 local panMode = "auto"
 

@@ -2,7 +2,7 @@
 Title=AeroDebrief Voice Sync
 Author=AeroDebrief Team
 Version=1.0.0
-MinimumTacviewVersion=1.9.0
+MinimumTacviewVersion=1.9.2
 Description=Synchronizes AeroDebrief voice recordings with Tacview mission replay
 
 [Settings]
