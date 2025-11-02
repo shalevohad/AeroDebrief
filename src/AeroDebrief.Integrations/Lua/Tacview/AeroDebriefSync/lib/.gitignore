@@ -1,0 +1,31 @@
+# LuaSocket Library Files
+# This folder contains the actual LuaSocket library files for fallback
+# when Tacview doesn't include them (pre-1.9.0 versions)
+
+# We DO commit the library files to provide a complete installation
+# Users can use these files if their Tacview version doesn't include LuaSocket
+
+# Keep all files
+!socket.lua
+!mime.lua
+!*.dll
+!*.so
+!*.dylib
+
+# Keep protocol modules
+!socket/http.lua
+!socket/smtp.lua
+!socket/tp.lua
+!socket/url.lua
+!socket/ftp.lua
+
+# Keep all documentation
+!*.md
+!README.md
+!**/README.md
+
+# Keep placeholders (for reference)
+!*.placeholder
+
+# Keep directory structure
+!
