@@ -134,11 +134,16 @@ end
 ----------------------------------------------------------------
 
 function DrawTransmissionEffects(transmission, absoluteTime)
-    local objectId = transmission.objectId
+    local objectHandle = transmission.objectId
     
-    -- Get object transform (position, rotation)
-    local transform = Tacview.Context.GetTransform(objectId)
-    if not transform then
+    if not objectHandle then
+        return
+    end
+    
+    -- Get object transform (position, rotation) using correct Tacview API
+    -- Tacview.Telemetry.GetCurrentTransform returns transform at current playback time
+    local transform, isValid = Tacview.Telemetry.GetCurrentTransform(objectHandle)
+    if not transform or not isValid then
         return
     end
     
@@ -149,87 +154,51 @@ function DrawTransmissionEffects(transmission, absoluteTime)
         fadeFactor = math.max(0, 1.0 - timeSinceEnd)
     end
     
-    -- Draw text label
-    if Config.enableTextLabels then
-        DrawFrequencyLabel(transform, transmission, fadeFactor)
-    end
+    -- Note: Text labels and radio waves require drawing during render callbacks
+    -- For now, we'll just log that we would draw them
+    -- Full implementation requires registering drawing callbacks in Events.DrawTransparentUI
     
-    -- Draw radio wave effect
-    if Config.enableRadioWaves and not transmission.endTime then
-        DrawRadioWaveEffect(transform, transmission, absoluteTime)
-    end
+    Tacview.Log.Debug(string.format(
+        "Would draw transmission for %s at lon=%.6f, lat=%.6f, alt=%.1f (fade=%.2f)",
+        transmission.pilotName or "unknown",
+        transform.longitude,
+        transform.latitude, 
+        transform.altitude,
+        fadeFactor
+    ))
 end
 
 ----------------------------------------------------------------
 -- Draw frequency label above aircraft
+-- NOTE: This requires registering a drawing callback with Events.DrawTransparentUI
+-- The UI.Renderer functions can only be called during rendering callbacks
 ----------------------------------------------------------------
 
 function DrawFrequencyLabel(transform, transmission, fadeFactor)
-    -- Calculate label position (above aircraft)
-    local labelPos = {
-        longitude = transform.longitude,
-        latitude = transform.latitude,
-        altitude = transform.altitude + Config.textLabelHeight
-    }
+    -- TODO: Implement proper 3D text rendering
+    -- This requires:
+    -- 1. Register Events.DrawTransparentUI.RegisterListener() in main.lua
+    -- 2. Call UI.Renderer.Print() during the callback
+    -- 3. Convert world position to screen coordinates
     
-    -- Format frequency text
-    local freqMHz = transmission.frequency / 1000000.0
-    local text = string.format("TX: %.3f MHz", freqMHz)
-    
-    -- Apply fade to color
-    local color = ApplyFadeToColor(transmission.color, fadeFactor)
-    
-    -- Draw text using Tacview's text rendering
-    Tacview.UI.Renderer.DrawText(
-        labelPos,
-        text,
-        color,
-        Config.textLabelSize
-    )
-    
-    -- Optional: Draw pilot name below frequency
-    if transmission.pilotName then
-        local namePos = {
-            longitude = transform.longitude,
-            latitude = transform.latitude,
-            altitude = transform.altitude + Config.textLabelHeight - 10
-        }
-        
-        Tacview.UI.Renderer.DrawText(
-            namePos,
-            transmission.pilotName,
-            ApplyFadeToColor(0xFFFFFFFF, fadeFactor * 0.8),
-            Config.textLabelSize * 0.8
-        )
-    end
+    -- For now, this is a placeholder
+    -- Actual implementation deferred until rendering system is set up
 end
 
 ----------------------------------------------------------------
 -- Draw expanding radio wave effect
+-- NOTE: This requires registering a drawing callback with Events.DrawTransparentUI
 ----------------------------------------------------------------
 
 function DrawRadioWaveEffect(transform, transmission, absoluteTime)
-    local timeSinceStart = absoluteTime - transmission.startTime
+    -- TODO: Implement proper 3D circle rendering
+    -- This requires:
+    -- 1. Register Events.DrawTransparentObjects.RegisterListener() in main.lua
+    -- 2. Use UI.Renderer.DrawLines() to create circle geometry
+    -- 3. Position in 3D world space
     
-    -- Calculate wave expansion (0 to max radius over duration)
-    local progress = (timeSinceStart % Config.radioWaveDuration) / Config.radioWaveDuration
-    local radius = Config.radioWaveRadius * progress
-    
-    -- Fade out as wave expands
-    local alpha = (1.0 - progress) * 0.5
-    local color = ApplyFadeToColor(transmission.color, alpha)
-    
-    -- Draw circle at aircraft position
-    Tacview.UI.Renderer.DrawCircle(
-        {
-            longitude = transform.longitude,
-            latitude = transform.latitude,
-            altitude = transform.altitude
-        },
-        radius,
-        color,
-        2.0  -- Line width
-    )
+    -- For now, this is a placeholder
+    -- Actual implementation deferred until rendering system is set up
 end
 
 ----------------------------------------------------------------
@@ -237,19 +206,52 @@ end
 ----------------------------------------------------------------
 
 function FindObjectIdByPilotId(pilotId)
-    -- Iterate through all objects to find matching pilot
-    local objectCount = Tacview.Context.GetObjectCount()
+    -- According to Tacview 1.9.0 API:
+    -- - Telemetry.GetObjectCount() returns total number of objects
+    -- - Telemetry.GetObjectHandleByIndex(index) returns object handle
+    -- - Telemetry.GetTextSample() retrieves property values
     
+    if not Tacview or not Tacview.Telemetry then
+        Tacview.Log.Warning("Tacview.Telemetry not available in FindObjectIdByPilotId")
+        return nil
+    end
+    
+    -- Get total object count
+    local objectCount = Tacview.Telemetry.GetObjectCount()
+    if not objectCount or objectCount == 0 then
+        return nil
+    end
+    
+    -- Get property indexes for Pilot and GUID properties
+    local pilotPropertyIndex = Tacview.Telemetry.GetObjectsTextPropertyIndex("Pilot", false)
+    
+    local currentTime = Tacview.Context.GetAbsoluteTime()
+    
+    -- Iterate through all objects
     for i = 0, objectCount - 1 do
-        local objectId = Tacview.Context.GetObjectId(i)
-        if objectId then
-            -- Get object properties
-            local pilot = Tacview.Context.GetObjectProperty(objectId, "Pilot")
-            local guid = Tacview.Context.GetObjectProperty(objectId, "GUID")
+        local objectHandle = Tacview.Telemetry.GetObjectHandleByIndex(i)
+        
+        if objectHandle then
+            -- Try to get pilot name property
+            if pilotPropertyIndex and pilotPropertyIndex ~= Tacview.Telemetry.InvalidPropertyIndex then
+                local pilotValue, isValid = Tacview.Telemetry.GetTextSample(objectHandle, currentTime, pilotPropertyIndex)
+                
+                if isValid and pilotValue then
+                    -- Match by pilot name/GUID
+                    if pilotValue == pilotId then
+                        return objectHandle
+                    end
+                end
+            end
             
-            -- Match by GUID or pilot name
-            if guid == pilotId or pilot == pilotId then
-                return objectId
+            -- Also check call sign as fallback
+            local callsignPropertyIndex = Tacview.Telemetry.GetObjectsTextPropertyIndex("CallSign", false)
+            if callsignPropertyIndex and callsignPropertyIndex ~= Tacview.Telemetry.InvalidPropertyIndex then
+                local callsignValue, isValid = Tacview.Telemetry.GetTextSample(objectHandle, currentTime, callsignPropertyIndex)
+                
+                if isValid and callsignValue and callsignValue == pilotId then
+                    return objectHandle
+                end
             end
         end
     end

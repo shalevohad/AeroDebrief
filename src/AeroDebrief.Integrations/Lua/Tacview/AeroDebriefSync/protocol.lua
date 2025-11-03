@@ -282,17 +282,49 @@ end
 ----------------------------------------------------------------
 
 function Protocol.CreateTimeUpdate(missionTime, playbackState, playbackSpeed)
-    -- Convert mission time to UTC ISO 8601 format
-    local timeUtc = os.date("!%Y-%m-%dT%H:%M:%SZ", missionTime)
+    -- Tacview time is already in seconds since epoch (Unix time)
+    -- Just format it as ISO 8601
+    
+    -- Validate mission time is a valid number
+    if not missionTime 
+       or type(missionTime) ~= "number" 
+       or missionTime ~= missionTime  -- Check for NaN (NaN ~= NaN is true)
+       or missionTime == math.huge    -- Check for +infinity
+       or missionTime == -math.huge   -- Check for -infinity
+       or missionTime <= 0            -- Check for invalid/negative times
+       or missionTime > 2147483647    -- Check for times beyond 2038 (32-bit limit)
+    then
+        Tacview.Log.Warning(string.format("Invalid mission time: %s (type: %s)", tostring(missionTime), type(missionTime)))
+        -- Use current time as fallback
+        missionTime = os.time()
+    end
+    
+    -- Round to integer to avoid floating point issues with os.date
+    missionTime = math.floor(missionTime + 0.5)
+    
+    -- Safely call os.date with error handling
+    local success, timeUtc = pcall(os.date, "!%Y-%m-%dT%H:%M:%SZ", missionTime)
+    
+    if not success then
+        Tacview.Log.Error(string.format("Failed to format time %s: %s", tostring(missionTime), tostring(timeUtc)))
+        -- Fallback to current time
+        timeUtc = os.date("!%Y-%m-%dT%H:%M:%SZ", os.time())
+    end
     
     local message = {
         type = "time_update",
         mission_time_utc = timeUtc,
-        playback_state = playbackState,
-        playback_speed = playbackSpeed
+        playback_state = playbackState or "paused",
+        playback_speed = playbackSpeed or 1.0
     }
     
-    return Protocol.Encode(message)
+    local encoded = Protocol.Encode(message)
+    
+    if not encoded then
+        Tacview.Log.Error("Failed to encode time_update message")
+    end
+    
+    return encoded
 end
 
 ----------------------------------------------------------------
@@ -328,12 +360,67 @@ end
 ----------------------------------------------------------------
 
 function Protocol.CreateSeek(targetTime)
-    -- Convert target time to UTC ISO 8601 format
-    local timeUtc = os.date("!%Y-%m-%dT%H:%M:%SZ", targetTime)
+    -- Validate target time is a valid number
+    if not targetTime 
+       or type(targetTime) ~= "number" 
+       or targetTime ~= targetTime  -- Check for NaN
+       or targetTime == math.huge   -- Check for +infinity
+       or targetTime == -math.huge  -- Check for -infinity
+       or targetTime <= 0           -- Check for invalid/negative times
+       or targetTime > 2147483647   -- Check for times beyond 2038
+    then
+        Tacview.Log.Warning(string.format("Invalid target time for seek: %s", tostring(targetTime)))
+        return nil
+    end
+    
+    -- Round to integer
+    targetTime = math.floor(targetTime + 0.5)
+    
+    -- Safely convert target time to UTC ISO 8601 format
+    local success, timeUtc = pcall(os.date, "!%Y-%m-%dT%H:%M:%SZ", targetTime)
+    
+    if not success then
+        Tacview.Log.Error(string.format("Failed to format seek time %s: %s", tostring(targetTime), tostring(timeUtc)))
+        return nil
+    end
     
     local message = {
         type = "seek",
         target_time_utc = timeUtc
+    }
+    
+    return Protocol.Encode(message)
+end
+
+----------------------------------------------------------------
+-- Create document info message (broadcast when ACMI file is loaded)
+----------------------------------------------------------------
+
+function Protocol.CreateDocumentInfo(fileNames)
+    -- Extract file information
+    local files = {}
+    
+    if fileNames and fileNames ~= "" then
+        -- Split file names if multiple (separated by semicolon or newline)
+        for fileName in string.gmatch(fileNames, "[^\r\n;]+") do
+            fileName = fileName:match("^%s*(.-)%s*$")  -- Trim whitespace
+            if fileName ~= "" then
+                -- Extract just the filename without path
+                local baseName = fileName:match("([^/\\]+)$") or fileName
+                
+                table.insert(files, {
+                    full_path = fileName,
+                    file_name = baseName
+                })
+            end
+        end
+    end
+    
+    local message = {
+        type = "document_loaded",
+        files = files,
+        file_count = #files,
+        timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
     }
     
     return Protocol.Encode(message)

@@ -40,6 +40,13 @@ function MenuUI.RegisterMenu(addon)
     -- Main menu
     MenuItems.Root = Tacview.UI.Menus.AddMenu(nil, "AeroDebrief Sync")
     
+    -- Broadcast Pilots button (NEW)
+    Tacview.UI.Menus.AddCommand(MenuItems.Root, "?? Broadcast Selected Pilots", function()
+        MenuUI.BroadcastSelectedPilots()
+    end)
+    
+    Tacview.UI.Menus.AddSeparator(MenuItems.Root)
+    
     -- Pan configuration submenu
     MenuItems.ConfigurePan = Tacview.UI.Menus.AddCommand(MenuItems.Root, "Configure Audio Pan...", function()
         MenuUI.ShowPanConfiguration()
@@ -246,32 +253,107 @@ end
 ----------------------------------------------------------------
 
 function MenuUI.ShowUpdateRateDialog()
-    -- Show a simple message box asking for input
+    local stateManager = require("state_manager")
+    
+    -- Show current update rate and interval
+    local currentRate = stateManager.GetUpdateRate()
+    local currentInterval = stateManager.GetUpdateInterval()
+    
     local message = string.format(
-        "Current update rate: %d Hz\n\n" ..
+        "Current update rate: %d Hz (%.0f ms interval)\n\n" ..
         "Enter new update rate (1-60 Hz):\n" ..
-        "(Type the number and press OK)",
-        Config.UpdateRate
+        "(Higher = more responsive, more network usage)\n\n" ..
+        "Recommended: 10 Hz (100ms) for good balance",
+        math.floor(currentRate),
+        currentInterval * 1000
     )
     
     -- Use InputText for text input
     local newRateStr = Tacview.UI.MessageBox.InputText(
         "Change Update Rate",
         message,
-        tostring(Config.UpdateRate)
+        tostring(math.floor(currentRate))
     )
     
     if newRateStr then
         local newRate = tonumber(newRateStr)
         
         if newRate and newRate >= 1 and newRate <= 60 then
+            -- Update configuration
             Config.UpdateRate = math.floor(newRate)
-            Tacview.UI.MessageBox.Info(string.format("Update rate changed to %d Hz", Config.UpdateRate))
-            Tacview.Log.Info(string.format("Update rate changed to: %d Hz", Config.UpdateRate))
+            
+            -- CRITICAL: Immediately apply the new rate to state manager
+            stateManager.SetUpdateRate(Config.UpdateRate)
+            
+            -- Save configuration
+            Config.Save()
+            
+            -- Show confirmation with actual interval
+            local newInterval = stateManager.GetUpdateInterval()
+            Tacview.UI.MessageBox.Info(string.format(
+                "Update rate changed to %d Hz\n" ..
+                "Interval: %.0f ms\n\n" ..
+                "New rate is active immediately!",
+                Config.UpdateRate,
+                newInterval * 1000
+            ))
+            
+            Tacview.Log.Info(string.format(
+                "Update rate changed: %d Hz (%.0f ms interval)",
+                Config.UpdateRate,
+                newInterval * 1000
+            ))
         else
             Tacview.UI.MessageBox.Error("Invalid input. Please enter a number between 1 and 60.")
             Tacview.Log.Warning(string.format("Invalid update rate input: %s", tostring(newRateStr)))
         end
+    end
+end
+
+----------------------------------------------------------------
+-- Broadcast Selected Pilots (Manual Trigger)
+----------------------------------------------------------------
+
+function MenuUI.BroadcastSelectedPilots()
+    -- Extract all pilots from current telemetry
+    local pilots = pilotExtractor.ExtractPilots()
+    
+    if not pilots or #pilots == 0 then
+        Tacview.UI.MessageBox.Warning("No pilots found in current telemetry.\n\nPlease load a telemetry file first.")
+        return
+    end
+    
+    -- Get pan mode and general frequencies
+    local panMode = panManager.GetMode()
+    local generalFreqs = panManager.GetGeneralEnabledFrequencies()
+    
+    -- Create and broadcast pilot selection message
+    local message = protocol.CreatePilotSelection(pilots, panMode, generalFreqs)
+    
+    if message then
+        local success = tcpServer.Broadcast(message)
+        
+        if success then
+            Tacview.UI.MessageBox.Info(string.format(
+                "Broadcast successful!\n\n" ..
+                "Pilots: %d\n" ..
+                "Pan Mode: %s\n" ..
+                "General Frequencies: %d",
+                #pilots,
+                panMode,
+                #generalFreqs
+            ))
+            
+            Tacview.Log.Info(string.format(
+                "Manually broadcast pilot selection: %d pilots, %s pan mode",
+                #pilots,
+                panMode
+            ))
+        else
+            Tacview.UI.MessageBox.Warning("No AeroDebrief clients connected.\n\nPlease connect AeroDebrief first.")
+        end
+    else
+        Tacview.UI.MessageBox.Error("Failed to create pilot selection message.")
     end
 end
 

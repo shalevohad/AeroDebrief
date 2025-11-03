@@ -10,17 +10,26 @@ function TcpServer.SetTacview(tacviewInstance)
     Tacview = tacviewInstance
 end
 
+-- State variables (MUST be declared at module level)
+local serverSocket = nil
+local clients = {}
+local isRunning = false
+local messageHandler = nil
+
 -- Ensure the addon's `lib` and `socket` directories are on package.path/package.cpath so bundled LuaSocket can be found.
 local function setupPaths()
-    -- Addon's root directory
-    local addonPath = "D:/Games/DCS World OpenBeta/Game/DCS-BIOS/" --@TODO: Make this dynamic?
-
-    package.path = package.path .. ";" .. addonPath .. "Lua/?.lua"
-    package.cpath = package.cpath .. ";" .. addonPath .. "Lua/?.dll"
-
-    -- Log the updated paths for debugging
-    Tacview.Log.Info("Updated package.path: " .. package.path)
-    Tacview.Log.Info("Updated package.cpath: " .. package.cpath)
+    -- Tacview 1.9.0+ includes LuaSocket by default
+    -- No manual path setup needed for modern Tacview versions
+    
+    -- For older versions or custom installs, try to detect addon path
+    if Tacview and Tacview.AddOns and Tacview.AddOns.Current then
+        local addonPath = Tacview.AddOns.Current.GetPath()
+        if addonPath then
+            package.path = package.path .. ";" .. addonPath .. "/?.lua"
+            package.cpath = package.cpath .. ";" .. addonPath .. "/?.dll"
+            Tacview.Log.Debug("Updated package paths for addon: " .. addonPath)
+        end
+    end
 end
 
 ----------------------------------------------------------------
@@ -29,47 +38,65 @@ end
 
 function TcpServer.Start(port, bindAddress)
     if isRunning then
+        Tacview.Log.Warning("TCP server already running")
         return false, "Server is already running"
     end
     
-    setupPaths() -- Ensure paths are set before loading LuaSocket
+    -- Try to load LuaSocket
+    setupPaths()
     
-    -- Load LuaSocket
     local socketStatus, socket = pcall(require, "socket")
     if not socketStatus then
-        return false, "Failed to load LuaSocket: " .. tostring(socket)
+        local errorMsg = "Failed to load LuaSocket: " .. tostring(socket)
+        Tacview.Log.Error("AeroDebrief Sync: " .. errorMsg)
+        Tacview.Log.Error("Make sure you have Tacview 1.9.0 or later")
+        return false, errorMsg
     end
-
-    -- Save the socket reference
+    
+    Tacview.Log.Info("LuaSocket loaded successfully (version: " .. tostring(socket._VERSION or "unknown") .. ")")
+    
+    -- Save socket reference for later use
     TcpServer.socket = socket
     
     -- Create TCP server socket
-    serverSocket = socket.tcp()
-    if not serverSocket then
-        return false, "Failed to create TCP socket"
+    local serverSock, err = socket.tcp()
+    if not serverSock then
+        local errorMsg = "Failed to create TCP socket: " .. tostring(err)
+        Tacview.Log.Error("AeroDebrief Sync: " .. errorMsg)
+        return false, errorMsg
     end
     
-    -- Set socket to non-blocking mode
-    serverSocket:settimeout(0)
+    serverSocket = serverSock
+    
+    -- Set socket options
+    serverSocket:settimeout(0)  -- Non-blocking
+    serverSocket:setoption("reuseaddr", true)  -- Allow quick restart
     
     -- Bind to address and port
-    local success, err = serverSocket:bind(bindAddress, port)
+    local success, bindErr = serverSocket:bind(bindAddress, port)
     if not success then
         serverSocket:close()
         serverSocket = nil
-        return false, "Failed to bind to " .. bindAddress .. ":" .. port .. " - " .. tostring(err)
+        local errorMsg = string.format("Failed to bind to %s:%d - %s", bindAddress, port, tostring(bindErr))
+        Tacview.Log.Error("AeroDebrief Sync: " .. errorMsg)
+        Tacview.Log.Error("Is another application using port " .. port .. "?")
+        return false, errorMsg
     end
     
-    -- Start listening for connections
+    -- Start listening
     success, err = serverSocket:listen(5)
     if not success then
         serverSocket:close()
         serverSocket = nil
-        return false, "Failed to listen on socket: " .. tostring(err)
+        local errorMsg = "Failed to listen on socket: " .. tostring(err)
+        Tacview.Log.Error("AeroDebrief Sync: " .. errorMsg)
+        return false, errorMsg
     end
     
     isRunning = true
-    Tacview.Log.Info(string.format("AeroDebrief Sync: TCP server listening on %s:%d", bindAddress, port))
+    clients = {}  -- Reset client list
+    
+    Tacview.Log.Info(string.format("? TCP server listening on %s:%d", bindAddress, port))
     
     return true
 end
@@ -123,7 +150,9 @@ function TcpServer.Update()
         table.insert(clients, client)
         
         local peerIp, peerPort = clientSocket:getpeername()
-        Tacview.Log.Info(string.format("AeroDebrief Sync: Client connected from %s:%s", peerIp or "unknown", peerPort or "unknown"))
+        -- Use Info level to ensure visibility (DBG level might be filtered)
+        Tacview.Log.Info(string.format("==> CLIENT CONNECTED from %s:%s (Total clients: %d)", 
+            peerIp or "unknown", peerPort or "unknown", #clients))
     end
     
     -- Process existing clients
@@ -140,7 +169,7 @@ function TcpServer.Update()
                 client.socket:close()
             end
             table.remove(clients, i)
-            Tacview.Log.Info("AeroDebrief Sync: Client disconnected")
+            Tacview.Log.Info(string.format("==> CLIENT DISCONNECTED (Remaining clients: %d)", #clients))
         end
     end
 end
@@ -180,7 +209,7 @@ function TcpServer.ProcessClient(client)
         if message ~= "" then
             -- Call message handler
             if messageHandler then
-                local success, err = pcall(messageHandler, client, message)
+                local success, err = pcall(messageHandler, message)
                 if not success then
                     Tacview.Log.Error("AeroDebrief Sync: Error in message handler: " .. tostring(err))
                 end
@@ -196,8 +225,15 @@ end
 ----------------------------------------------------------------
 
 function TcpServer.Broadcast(message)
-    if not isRunning or #clients == 0 then
-        return
+    if not isRunning then
+        Tacview.Log.Debug("Cannot broadcast - server not running")
+        return false
+    end
+    
+    if #clients == 0 then
+        -- This is normal if no clients connected yet
+        Tacview.Log.Debug("No clients connected - skipping broadcast")
+        return true
     end
     
     -- Ensure message ends with newline
@@ -205,13 +241,51 @@ function TcpServer.Broadcast(message)
         message = message .. "\n"
     end
     
+    -- Track broadcast count
+    if not TcpServer.broadcastCount then
+        TcpServer.broadcastCount = 0
+    end
+    TcpServer.broadcastCount = TcpServer.broadcastCount + 1
+    
+    -- Log first 10 broadcasts, then every 50th to verify messages are being sent
+    if TcpServer.broadcastCount <= 10 or TcpServer.broadcastCount % 50 == 0 then
+        -- Truncate message for logging (first 150 chars)
+        local msgPreview = message:sub(1, 150):gsub("\n", "\\n")
+        Tacview.Log.Info(string.format(
+            "?? BROADCAST #%d to %d client(s): %s%s", 
+            TcpServer.broadcastCount, 
+            #clients, 
+            msgPreview,
+            #message > 150 and "..." or ""
+        ))
+    end
+    
     -- Send to all clients
-    for _, client in ipairs(clients) do
-        local success, err = client.socket:send(message)
-        if not success then
-            Tacview.Log.Warning("AeroDebrief Sync: Failed to send to client: " .. tostring(err))
+    local successCount = 0
+    local failCount = 0
+    
+    for i, client in ipairs(clients) do
+        local bytesSent, err = client.socket:send(message)
+        if bytesSent then
+            successCount = successCount + 1
+        else
+            failCount = failCount + 1
+            Tacview.Log.Warning(string.format(
+                "? Failed to send to client #%d: %s (error: %s)", 
+                i, tostring(err), tostring(err)
+            ))
         end
     end
+    
+    -- Log summary if there were failures
+    if failCount > 0 then
+        Tacview.Log.Warning(string.format(
+            "Broadcast #%d: %d succeeded, %d failed", 
+            TcpServer.broadcastCount, successCount, failCount
+        ))
+    end
+    
+    return successCount > 0
 end
 
 ----------------------------------------------------------------
