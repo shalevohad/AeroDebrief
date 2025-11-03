@@ -66,6 +66,21 @@ public class TacviewConfiguration
     public int ReceiveTimeoutMs { get; set; } = 5000;
     
     /// <summary>
+    /// Send timeout in milliseconds
+    /// </summary>
+    public int SendTimeoutMs { get; set; } = 5000;
+    
+    /// <summary>
+    /// Buffer size for TCP socket
+    /// </summary>
+    public int SocketBufferSize { get; set; } = 8192;
+    
+    /// <summary>
+    /// Enable detailed logging for debugging
+    /// </summary>
+    public bool EnableDebugLogging { get; set; } = false;
+    
+    /// <summary>
     /// Validates the configuration settings
     /// </summary>
     /// <param name="error">Error message if validation fails</param>
@@ -111,6 +126,18 @@ public class TacviewConfiguration
         if (ReceiveTimeoutMs < 1000)
         {
             error = "ReceiveTimeoutMs must be at least 1000";
+            return false;
+        }
+        
+        if (SendTimeoutMs < 1000)
+        {
+            error = "SendTimeoutMs must be at least 1000";
+            return false;
+        }
+        
+        if (SocketBufferSize < 1024)
+        {
+            error = "SocketBufferSize must be at least 1024 bytes";
             return false;
         }
         

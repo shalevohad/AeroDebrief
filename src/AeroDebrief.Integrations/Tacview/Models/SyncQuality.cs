@@ -21,6 +21,31 @@ public class SyncQuality
     public DateTime LastUpdate { get; set; }
     
     /// <summary>
+    /// Whether sync is currently active
+    /// </summary>
+    public bool IsSynchronized { get; set; }
+    
+    /// <summary>
+    /// Number of sync updates received
+    /// </summary>
+    public int UpdateCount { get; set; }
+    
+    /// <summary>
+    /// Time of last sync update
+    /// </summary>
+    public DateTime LastSyncTime { get; set; }
+    
+    /// <summary>
+    /// Target position from Tacview
+    /// </summary>
+    public TimeSpan TargetPosition { get; set; }
+    
+    /// <summary>
+    /// Current playback position
+    /// </summary>
+    public TimeSpan CurrentPosition { get; set; }
+    
+    /// <summary>
     /// Whether the sync is currently healthy
     /// </summary>
     public bool IsHealthy => Math.Abs(DriftMs) <= 500;
