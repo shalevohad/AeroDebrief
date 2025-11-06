@@ -139,8 +139,12 @@ namespace AeroDebrief.Core.Audio
             if (speed <= 1.5)
                 return false; // No skipping below 1.5x
 
-            // For speeds > 1.5x, skip packets probabilistically
-            // E.g., at 2.0x, skip 25% of packets ((2.0-1.0)/2.0 = 0.5, but we use 25% to maintain quality)
+            // For speeds > 1.5x, skip packets probabilistically to reduce CPU overhead
+            // Formula: (speed - 1.0) / (speed * 2.0) creates a progressive skip ratio:
+            //   - At 2.0x: (2-1)/(2*2) = 0.25 (skip 25% of packets)
+            //   - At 3.0x: (3-1)/(3*2) = 0.33 (skip 33% of packets)
+            //   - At 4.0x: (4-1)/(4*2) = 0.375 (skip 37.5% of packets)
+            // This balances CPU efficiency with audio quality by keeping skip ratio moderate
             var skipRatio = Math.Min(0.5, (speed - 1.0) / (speed * 2.0));
             return random.NextDouble() < skipRatio;
         }
