@@ -110,7 +110,7 @@ namespace AeroDebrief.Core.Playback
                 {
                     // Entering scrubbing mode
                     _scrubbingMode = true;
-                    _savedVolume = 1.0f; // TODO: Get actual volume from audio engine
+                    _savedVolume = audioEngine != null ? audioEngine.GetMasterVolume() : 1.0f;
                     
                     Logger.Info($"Scrubbing mode activated (drift: {driftMs:F0}ms, time since last: {timeSinceLastSeek:F0}ms, speed: {_currentScrubSpeed:F1}x)");
                     
