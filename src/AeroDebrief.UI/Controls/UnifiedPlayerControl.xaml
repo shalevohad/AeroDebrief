@@ -16,8 +16,8 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" MinHeight="101.9"/>
             <!-- Player Header -->
-            <RowDefinition Height="Auto" MinHeight="64"/>
-            <!-- Tacview Status -->
+            <RowDefinition Height="Auto"/>
+            <!-- Tacview Status - no MinHeight so it collapses completely -->
             <RowDefinition/>
             <!-- Main content -->
         </Grid.RowDefinitions>
@@ -34,7 +34,7 @@
                                FilePanelRequested="OnFilePanelRequested" Margin="0,0,0,64" Grid.RowSpan="2"/>
 
         <!-- TACVIEW STATUS - Single-line status bar below player header -->
-        <!-- Always visible, but grayed out and disabled when not available/connected -->
+        <!-- Hidden when no source is loaded, visible (but grayed out) when disconnected -->
         <tacview:TacviewStatusControl Grid.Row="1"
                                   x:Name="TacviewStatus"
                                   DataContext="{Binding TacviewIntegration}"
@@ -43,13 +43,13 @@
                 <Style TargetType="tacview:TacviewStatusControl">
                     <Setter Property="IsEnabled" Value="True"/>
                     <Setter Property="Opacity" Value="1.0"/>
+                    <Setter Property="Visibility" Value="Visible"/>
                     <Style.Triggers>
-                        <!-- Gray out when TacviewIntegration is null (file not loaded) -->
+                        <!-- Hide completely when TacviewIntegration is null (no source loaded) -->
                         <DataTrigger Binding="{Binding}" Value="{x:Null}">
-                            <Setter Property="IsEnabled" Value="False"/>
-                            <Setter Property="Opacity" Value="0.5"/>
+                            <Setter Property="Visibility" Value="Collapsed"/>
                         </DataTrigger>
-                        <!-- Gray out when disconnected -->
+                        <!-- Gray out when disconnected (but source is loaded) -->
                         <DataTrigger Binding="{Binding IsConnected}" Value="False">
                             <Setter Property="Opacity" Value="0.7"/>
                         </DataTrigger>

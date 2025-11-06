@@ -200,17 +200,26 @@
                            Orientation="Horizontal" 
                            VerticalAlignment="Center">
                     <!-- Details button - opens popup with full controls -->
-                    <Button Content="⋮" 
-                           x:Name="DetailsButton"
+                    <Button x:Name="DetailsButton"
                            Style="{StaticResource SmallButtonStyle}"
-                           ToolTip="Show Tacview details and controls"
                            Width="32" 
                            Height="32"
                            Padding="0"
-                           FontSize="18"
+                           FontSize="16"
                            VerticalAlignment="Center"
                            Margin="0,0,6,0"
-                           Click="OnDetailsButtonClick"/>
+                           Click="OnDetailsButtonClick">
+                        <TextBlock Text="▶" 
+                                  x:Name="DetailsButtonIcon"
+                                  RenderTransformOrigin="0.5,0.5">
+                            <TextBlock.RenderTransform>
+                                <RotateTransform Angle="0"/>
+                            </TextBlock.RenderTransform>
+                        </TextBlock>
+                        <Button.ToolTip>
+                            <ToolTip Content="Show Tacview details and controls"/>
+                        </Button.ToolTip>
+                    </Button>
                     
                     <Button Content="🔄" 
                            Command="{Binding ReconnectCommand}"
@@ -231,7 +240,10 @@
                Placement="Bottom"
                StaysOpen="False"
                AllowsTransparency="True"
-               PopupAnimation="Fade">
+               PopupAnimation="Fade"
+               IsOpen="False"
+               Opened="OnDetailsPopupOpened"
+               Closed="OnDetailsPopupClosed">
             <Border Style="{StaticResource ModernCard}" 
                     Padding="12"
                     Width="350"

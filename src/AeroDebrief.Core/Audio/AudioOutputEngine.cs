@@ -108,6 +108,19 @@ namespace AeroDebrief.Core.Audio
 #endif
         }
 
+        public float GetMasterVolume()
+        {
+            if (_wasapiOut != null)
+            {
+                lock (_wasapiLock)
+                {
+                    return _wasapiOut.Volume;
+                }
+            }
+            
+            return 1.0f;
+        }
+
         public void ClearBuffer() 
         {
             try

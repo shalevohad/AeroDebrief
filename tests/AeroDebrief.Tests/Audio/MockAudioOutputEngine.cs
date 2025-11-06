@@ -46,6 +46,11 @@ namespace AeroDebrief.Tests.Audio
             CurrentVolume = Math.Clamp(volume, 0.0f, 2.0f);
         }
 
+        public float GetMasterVolume()
+        {
+            return CurrentVolume;
+        }
+
         public void ClearBuffer()
         {
             ClearBufferCallCount++;
