@@ -1,9 +1,9 @@
 # AeroDebrief Sync Diagnostic Script
 # Run this to check if the addon is properly installed
 
-Write-Host "====================================================" -ForegroundColor Cyan
-Write-Host "|   AeroDebrief Sync - Installation Diagnostic     |" -ForegroundColor Cyan
-Write-Host "====================================================" -ForegroundColor Cyan
+Write-Host "╔═══════════════════════════════════════════════════╗" -ForegroundColor Cyan
+Write-Host "║   AeroDebrief Sync - Installation Diagnostic     ║" -ForegroundColor Cyan
+Write-Host "╚═══════════════════════════════════════════════════╝" -ForegroundColor Cyan
 Write-Host ""
 
 # Check Tacview directory
@@ -162,9 +162,9 @@ if (Test-Path $repoPath) {
 
 # Summary and recommendations
 Write-Host ""
-Write-Host "══════════════════════════════════════════════════════" -ForegroundColor Cyan
-Write-Host "║                    SUMMARY                         ║" -ForegroundColor Cyan
-Write-Host "══════════════════════════════════════════════════════" -ForegroundColor Cyan
+Write-Host "╔═════════════════════════════════════════════════════╗" -ForegroundColor Cyan
+Write-Host "║                    SUMMARY                          ║" -ForegroundColor Cyan
+Write-Host "╚═════════════════════════════════════════════════════╝" -ForegroundColor Cyan
 
 if ($allPresent -and (Test-Path $addonDir)) {
     Write-Host "✓ Addon appears to be installed correctly" -ForegroundColor Green
