@@ -25,8 +25,8 @@ namespace AeroDebrief.Core.Audio
             if (audioData == null || audioData.Length == 0)
                 return audioData;
 
-            // Clamp speed to supported range
-            speed = Math.Clamp(speed, 0.25, 4.0);
+            // Clamp speed to supported range using centralized validator
+            speed = Playback.PlaybackSpeedValidator.ClampSpeed(speed);
 
             // No processing needed for normal speed
             if (Math.Abs(speed - 1.0) < 0.01)
@@ -123,7 +123,7 @@ namespace AeroDebrief.Core.Audio
         /// <returns>Scaled delay in milliseconds</returns>
         public static double CalculateScaledDelay(double baseDelayMs, double speed)
         {
-            speed = Math.Clamp(speed, 0.25, 4.0);
+            speed = Playback.PlaybackSpeedValidator.ClampSpeed(speed);
             return baseDelayMs / speed;
         }
 

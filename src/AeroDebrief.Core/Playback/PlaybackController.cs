@@ -81,7 +81,7 @@ namespace AeroDebrief.Core.Playback
         /// <summary>
         /// Gets whether the current playback speed is clamped (limited to supported range)
         /// </summary>
-        public bool IsSpeedClamped => Math.Abs(_requestedPlaybackSpeed - _playbackSpeed) > 0.001;
+        public bool IsSpeedClamped => PlaybackSpeedValidator.IsSpeedClamped(_requestedPlaybackSpeed, _playbackSpeed);
         
         /// <summary>
         /// Gets the reason for speed clamping, or null if not clamped
@@ -192,10 +192,10 @@ namespace AeroDebrief.Core.Playback
             // Store the originally requested speed
             _requestedPlaybackSpeed = speed;
             
-            // Clamp to reasonable range using constants
-            var clampedSpeed = Math.Clamp(speed, Constants.MIN_PLAYBACK_SPEED, Constants.MAX_PLAYBACK_SPEED);
+            // Clamp to reasonable range using centralized validator
+            var clampedSpeed = PlaybackSpeedValidator.ClampSpeed(speed);
             
-            bool isClamped = Math.Abs(speed - clampedSpeed) > 0.001;
+            bool isClamped = PlaybackSpeedValidator.IsSpeedClamped(speed, clampedSpeed);
             
             lock (_lock)
             {
