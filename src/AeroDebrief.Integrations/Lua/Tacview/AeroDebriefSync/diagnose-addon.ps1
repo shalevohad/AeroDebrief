@@ -1,9 +1,9 @@
 # AeroDebrief Sync Diagnostic Script
 # Run this to check if the addon is properly installed
 
-Write-Host "====================================================" -ForegroundColor Cyan
-Write-Host "|   AeroDebrief Sync - Installation Diagnostic     |" -ForegroundColor Cyan
-Write-Host "====================================================" -ForegroundColor Cyan
+Write-Host "╔═══════════════════════════════════════════════════╗" -ForegroundColor Cyan
+Write-Host "║   AeroDebrief Sync - Installation Diagnostic     ║" -ForegroundColor Cyan
+Write-Host "╚═══════════════════════════════════════════════════╝" -ForegroundColor Cyan
 Write-Host ""
 
 # Check Tacview directory
@@ -11,9 +11,9 @@ $tacviewDir = "$env:APPDATA\Tacview"
 Write-Host "1. Tacview Directory Check" -ForegroundColor Yellow
 Write-Host "   Path: $tacviewDir"
 if (Test-Path $tacviewDir) {
-    Write-Host "   ? Exists" -ForegroundColor Green
+    Write-Host "   ✓ Exists" -ForegroundColor Green
 } else {
-    Write-Host "   ? Not found - Tacview may not be installed correctly" -ForegroundColor Red
+    Write-Host "   ✗ Not found - Tacview may not be installed correctly" -ForegroundColor Red
     Write-Host ""
     Write-Host "Install Tacview from: https://www.tacview.net/" -ForegroundColor Yellow
     exit 1
@@ -25,11 +25,11 @@ $addonsDir = "$tacviewDir\AddOns"
 Write-Host "2. Addons Directory Check" -ForegroundColor Yellow
 Write-Host "   Path: $addonsDir"
 if (Test-Path $addonsDir) {
-    Write-Host "   ? Exists" -ForegroundColor Green
+    Write-Host "   ✓ Exists" -ForegroundColor Green
 } else {
-    Write-Host "   ?? Not found - Creating..." -ForegroundColor Yellow
+    Write-Host "   ⚠ Not found - Creating..." -ForegroundColor Yellow
     New-Item -ItemType Directory -Path $addonsDir | Out-Null
-    Write-Host "   ? Created" -ForegroundColor Green
+    Write-Host "   ✓ Created" -ForegroundColor Green
 }
 
 # Check AeroDebriefSync directory
@@ -38,7 +38,7 @@ $addonDir = "$addonsDir\AeroDebriefSync"
 Write-Host "3. AeroDebriefSync Addon Directory" -ForegroundColor Yellow
 Write-Host "   Path: $addonDir"
 if (Test-Path $addonDir) {
-    Write-Host "   ? Exists" -ForegroundColor Green
+    Write-Host "   ✓ Exists" -ForegroundColor Green
     
     # List files
     Write-Host ""
@@ -68,17 +68,17 @@ if (Test-Path $addonDir) {
     $allPresent = $true
     foreach ($file in $required.Keys) {
         if (Test-Path "$addonDir\$file") {
-            Write-Host "   ? $file" -ForegroundColor Green -NoNewline
+            Write-Host "   ✓ $file" -ForegroundColor Green -NoNewline
             Write-Host " - $($required[$file])" -ForegroundColor Gray
         } else {
-            Write-Host "   ? $file MISSING!" -ForegroundColor Red
+            Write-Host "   ✗ $file MISSING!" -ForegroundColor Red
             $allPresent = $false
         }
     }
     
     if (-not $allPresent) {
         Write-Host ""
-        Write-Host "   ?? Some files are missing!" -ForegroundColor Red
+        Write-Host "   ⚠ Some files are missing!" -ForegroundColor Red
         Write-Host "   Copy all files from: src\AeroDebrief.Integrations\Lua\Tacview\AeroDebriefSync\" -ForegroundColor Yellow
     }
     
@@ -94,7 +94,7 @@ if (Test-Path $addonDir) {
     }
     
 } else {
-    Write-Host "   ? Not found - Addon not installed!" -ForegroundColor Red
+    Write-Host "   ✗ Not found - Addon not installed!" -ForegroundColor Red
     Write-Host ""
     Write-Host "   To install, run:" -ForegroundColor Yellow
     Write-Host "   Copy-Item 'src\AeroDebrief.Integrations\Lua\Tacview\AeroDebriefSync' '$addonsDir' -Recurse" -ForegroundColor Cyan
@@ -106,10 +106,10 @@ Write-Host ""
 Write-Host "6. Tacview Process Check" -ForegroundColor Yellow
 $tacviewProcess = Get-Process -Name "Tacview" -ErrorAction SilentlyContinue
 if ($tacviewProcess) {
-    Write-Host "   ? Tacview is running (PID: $($tacviewProcess.Id))" -ForegroundColor Green
-    Write-Host "   ?? You need to restart Tacview to load updated addon files" -ForegroundColor Yellow
+    Write-Host "   ✓ Tacview is running (PID: $($tacviewProcess.Id))" -ForegroundColor Green
+    Write-Host "   ⚠ You need to restart Tacview to load updated addon files" -ForegroundColor Yellow
 } else {
-    Write-Host "   ?? Tacview is not currently running" -ForegroundColor Yellow
+    Write-Host "   ⚠ Tacview is not currently running" -ForegroundColor Yellow
     Write-Host "   Start Tacview to test the addon" -ForegroundColor Gray
 }
 
@@ -118,10 +118,10 @@ Write-Host ""
 Write-Host "7. TCP Port 52001 Check" -ForegroundColor Yellow
 $portCheck = netstat -an | Select-String "52001.*LISTENING"
 if ($portCheck) {
-    Write-Host "   ? Port 52001 is listening (addon TCP server is running)" -ForegroundColor Green
+    Write-Host "   ✓ Port 52001 is listening (addon TCP server is running)" -ForegroundColor Green
     Write-Host "   $portCheck" -ForegroundColor Gray
 } else {
-    Write-Host "   ?? Port 52001 not listening" -ForegroundColor Yellow
+    Write-Host "   ⚠ Port 52001 not listening" -ForegroundColor Yellow
     Write-Host "   Possible reasons:" -ForegroundColor Gray
     Write-Host "   - Tacview not running" -ForegroundColor Gray
     Write-Host "   - Addon not loaded" -ForegroundColor Gray
@@ -133,7 +133,7 @@ Write-Host ""
 Write-Host "8. Repository Location" -ForegroundColor Yellow
 $repoPath = "C:\Users\Ohad\source\repos\AeroDebrief\src\AeroDebrief.Integrations\Lua\Tacview\AeroDebriefSync"
 if (Test-Path $repoPath) {
-    Write-Host "   ? Repository found at: $repoPath" -ForegroundColor Green
+    Write-Host "   ✓ Repository found at: $repoPath" -ForegroundColor Green
     
     # Compare files
     Write-Host ""
@@ -149,25 +149,25 @@ if (Test-Path $repoPath) {
                 $installedHash = (Get-FileHash $installedFile -Algorithm MD5).Hash
                 
                 if ($repoHash -eq $installedHash) {
-                    Write-Host "   ? $file - Up to date" -ForegroundColor Green
+                    Write-Host "   ✓ $file - Up to date" -ForegroundColor Green
                 } else {
-                    Write-Host "   ?? $file - DIFFERENT (needs update)" -ForegroundColor Yellow
+                    Write-Host "   ⚠ $file - DIFFERENT (needs update)" -ForegroundColor Yellow
                 }
             }
         }
     }
 } else {
-    Write-Host "   ?? Repository not found at expected location" -ForegroundColor Yellow
+    Write-Host "   ⚠ Repository not found at expected location" -ForegroundColor Yellow
 }
 
 # Summary and recommendations
 Write-Host ""
-Write-Host "??????????????????????????????????????????????????????" -ForegroundColor Cyan
-Write-Host "?                    SUMMARY                         ?" -ForegroundColor Cyan
-Write-Host "??????????????????????????????????????????????????????" -ForegroundColor Cyan
+Write-Host "╔═════════════════════════════════════════════════════╗" -ForegroundColor Cyan
+Write-Host "║                    SUMMARY                          ║" -ForegroundColor Cyan
+Write-Host "╚═════════════════════════════════════════════════════╝" -ForegroundColor Cyan
 
 if ($allPresent -and (Test-Path $addonDir)) {
-    Write-Host "? Addon appears to be installed correctly" -ForegroundColor Green
+    Write-Host "✓ Addon appears to be installed correctly" -ForegroundColor Green
     Write-Host ""
     Write-Host "Next steps:" -ForegroundColor Yellow
     Write-Host "1. Restart Tacview (if running)" -ForegroundColor White
@@ -175,7 +175,7 @@ if ($allPresent -and (Test-Path $addonDir)) {
     Write-Host "3. Look for: 'AeroDebrief Sync: Initialized successfully'" -ForegroundColor White
     Write-Host "4. Run test app: cd src\AeroDebrief.TacviewTestApp; dotnet run" -ForegroundColor White
 } else {
-    Write-Host "? Addon is NOT properly installed" -ForegroundColor Red
+    Write-Host "✗ Addon is NOT properly installed" -ForegroundColor Red
     Write-Host ""
     Write-Host "To fix:" -ForegroundColor Yellow
     Write-Host "1. Run this PowerShell command:" -ForegroundColor White
