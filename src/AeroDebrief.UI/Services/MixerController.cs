@@ -76,11 +76,30 @@ namespace AeroDebrief.UI.Services
 
         /// <summary>
         /// Sets up a mixer channel for a specific frequency.
+        /// Includes defensive auto-initialization to prevent race conditions.
         /// </summary>
         public void SetupChannel(double frequency, string displayName)
         {
+            // DEFENSIVE PROGRAMMING: Auto-initialize if not already initialized
+            // This prevents race conditions and provides better user experience
             if (_mixer == null)
-                throw new InvalidOperationException("MixerController not initialized. Call Initialize() first.");
+            {
+                Logger.Warn("?? MixerController.SetupChannel() called before Initialize() - auto-initializing to prevent crash");
+                Logger.Warn($"   Channel: {displayName} ({frequency:F1} Hz)");
+                Logger.Warn("   This indicates an initialization order issue that should be fixed");
+                
+                try
+                {
+                    Initialize();
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error(ex, "Failed to auto-initialize mixer - cannot setup channel");
+                    throw new InvalidOperationException(
+                        $"MixerController not initialized and auto-initialization failed for channel '{displayName}'. " +
+                        "Call Initialize() explicitly before using mixer channels.", ex);
+                }
+            }
 
             try
             {
@@ -159,7 +178,12 @@ namespace AeroDebrief.UI.Services
         public void SetChannelGain(double frequency, float gain)
         {
             if (_mixer == null)
-                throw new InvalidOperationException("MixerController not initialized");
+            {
+                Logger.Error($"?? MixerController.SetChannelGain() called before Initialize() - Frequency: {frequency:F1} Hz, Gain: {gain:F2}");
+                throw new InvalidOperationException(
+                    $"MixerController not initialized. Cannot set gain for frequency {frequency:F1} Hz. " +
+                    "Call Initialize() first.");
+            }
 
             try
             {
@@ -188,7 +212,12 @@ namespace AeroDebrief.UI.Services
         public void SetChannelPan(double frequency, float pan)
         {
             if (_mixer == null)
-                throw new InvalidOperationException("MixerController not initialized");
+            {
+                Logger.Error($"?? MixerController.SetChannelPan() called before Initialize() - Frequency: {frequency:F1} Hz, Pan: {pan:F2}");
+                throw new InvalidOperationException(
+                    $"MixerController not initialized. Cannot set pan for frequency {frequency:F1} Hz. " +
+                    "Call Initialize() first.");
+            }
 
             try
             {
@@ -217,7 +246,12 @@ namespace AeroDebrief.UI.Services
         public void SetChannelMuted(double frequency, bool muted)
         {
             if (_mixer == null)
-                throw new InvalidOperationException("MixerController not initialized");
+            {
+                Logger.Error($"?? MixerController.SetChannelMuted() called before Initialize() - Frequency: {frequency:F1} Hz, Muted: {muted}");
+                throw new InvalidOperationException(
+                    $"MixerController not initialized. Cannot set mute for frequency {frequency:F1} Hz. " +
+                    "Call Initialize() first.");
+            }
 
             try
             {
@@ -246,7 +280,12 @@ namespace AeroDebrief.UI.Services
         public void SetChannelSolo(double frequency, bool solo)
         {
             if (_mixer == null)
-                throw new InvalidOperationException("MixerController not initialized");
+            {
+                Logger.Error($"?? MixerController.SetChannelSolo() called before Initialize() - Frequency: {frequency:F1} Hz, Solo: {solo}");
+                throw new InvalidOperationException(
+                    $"MixerController not initialized. Cannot set solo for frequency {frequency:F1} Hz. " +
+                    "Call Initialize() first.");
+            }
 
             try
             {

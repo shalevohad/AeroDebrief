@@ -379,6 +379,67 @@
         </Setter>
     </Style>
 
+    <!-- Modern RadioButton Style -->
+    <Style x:Key="ModernRadioButton" TargetType="RadioButton">
+        <Setter Property="FontFamily" Value="{StaticResource PrimaryFont}"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <Setter Property="Padding" Value="4,0,0,0"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RadioButton">
+                    <Grid Background="Transparent">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        
+                        <Border x:Name="RadioBorder"
+                                Grid.Column="0"
+                                Width="18"
+                                Height="18"
+                                BorderBrush="{StaticResource BorderBrush}"
+                                BorderThickness="2"
+                                Background="{StaticResource SecondaryBackgroundBrush}"
+                                CornerRadius="9"
+                                VerticalAlignment="Center">
+                            <Ellipse x:Name="RadioDot"
+                                    Fill="{StaticResource AccentBrush}"
+                                    Width="8"
+                                    Height="8"
+                                    Visibility="Collapsed"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"/>
+                        </Border>
+                        
+                        <ContentPresenter Grid.Column="1"
+                                        Margin="{TemplateBinding Padding}"
+                                        VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                        HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"/>
+                    </Grid>
+                    
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="RadioDot" Property="Visibility" Value="Visible"/>
+                            <Setter TargetName="RadioBorder" Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+                            <Setter TargetName="RadioBorder" Property="Background" Value="#E3F2FD"/>
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="RadioBorder" Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="RadioBorder" Property="BorderBrush" Value="#BDBDBD"/>
+                            <Setter TargetName="RadioBorder" Property="Background" Value="#F5F5F5"/>
+                            <Setter Property="Foreground" Value="#BDBDBD"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <!-- Modern ComboBox Style -->
     <Style x:Key="ModernComboBox" TargetType="ComboBox">
         <Setter Property="FontFamily" Value="{StaticResource PrimaryFont}"/>

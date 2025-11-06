@@ -5,20 +5,25 @@
          xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
          xmlns:local="clr-namespace:AeroDebrief.UI.Controls"
          xmlns:player="clr-namespace:AeroDebrief.UI.Controls.Player"
+         xmlns:tacview="clr-namespace:AeroDebrief.UI.Controls.Tacview"
          xmlns:vm="clr-namespace:AeroDebrief.UI.ViewModels"
          mc:Ignorable="d" 
          d:DesignHeight="800" d:DesignWidth="1200"
          Background="{StaticResource PrimaryBackgroundBrush}"
          d:DataContext="{d:DesignInstance Type=vm:UnifiedPlayerViewModel, IsDesignTimeCreatable=True}">
-    
-<Grid Margin="16">
-    <Grid.RowDefinitions>
-        <RowDefinition Height="Auto"/> <!-- Header -->
-        <RowDefinition Height="*"/>    <!-- Main content -->
-    </Grid.RowDefinitions>
-    
-    <!-- HEADER SECTION - Now using PlayerHeaderControl component -->
-    <player:PlayerHeaderControl Grid.Row="0"
+
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" MinHeight="101.9"/>
+            <!-- Player Header -->
+            <RowDefinition Height="Auto"/>
+            <!-- Tacview Status - no MinHeight so it collapses completely -->
+            <RowDefinition/>
+            <!-- Main content -->
+        </Grid.RowDefinitions>
+
+        <!-- PLAYER HEADER - Top header with file/source controls -->
+        <player:PlayerHeaderControl Grid.Row="0"
                                StatusMessage="{Binding StatusMessage}"
                                SourceName="{Binding CurrentSourceName}"
                                CurrentMode="{Binding CurrentMode}"
@@ -26,19 +31,48 @@
                                ChangeSourceCommand="{Binding ChangeSourceCommand}"
                                OpenSettingsCommand="{Binding OpenSettingsCommand}"
                                SourceTypeSelected="OnSourceTypeSelected"
-                               FilePanelRequested="OnFilePanelRequested"/>
-    
-    <!-- MAIN CONTENT AREA -->
-    <Grid Grid.Row="1">
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="Auto"/> <!-- Transport controls -->
-            <ColumnDefinition Width="*" MinWidth="400"/> <!-- Waveform -->
-            <ColumnDefinition Width="8"/> <!-- Splitter -->
-            <ColumnDefinition Width="350" MinWidth="250" MaxWidth="500"/> <!-- Mixer -->
-        </Grid.ColumnDefinitions>
-        
-        <!-- TRANSPORT CONTROLS - Now using TransportControlsPanel component -->
-        <player:TransportControlsPanel Grid.Column="0"
+                               FilePanelRequested="OnFilePanelRequested" Margin="0,0,0,64" Grid.RowSpan="2"/>
+
+        <!-- TACVIEW STATUS - Single-line status bar below player header -->
+        <!-- Hidden when no source is loaded, visible (but grayed out) when disconnected -->
+        <tacview:TacviewStatusControl Grid.Row="1"
+                                  x:Name="TacviewStatus"
+                                  DataContext="{Binding TacviewIntegration}"
+                                  Margin="0,0,0,10">
+            <tacview:TacviewStatusControl.Style>
+                <Style TargetType="tacview:TacviewStatusControl">
+                    <Setter Property="IsEnabled" Value="True"/>
+                    <Setter Property="Opacity" Value="1.0"/>
+                    <Setter Property="Visibility" Value="Visible"/>
+                    <Style.Triggers>
+                        <!-- Hide completely when TacviewIntegration is null (no source loaded) -->
+                        <DataTrigger Binding="{Binding}" Value="{x:Null}">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                        </DataTrigger>
+                        <!-- Gray out when disconnected (but source is loaded) -->
+                        <DataTrigger Binding="{Binding IsConnected}" Value="False">
+                            <Setter Property="Opacity" Value="0.7"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </tacview:TacviewStatusControl.Style>
+        </tacview:TacviewStatusControl>
+
+        <!-- MAIN CONTENT AREA -->
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <!-- Transport controls -->
+                <ColumnDefinition Width="*" MinWidth="400"/>
+                <!-- Waveform -->
+                <ColumnDefinition Width="8"/>
+                <!-- Splitter -->
+                <ColumnDefinition Width="350" MinWidth="250" MaxWidth="500"/>
+                <!-- Mixer -->
+            </Grid.ColumnDefinitions>
+
+            <!-- TRANSPORT CONTROLS -->
+            <player:TransportControlsPanel Grid.Column="0"
                                       IsPlaying="{Binding IsPlaying}"
                                       IsPaused="{Binding IsPaused}"
                                       CanPlay="{Binding CanExecutePlay}"
@@ -51,9 +85,9 @@
                                       PauseRequested="OnPauseRequested"
                                       StopRequested="OnStopRequested"
                                       Margin="0,0,8,0"/>
-        
-        <!-- WAVEFORM DISPLAY - Now using WaveformDisplayPanel component -->
-        <player:WaveformDisplayPanel Grid.Column="1"
+
+            <!-- WAVEFORM DISPLAY -->
+            <player:WaveformDisplayPanel Grid.Column="1"
                                     x:Name="WaveformPanel"
                                     WaveformData="{Binding WaveformData}"
                                     FrequencyWaveforms="{Binding FrequencyWaveforms}"
@@ -74,26 +108,26 @@
                                     SeekRequested="OnSeekRequested"
                                     ZoomChanged="OnZoomChanged"
                                     WaveformSizeChanged="OnWaveformSizeChanged"/>
-        
-        <!-- GRID SPLITTER -->
-        <GridSplitter Grid.Column="2" 
+
+            <!-- GRID SPLITTER -->
+            <GridSplitter Grid.Column="2" 
                      Width="2"
                      HorizontalAlignment="Center" 
                      VerticalAlignment="Stretch"
                      Background="{StaticResource BorderBrush}"/>
-        
-        <!-- FREQUENCY MIXER - Now using FrequencyMixerPanel component -->
-        <player:FrequencyMixerPanel Grid.Column="3"
+
+            <!-- FREQUENCY MIXER -->
+            <player:FrequencyMixerPanel Grid.Column="3"
                                    Frequencies="{Binding Frequencies}"
                                    SelectAllCommand="{Binding SelectAllFrequenciesCommand}"
                                    SelectNoneCommand="{Binding SelectNoFrequenciesCommand}"
                                    FrequencySelectionChanged="OnFrequencySelectionChanged"
                                    MixerValueChanged="OnMixerValueChanged"
                                    MixerBooleanChanged="OnMixerBooleanChanged"/>
-    </Grid>
-    
-    <!-- FILE SOURCE PANEL OVERLAY - Now using FileSourcePanelOverlay component -->
-    <player:FileSourcePanelOverlay Grid.Row="0" Grid.RowSpan="2"
+        </Grid>
+
+        <!-- FILE SOURCE PANEL OVERLAY -->
+        <player:FileSourcePanelOverlay Grid.Row="0" Grid.RowSpan="3"
                                   x:Name="FileOverlay"
                                   IsOpen="{Binding IsFileSourcePanelOpen, Mode=TwoWay}"
                                   PanelWidth="400"
@@ -101,5 +135,5 @@
                                   EnableKeyboardShortcuts="True"
                                   CloseOnClickOutside="True"
                                   PanelClosed="OnFileSourcePanelClosed"/>
-</Grid>
+    </Grid>
 </UserControl>

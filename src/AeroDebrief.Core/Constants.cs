@@ -94,6 +94,57 @@ namespace AeroDebrief.Core{
         
         #endregion
         
+        #region Playback Speed Constants
+        
+        /// <summary>
+        /// Minimum supported playback speed (quarter speed).
+        /// Below this speed, audio quality degrades significantly due to time-stretching artifacts.
+        /// </summary>
+        public const double MIN_PLAYBACK_SPEED = 0.25;
+        
+        /// <summary>
+        /// Maximum supported playback speed (quad speed).
+        /// Above this speed, audio becomes unintelligible and loses informational value.
+        /// </summary>
+        public const double MAX_PLAYBACK_SPEED = 4.0;
+        
+        /// <summary>
+        /// Normal playback speed (real-time).
+        /// </summary>
+        public const double NORMAL_PLAYBACK_SPEED = 1.0;
+        
+        /// <summary>
+        /// Playback speed threshold for fast playback optimizations.
+        /// Above this speed, smaller audio buffers are used (2 seconds).
+        /// </summary>
+        public const double FAST_PLAYBACK_THRESHOLD = 1.5;
+        
+        /// <summary>
+        /// Playback speed threshold for slow playback optimizations.
+        /// Below this speed, larger audio buffers are used (10 seconds).
+        /// </summary>
+        public const double SLOW_PLAYBACK_THRESHOLD = 0.75;
+        
+        /// <summary>
+        /// Audio buffer size in seconds for fast playback (> 1.5x speed).
+        /// Smaller buffer for lower latency and faster response to user actions.
+        /// </summary>
+        public const int FAST_PLAYBACK_BUFFER_SECONDS = 2;
+        
+        /// <summary>
+        /// Audio buffer size in seconds for normal playback (0.75x - 1.5x speed).
+        /// Balanced buffer for general use.
+        /// </summary>
+        public const int NORMAL_PLAYBACK_BUFFER_SECONDS = 5;
+        
+        /// <summary>
+        /// Audio buffer size in seconds for slow playback (< 0.75x speed).
+        /// Larger buffer for stability during time-stretching operations.
+        /// </summary>
+        public const int SLOW_PLAYBACK_BUFFER_SECONDS = 10;
+        
+        #endregion
+        
         #region GPU Waveform Rendering Constants
         
         /// <summary>

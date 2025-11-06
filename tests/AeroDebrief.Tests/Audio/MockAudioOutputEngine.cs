@@ -1,6 +1,8 @@
+using AeroDebrief.Core;
 using AeroDebrief.Core.Audio;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace AeroDebrief.Tests.Audio
@@ -46,6 +48,11 @@ namespace AeroDebrief.Tests.Audio
             CurrentVolume = Math.Clamp(volume, 0.0f, 2.0f);
         }
 
+        public float GetMasterVolume()
+        {
+            return CurrentVolume;
+        }
+
         public void ClearBuffer()
         {
             ClearBufferCallCount++;
@@ -61,7 +68,7 @@ namespace AeroDebrief.Tests.Audio
             return Task.CompletedTask;
         }
 
-        public Task WriteAudioAsync(byte[] audioData, bool isSilence, TimeSpan chunkEndTime = default, Action<TimeSpan>? positionUpdater = null)
+        public Task WriteAudioAsync(byte[] audioData, bool isSilence, TimeSpan chunkEndTime = default, Action<TimeSpan>? positionUpdater = null, AudioPacketMetadata? packet = null)
         {
             return WriteAudioAsync(audioData);
         }

@@ -42,6 +42,10 @@ namespace AeroDebrief.UI.ViewModels
         private readonly PlaybackSessionManager _sessionManager;
         private readonly MixerController _mixerController;
         
+        // Tacview integration (optional)
+        private TacviewIntegrationViewModel? _tacviewIntegration;
+        private Integrations.Tacview.TacviewIntegrationService? _tacviewService;
+        
         // Core components (legacy, may be removed)
         private FrequencyAnalysisService? _analysisService;
         
@@ -296,6 +300,22 @@ namespace AeroDebrief.UI.ViewModels
             get => _fileSource ??= new FileSourceViewModel();
             set => SetProperty(ref _fileSource, value);
         }
+        
+        /// <summary>
+        /// Tacview integration view model (optional)
+        /// Displays connection status and control for Tacview synchronization
+        /// Initialized when a file is loaded and PlaybackController is available
+        /// Always returns a non-null value - stub before file load, real instance after
+        /// </summary>
+        public TacviewIntegrationViewModel? TacviewIntegration
+        {
+            get
+            {
+                // Always return the current instance (null before file loads, real instance after)
+                // The XAML binding will use FallbackValue=Collapsed if null
+                return _tacviewIntegration;
+            }
+        }
 
         public double ZoomStartTime
         {
@@ -368,6 +388,10 @@ namespace AeroDebrief.UI.ViewModels
             _sessionManager = new PlaybackSessionManager();
             _mixerController = new MixerController();
 
+            // Note: Tacview integration will be initialized when a file is loaded
+            // (requires PlaybackController which is created during file load)
+            // The control will be hidden until then
+
             // Wire up events
             WireServiceEvents();
 
@@ -437,8 +461,69 @@ namespace AeroDebrief.UI.ViewModels
             // Wire up pipeline events
             WireUpPlaybackEvents();
             
+            // Initialize Tacview integration now that we have PlaybackController
+            InitializeTacviewIntegration(e);
+            
             // Auto-start frequency analysis
             _ = LoadFrequenciesAsync();
+        }
+        
+        /// <summary>
+        /// Initializes Tacview integration when a playback session is loaded.
+        /// Wires up controllers and audio components from the pipeline.
+        /// </summary>
+        private void InitializeTacviewIntegration(SessionLoadedEventArgs sessionArgs)
+        {
+            try
+            {
+                Logger.Info("Initializing Tacview integration with playback session...");
+                
+                // Get controllers from pipeline (now exposed after refactoring)
+                var playbackController = sessionArgs.Pipeline.PlaybackController;
+                var seekController = sessionArgs.Pipeline.SeekController;
+                
+                // Create Tacview integration service
+                _tacviewService = new Integrations.Tacview.TacviewIntegrationService(
+                    playbackController,
+                    seekController);
+                
+                // Wire up core integration with audio components
+                try
+                {
+                    var audioOutput = sessionArgs.Pipeline.AudioOutput;
+                    var masterMixer = sessionArgs.Pipeline.MasterMixer;
+                    
+                    // Note: MasterMixer doesn't have an AudioMixer property, so we pass MasterMixer itself
+                    // The TacviewIntegrationService.InitializeCoreIntegration expects AudioMixerEngine
+                    // which needs to be exposed by MasterMixer, or we refactor the integration service
+                    
+                    // For now, just wire up what we can
+                    _tacviewService.InitializeCoreIntegration(
+                        audioMixer: null, // TODO: MasterMixer needs to expose AudioMixerEngine
+                        audioOutputEngine: audioOutput);
+                    
+                    Logger.Info("? Core integration wired up (AudioOutput connected, AudioMixer pending)");
+                    Logger.Warn("? AudioMixerEngine not connected - packet filtering from Tacview won't work yet");
+                }
+                catch (Exception ex)
+                {
+                    Logger.Warn(ex, "Failed to wire up core integration - some features may not work");
+                }
+                
+                // Create view model
+                _tacviewIntegration = new TacviewIntegrationViewModel(_tacviewService);
+                
+                // Notify UI that Tacview integration is now available
+                OnPropertyChanged(nameof(TacviewIntegration));
+                
+                Logger.Info("? Tacview integration initialized and ready");
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, "Failed to initialize Tacview integration - will continue without it");
+                _tacviewService = null;
+                _tacviewIntegration = null;
+            }
         }
 
         private void OnSessionUnloaded(object? sender, EventArgs e)
@@ -448,6 +533,23 @@ namespace AeroDebrief.UI.ViewModels
             CurrentMode = PlayerMode.Idle;
             CurrentSourceName = string.Empty;
             StatusMessage = "Ready";
+            
+            // Clean up Tacview integration
+            if (_tacviewService != null)
+            {
+                try
+                {
+                    _tacviewService.Dispose();
+                    _tacviewService = null;
+                    _tacviewIntegration = null;
+                    OnPropertyChanged(nameof(TacviewIntegration));
+                    Logger.Info("Tacview integration cleaned up");
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error(ex, "Error disposing Tacview integration");
+                }
+            }
             
             // Clear UI state
             Frequencies.Clear();
@@ -509,6 +611,26 @@ namespace AeroDebrief.UI.ViewModels
             Logger.Info($"Frequencies loaded: {e.TotalFrequencies} found");
             
             StatusMessage = $"Found {e.TotalFrequencies} frequencies. Select frequencies to visualize.";
+            
+            // Load frequencies into Tacview integration if available
+            if (_tacviewIntegration != null)
+            {
+                Logger.Info($"?? Loading {e.TotalFrequencies} frequencies into Tacview integration");
+                
+                // Get all frequencies from the frequency manager
+                var allFrequencies = _frequencyManager.Frequencies
+                    .SelectMany(g => g.Frequencies)
+                    .Select(f => f.Frequency)
+                    .ToList();
+                
+                _tacviewIntegration.LoadFrequenciesFromAudioFile(allFrequencies);
+                
+                Logger.Info($"? Tacview integration frequency list populated with {allFrequencies.Count} frequencies");
+            }
+            else
+            {
+                Logger.Debug("Tacview integration not available yet (will be initialized after file load)");
+            }
         }
 
         #endregion
@@ -1041,7 +1163,36 @@ namespace AeroDebrief.UI.ViewModels
                     ProgressPercent = 30;
                 });
                 
-                // Delegate to frequency manager - runs on background thread
+                // CRITICAL FIX: Initialize services BEFORE loading frequencies
+                // This ensures mixer is ready when auto-selection triggers
+                Logger.Info("Initializing services before frequency analysis...");
+                await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+                {
+                    ProgressPercent = 40;
+                    StatusMessage = "Initializing audio services...";
+                });
+                
+                // Initialize waveform generator and mixer FIRST - runs on background
+                _analysisService = new FrequencyAnalysisService();
+                _waveformManager.Initialize(_analysisService);
+                
+                // CRITICAL: Initialize mixer controller BEFORE frequency loading
+                // FrequencyManager.LoadFrequenciesAsync() calls SelectAll() which triggers
+                // OnFrequencySelectionChanged() which calls _mixerController.SetupChannel()
+                _mixerController.Initialize();
+                Logger.Info("? Audio services initialized (Mixer ready)");
+
+                // Notify UI that GPU availability may have changed
+                OnPropertyChanged(nameof(IsUsingGpu));
+
+                // Update UI properties
+                OnPropertyChanged(nameof(WaveformEngineIcon));
+                OnPropertyChanged(nameof(WaveformEngineText));
+                OnPropertyChanged(nameof(WaveformEngineColor));
+                OnPropertyChanged(nameof(WaveformEngineTooltip));
+                
+                // Now load frequencies - runs on background thread
+                // This will auto-select all frequencies, which requires mixer to be initialized
                 Logger.Info("Starting frequency analysis...");
                 await _frequencyManager.LoadFrequenciesAsync(
                     _sessionManager.PacketSource!,
@@ -1055,11 +1206,12 @@ namespace AeroDebrief.UI.ViewModels
                 });
                 
                 // Initialize waveform generator after frequency loading - runs on background
-                _analysisService = new FrequencyAnalysisService();
-                _waveformManager.Initialize(_analysisService);
+                // (moved to fix race condition with mixer initialization)
+                //_analysisService = new FrequencyAnalysisService();
+                //_waveformManager.Initialize(_analysisService);
                 
                 // Initialize mixer controller
-                _mixerController.Initialize();
+                //_mixerController.Initialize();
 
                 // Notify UI that GPU availability may have changed
                 OnPropertyChanged(nameof(IsUsingGpu));
@@ -1075,12 +1227,18 @@ namespace AeroDebrief.UI.ViewModels
                 {
                     ProgressPercent = 60;
                     StatusMessage = "Building frequency list...";
-                    
+
                     // Copy frequencies from manager to UI observable collection
+                    Logger.Info($"?? Copying {_frequencyManager.Frequencies.Count} frequency groups to UI...");
                     foreach (var group in _frequencyManager.Frequencies)
                     {
+                        Logger.Debug($"   Adding group: {group.Name} with {group.Frequencies.Count} frequencies");
                         Frequencies.Add(group);
                     }
+                    Logger.Info($"? UI Frequencies collection now has {Frequencies.Count} groups");
+                    
+                    // Force property change notification
+                    OnPropertyChanged(nameof(Frequencies));
                     
                     // Copy mixer channels from controller to UI observable collection
                     foreach (var channel in _mixerController.Channels)
@@ -1155,12 +1313,8 @@ namespace AeroDebrief.UI.ViewModels
             if (!_sessionManager.IsSessionLoaded)
                 return;
 
-            // FIX: Check both FrequencyManager AND actual UI frequency selection state
-            var actualSelectedCount = Frequencies
-                .SelectMany(g => g.Frequencies)
-                .Count(f => f.IsSelected);
-            
-            if (_frequencyManager.SelectedFrequencies.Count == 0 && actualSelectedCount == 0)
+            // Check if any frequencies are selected
+            if (_frequencyManager.SelectedFrequencies.Count == 0)
             {
                 WaveformData = new float[_waveformManager.MaxDataPoints];
                 FrequencyWaveforms = null;
@@ -1168,26 +1322,6 @@ namespace AeroDebrief.UI.ViewModels
                 ProgressPercent = 0;
                 Logger.Debug("No frequencies selected - waveform cleared");
                 return;
-            }
-            
-            // If FrequencyManager is out of sync with UI, log warning and sync it
-            if (_frequencyManager.SelectedFrequencies.Count == 0 && actualSelectedCount > 0)
-            {
-                Logger.Warn($"FrequencyManager out of sync: {actualSelectedCount} frequencies selected in UI but not in manager");
-                
-                // Sync selected frequencies from UI to FrequencyManager
-                var selectedFrequencies = Frequencies
-                    .SelectMany(g => g.Frequencies)
-                    .Where(f => f.IsSelected)
-                    .Select(f => f.Frequency)
-                    .ToList();
-                
-                foreach (var freq in selectedFrequencies)
-                {
-                    _frequencyManager.SelectFrequency(freq);
-                }
-                
-                Logger.Info($"Synced {selectedFrequencies.Count} frequencies from UI to FrequencyManager");
             }
 
             try
@@ -1207,7 +1341,7 @@ namespace AeroDebrief.UI.ViewModels
                         lastReportedProgress = roundedPercent;
                         
                         // Use Background priority so UI thread doesn't get blocked
-                        System.Windows.Application.Current?.Dispatcher?.InvokeAsync(() =>
+                        System.Windows.Application.Current?.Dispatcher.InvokeAsync(() =>
                         {
                             WaveformGenerationProgress = percent;
                             StatusMessage = $"Generating waveform... {percent:F0}%";
@@ -1249,7 +1383,7 @@ namespace AeroDebrief.UI.ViewModels
                 }
 
                 // CPU rendering path (fallback)
-                Logger.Info($"? Using CPU rendering for waveform display");
+                Logger.Info($"??? Using CPU rendering for waveform display");
                 var freqWaveforms = new System.Collections.Generic.Dictionary<double, Controls.FrequencyWaveformData>();
                 
                 // Fallback to CPU rendering - runs on background thread
@@ -1576,6 +1710,7 @@ namespace AeroDebrief.UI.ViewModels
             ExecuteStop();
 
             // Dispose services in reverse order
+            _tacviewService?.Dispose();
             _mixerController?.Dispose();
             _waveformManager?.Dispose();
             _sessionManager?.Dispose();

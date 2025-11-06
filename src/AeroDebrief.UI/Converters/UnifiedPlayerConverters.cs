@@ -190,6 +190,22 @@ namespace AeroDebrief.UI.Converters
     }
 
     /// <summary>
+    /// Converts null to Collapsed, non-null to Visible
+    /// </summary>
+    public class NullToVisibilityConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            return value == null ? Visibility.Collapsed : Visibility.Visible;
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            throw new NotImplementedException();
+        }
+    }
+
+    /// <summary>
     /// Converts zero count to visible (for empty state display)
     /// </summary>
     public class ZeroToVisibleConverter : IValueConverter

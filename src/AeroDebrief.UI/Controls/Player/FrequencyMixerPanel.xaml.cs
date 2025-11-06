@@ -283,8 +283,28 @@ namespace AeroDebrief.UI.Controls.Player
         {
             if (d is FrequencyMixerPanel panel)
             {
+                // Unsubscribe from old collection's CollectionChanged event
+                if (e.OldValue is ObservableCollection<FrequencyGroupViewModel> oldCollection)
+                {
+                    oldCollection.CollectionChanged -= panel.OnFrequenciesCollectionChanged;
+                }
+                
+                // Subscribe to new collection's CollectionChanged event
+                if (e.NewValue is ObservableCollection<FrequencyGroupViewModel> newCollection)
+                {
+                    newCollection.CollectionChanged += panel.OnFrequenciesCollectionChanged;
+                }
+                
                 panel.OnFrequenciesUpdated();
             }
+        }
+        
+        /// <summary>
+        /// Handles collection changed events (items added/removed) to update button states
+        /// </summary>
+        private void OnFrequenciesCollectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+        {
+            OnFrequenciesUpdated();
         }
 
         /// <summary>
@@ -308,16 +328,50 @@ namespace AeroDebrief.UI.Controls.Player
         /// </summary>
         private void OnFrequenciesUpdated()
         {
-            // Update button states based on frequency count
+            var logger = NLog.LogManager.GetCurrentClassLogger();
+            
+            // Log frequency count
+            int frequencyCount = Frequencies?.Count ?? 0;
+            int totalFrequencies = 0;
+            
+            if (Frequencies != null)
+            {
+                foreach (var group in Frequencies)
+                {
+                    totalFrequencies += group.Frequencies?.Count ?? 0;
+                }
+            }
+            
+            logger.Info($"?? FrequencyMixerPanel.OnFrequenciesUpdated: {frequencyCount} groups, {totalFrequencies} total frequencies");
+            
+            // Resolve named UI elements safely using FindName to avoid generated-field issues
+            var selectAllBtn = this.FindName("SelectAllButton") as Button;
+            var selectNoneBtn = this.FindName("SelectNoneButton") as Button;
+            var emptyState = this.FindName("EmptyStatePlaceholder") as FrameworkElement;
+            var freqTree = this.FindName("FrequencyTree") as FrameworkElement;
+
+            // Update button states and visibility based on frequency count
             if (Frequencies != null && Frequencies.Count > 0)
             {
-                SelectAllButton.IsEnabled = true;
-                SelectNoneButton.IsEnabled = true;
+                if (selectAllBtn != null) selectAllBtn.IsEnabled = true;
+                if (selectNoneBtn != null) selectNoneBtn.IsEnabled = true;
+
+                // Hide empty state, show tree
+                if (emptyState != null) emptyState.Visibility = System.Windows.Visibility.Collapsed;
+                if (freqTree != null) freqTree.Visibility = System.Windows.Visibility.Visible;
+
+                logger.Debug($"   ? Buttons enabled, tree visible ({frequencyCount} groups, {totalFrequencies} frequencies)");
             }
             else
             {
-                SelectAllButton.IsEnabled = false;
-                SelectNoneButton.IsEnabled = false;
+                if (selectAllBtn != null) selectAllBtn.IsEnabled = false;
+                if (selectNoneBtn != null) selectNoneBtn.IsEnabled = false;
+
+                // Show empty state, hide tree
+                if (emptyState != null) emptyState.Visibility = System.Windows.Visibility.Visible;
+                if (freqTree != null) freqTree.Visibility = System.Windows.Visibility.Collapsed;
+
+                logger.Debug($"   ? Buttons disabled, empty state visible (no groups)");
             }
         }
 

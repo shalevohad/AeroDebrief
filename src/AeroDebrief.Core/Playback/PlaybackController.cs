@@ -9,26 +9,227 @@ namespace AeroDebrief.Core.Playback
 
         public event Action? PlaybackStarted;
         public event Action? PlaybackStopped;
-        public event Action? PlaybackPaused; // Added pause event
-        public event Action? PlaybackResumed; // Added resume event
+        public event Action? PlaybackPaused;
+        public event Action? PlaybackResumed;
         public event Action<Exception>? PlaybackError;
         public event Action<double>? ProgressChanged;
         public event Action<TimeSpan, TimeSpan>? TimeChanged;
         public event Action<AudioPacketMetadata>? PacketStarted;
+        
+        /// <summary>
+        /// Event fired when playback speed changes (actual speed after clamping)
+        /// </summary>
+        public event Action<double>? PlaybackSpeedChanged;
+        
+        /// <summary>
+        /// Event fired when speed clamping state changes (for UI warnings)
+        /// </summary>
+        public event Action<bool, double, double>? SpeedClampedChanged; // (isClamped, requestedSpeed, actualSpeed)
+        
+        /// <summary>
+        /// Event fired when audio should be muted due to extreme playback speed (< 0.25x or > 4.0x)
+        /// </summary>
+        public event Action<bool>? ShouldMuteForExtremeSpeed;
 
         private CancellationTokenSource? _cts;
         private Task? _playbackTask;
         private bool _isPlaybackActive;
-        private bool _isPaused; // Added pause state
-        private bool _isStopping; // Added to prevent multiple stop calls
-        private TaskCompletionSource<bool>? _pauseTask; // Added for pause/resume signaling
+        private bool _isPaused;
+        private bool _isStopping;
+        private TaskCompletionSource<bool>? _pauseTask;
         private readonly object _lock = new object();
+        
+        private double _playbackSpeed = 1.0; // NEW: Playback speed control (1.0 = normal, 0.5 = half speed, 2.0 = double speed)
+        private double _requestedPlaybackSpeed = 1.0; // NEW: Track what Tacview actually requested
+        
+        // NEW: External time source support
+        private IExternalTimeSource? _externalTimeSource;
+        private bool _isExternalSyncEnabled;
         
         public TimeSpan TotalDuration { get; private set; }
         public TimeSpan CurrentPosition { get; private set; }
         public DateTime RecordingStart { get; private set; }
-        public bool IsPlaying => _isPlaybackActive && !_isPaused && !_isStopping; // Updated to consider stopping state
-        public bool IsPaused => _isPaused; // Added pause property
+        public bool IsPlaying => _isPlaybackActive && !_isPaused && !_isStopping;
+        public bool IsPaused => _isPaused;
+        
+        public double PlaybackSpeed // Current playback speed (clamped)
+        {
+            get => _playbackSpeed;
+            private set
+            {
+                if (Math.Abs(_playbackSpeed - value) > 0.001)
+                {
+                    _playbackSpeed = value;
+                    Logger.Info($"Playback speed changed to {_playbackSpeed:F2}x");
+                    try
+                    {
+                        PlaybackSpeedChanged?.Invoke(_playbackSpeed);
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Error(ex, "Error invoking PlaybackSpeedChanged event");
+                    }
+                }
+            }
+        }
+        
+        /// <summary>
+        /// Gets the originally requested playback speed (before clamping)
+        /// </summary>
+        public double RequestedPlaybackSpeed => _requestedPlaybackSpeed;
+        
+        /// <summary>
+        /// Gets whether the current playback speed is clamped (limited to supported range)
+        /// </summary>
+        public bool IsSpeedClamped => PlaybackSpeedValidator.IsSpeedClamped(_requestedPlaybackSpeed, _playbackSpeed);
+        
+        /// <summary>
+        /// Gets the reason for speed clamping, or null if not clamped
+        /// </summary>
+        public string? SpeedClampReason
+        {
+            get
+            {
+                if (!IsSpeedClamped)
+                    return null;
+                
+                if (_requestedPlaybackSpeed < Constants.MIN_PLAYBACK_SPEED)
+                    return $"Requested speed {_requestedPlaybackSpeed:F2}x is too slow. " +
+                           $"Minimum supported speed is {Constants.MIN_PLAYBACK_SPEED}x.";
+                
+                if (_requestedPlaybackSpeed > Constants.MAX_PLAYBACK_SPEED)
+                    return $"Requested speed {_requestedPlaybackSpeed:F2}x is too fast. " +
+                           $"Maximum supported speed is {Constants.MAX_PLAYBACK_SPEED}x.";
+                
+                return null;
+            }
+        }
+        
+        /// <summary>
+        /// Gets whether external sync is currently active
+        /// </summary>
+        public bool IsExternalSyncEnabled => _isExternalSyncEnabled && _externalTimeSource != null;
+
+        /// <summary>
+        /// Sets an external time source for synchronization (e.g., Tacview)
+        /// </summary>
+        /// <param name="source">External time source, or null to disable</param>
+        public void SetExternalTimeSource(IExternalTimeSource? source)
+        {
+            lock (_lock)
+            {
+                // Unsubscribe from old source
+                if (_externalTimeSource != null)
+                {
+                    _externalTimeSource.TimeChanged -= OnExternalTimeChanged;
+                    _externalTimeSource.PlaybackStateChanged -= OnExternalPlaybackStateChanged;
+                    _externalTimeSource.PlaybackSpeedChanged -= OnExternalPlaybackSpeedChanged;
+                    Logger.Info("External time source disconnected");
+                }
+                
+                _externalTimeSource = source;
+                _isExternalSyncEnabled = source != null;
+                
+                // Subscribe to new source
+                if (_externalTimeSource != null)
+                {
+                    _externalTimeSource.TimeChanged += OnExternalTimeChanged;
+                    _externalTimeSource.PlaybackStateChanged += OnExternalPlaybackStateChanged;
+                    _externalTimeSource.PlaybackSpeedChanged += OnExternalPlaybackSpeedChanged;
+                    Logger.Info("External time source connected");
+                }
+            }
+        }
+        
+        /// <summary>
+        /// Handles time changes from external source
+        /// </summary>
+        private void OnExternalTimeChanged(object? sender, TimeSpan targetTime)
+        {
+            if (!_isExternalSyncEnabled)
+                return;
+            
+            // Calculate drift
+            var drift = Math.Abs((targetTime - CurrentPosition).TotalMilliseconds);
+            
+            Logger.Debug($"External time change: target={targetTime}, current={CurrentPosition}, drift={drift:F0}ms");
+            
+            // NOTE: Actual sync logic is handled by TacviewSyncService
+            // This event is primarily for logging and monitoring
+        }
+        
+        /// <summary>
+        /// Handles playback state changes from external source
+        /// </summary>
+        private void OnExternalPlaybackStateChanged(object? sender, bool isPlaying)
+        {
+            if (!_isExternalSyncEnabled)
+                return;
+            
+            Logger.Debug($"External playback state change: {(isPlaying ? "playing" : "paused")}");
+            
+            // NOTE: Actual playback control is handled by TacviewSyncService
+            // This event is primarily for logging and monitoring
+        }
+        
+        /// <summary>
+        /// Handles playback speed changes from external source
+        /// </summary>
+        private void OnExternalPlaybackSpeedChanged(object? sender, double speed)
+        {
+            if (!_isExternalSyncEnabled)
+                return;
+            
+            Logger.Debug($"External playback speed change: {speed:F2}x");
+            SetPlaybackSpeed(speed);
+        }
+
+        /// <summary>
+        /// Sets the playback speed (will be clamped to 0.25x - 4.0x range)
+        /// </summary>
+        public void SetPlaybackSpeed(double speed)
+        {
+            // Store the originally requested speed
+            _requestedPlaybackSpeed = speed;
+            
+            // Clamp to reasonable range using centralized validator
+            var clampedSpeed = PlaybackSpeedValidator.ClampSpeed(speed);
+            
+            bool isClamped = PlaybackSpeedValidator.IsSpeedClamped(speed, clampedSpeed);
+            
+            lock (_lock)
+            {
+                PlaybackSpeed = clampedSpeed;
+            }
+            
+            // Fire clamping event for UI warnings
+            try
+            {
+                SpeedClampedChanged?.Invoke(isClamped, speed, clampedSpeed);
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, "Error invoking SpeedClampedChanged event");
+            }
+            
+            if (isClamped)
+            {
+                Logger.Warn($"Playback speed {speed:F2}x clamped to {clampedSpeed:F2}x " +
+                           $"(supported range: {Constants.MIN_PLAYBACK_SPEED}x-{Constants.MAX_PLAYBACK_SPEED}x)");
+            }
+            else
+            {
+                Logger.Info($"Playback speed set to {clampedSpeed:F2}x");
+            }
+        }
+
+        /// <summary>
+        /// Gets the current time scaling factor for audio timing calculations
+        /// </summary>
+        public double GetTimeScale()
+        {
+            return _playbackSpeed;
+        }
 
         public void Start(string filePath, Func<CancellationToken, Task> playbackFunc)
         {
@@ -37,7 +238,7 @@ namespace AeroDebrief.Core.Playback
                 // Stop any existing playback first
                 if (_isPlaybackActive)
                 {
-                    _ = StopAsync(); // Fire and forget the async stop
+                    _ = StopAsync();
                 }
 
                 Logger.Info($"Starting playback for: {filePath}");
@@ -164,8 +365,6 @@ namespace AeroDebrief.Core.Playback
             {
                 Logger.Debug("Waiting for resume signal");
                 
-                // Create a combined cancellation token that respects both the original cancellation token
-                // and the pause/resume mechanism
                 using var combinedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 
                 try
@@ -174,7 +373,6 @@ namespace AeroDebrief.Core.Playback
                 }
                 catch (OperationCanceledException)
                 {
-                    // If cancelled, ensure we're not stuck in paused state
                     lock (_lock)
                     {
                         if (_isPaused && _pauseTask == currentPauseTask)
@@ -188,14 +386,11 @@ namespace AeroDebrief.Core.Playback
             }
         }
 
-        // Synchronous Stop method for backward compatibility (calls async version)
         public void Stop()
         {
-            // Don't wait on UI thread - just fire and forget
             _ = StopAsync();
         }
 
-        // Async version of Stop for proper resource cleanup
         public async Task StopAsync()
         {
             bool shouldStop = false;
@@ -214,7 +409,6 @@ namespace AeroDebrief.Core.Playback
                 shouldStop = true;
                 taskToWait = _playbackTask;
                 
-                // If paused, resume first to allow clean shutdown
                 if (_isPaused)
                 {
                     _isPaused = false;
@@ -232,7 +426,6 @@ namespace AeroDebrief.Core.Playback
                 }
             }
             
-            // Wait for the task to complete outside the lock to avoid deadlocks
             if (shouldStop && taskToWait != null && !taskToWait.IsCompleted)
             {
                 try
@@ -246,7 +439,7 @@ namespace AeroDebrief.Core.Playback
                 }
                 catch (OperationCanceledException)
                 {
-                    Logger.Warn("Playback task did not complete within timeout - this may indicate a problem");
+                    Logger.Warn("Playback task did not complete within timeout");
                 }
                 catch (Exception ex)
                 {
@@ -254,7 +447,6 @@ namespace AeroDebrief.Core.Playback
                 }
             }
             
-            // Final cleanup
             CleanupResources();
         }
 
@@ -267,7 +459,6 @@ namespace AeroDebrief.Core.Playback
                     _cts?.Dispose();
                     _cts = null;
                     
-                    // Don't dispose the task as it might still be running
                     _playbackTask = null;
                     
                     _pauseTask?.SetCanceled();
@@ -290,13 +481,9 @@ namespace AeroDebrief.Core.Playback
         public void SetRecordingStart(DateTime start) => RecordingStart = start;
         public void UpdatePosition(TimeSpan position) => CurrentPosition = position;
         
-        /// <summary>
-        /// Immediately update position and notify listeners (used during seek operations)
-        /// </summary>
         public void SetPosition(TimeSpan position)
         {
             CurrentPosition = position;
-            // Immediately notify of the position change
             try
             {
                 var progress = TotalDuration.Ticks > 0 ? (double)CurrentPosition.Ticks / TotalDuration.Ticks * 100.0 : 0.0;
@@ -334,7 +521,6 @@ namespace AeroDebrief.Core.Playback
                     Logger.Error(ex, "Error while invoking progress change events");
                 }
                 
-                // Log progress occasionally
                 if ((int)clampedProgress % 10 == 0 && clampedProgress != _lastLoggedProgress)
                 {
                     Logger.Debug($"Playback progress: {clampedProgress:F1}% ({CurrentPosition}/{TotalDuration})");
@@ -345,7 +531,6 @@ namespace AeroDebrief.Core.Playback
 
         public void Dispose()
         {
-            // Use async version but don't wait for it in Dispose to avoid blocking
             _ = StopAsync();
         }
     }
