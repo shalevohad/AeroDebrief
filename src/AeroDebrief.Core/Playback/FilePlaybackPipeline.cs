@@ -21,6 +21,10 @@ namespace AeroDebrief.Core.Playback
         private AudioOutputEngine? _audioOutput;
         private MasterMixer? _masterMixer;
         
+        // Controllers for external integration (e.g., Tacview)
+        private PlaybackController? _playbackController;
+        private SeekController? _seekController;
+        
         // FrequencyWorker mapping (FrequencyRoutingWorker -> FrequencyWorker)
         private readonly Dictionary<double, FrequencyWorker> _frequencyWorkers = new();
         
@@ -51,6 +55,30 @@ namespace AeroDebrief.Core.Playback
         public event Action<Exception>? ErrorOccurred;
 
         /// <summary>
+        /// Gets the playback controller for external time source integration
+        /// </summary>
+        public PlaybackController PlaybackController => _playbackController 
+            ?? throw new InvalidOperationException("Pipeline not opened - call OpenAsync first");
+
+        /// <summary>
+        /// Gets the seek controller for external seek integration
+        /// </summary>
+        public SeekController SeekController => _seekController 
+            ?? throw new InvalidOperationException("Pipeline not opened - call OpenAsync first");
+
+        /// <summary>
+        /// Gets the audio output engine for spatial audio integration
+        /// </summary>
+        public AudioOutputEngine AudioOutput => _audioOutput 
+            ?? throw new InvalidOperationException("Pipeline not opened - call OpenAsync first");
+
+        /// <summary>
+        /// Gets the master mixer for packet filtering integration
+        /// </summary>
+        public MasterMixer MasterMixer => _masterMixer 
+            ?? throw new InvalidOperationException("Pipeline not opened - call OpenAsync first");
+
+        /// <summary>
         /// Creates a new FilePlaybackPipeline with an already-opened FilePacketSource.
         /// This allows sharing the same FilePacketSource for waveform generation and playback.
         /// </summary>
@@ -73,6 +101,15 @@ namespace AeroDebrief.Core.Playback
                 // Verify FilePacketSource is opened
                 if (_packetSource.TotalPackets == 0)
                     throw new InvalidOperationException("FilePacketSource not opened. Call OpenAsync on it first.");
+                
+                // NEW: Create controllers for external integration (e.g., Tacview)
+                Logger.Info("Creating PlaybackController and SeekController for external integration...");
+                _playbackController = new PlaybackController();
+                _playbackController.SetTotalDuration(_packetSource.TotalDuration);
+                _playbackController.SetRecordingStart(_packetSource.RecordingStart);
+                
+                _seekController = new SeekController();
+                Logger.Info("? Controllers created for external integration support");
                 
                 // Step 1: Initialize PacketRouter
                 Logger.Info("Step 1: Initializing PacketRouter...");
@@ -109,7 +146,7 @@ namespace AeroDebrief.Core.Playback
                 }
                 Logger.Info($"Registered {_frequencyWorkers.Count} FrequencyWorkers with MasterMixer");
                 
-                Logger.Info($"? Pipeline opened successfully: {_packetSource.TotalPackets} packets, Duration: {TotalDuration}");
+                Logger.Info($"? Pipeline opened successfully with external integration support: {_packetSource.TotalPackets} packets, Duration: {TotalDuration}");
             }
             catch (Exception ex)
             {
@@ -473,6 +510,10 @@ namespace AeroDebrief.Core.Playback
 
             _playbackCts?.Cancel();
             _playbackCts?.Dispose();
+
+            // Dispose controllers
+            _playbackController?.Dispose();
+            _seekController?.Dispose();
 
             // Dispose FrequencyWorkers
             foreach (var worker in _frequencyWorkers.Values)

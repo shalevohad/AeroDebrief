@@ -21,6 +21,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\AeroDebrief.Core\AeroDebrief.Core.csproj" />
+    <ProjectReference Include="..\AeroDebrief.Integrations\AeroDebrief.Integrations.csproj" />
   </ItemGroup>
 
   <ItemGroup>

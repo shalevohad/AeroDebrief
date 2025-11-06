@@ -65,22 +65,43 @@ namespace AeroDebrief.UI.Controls
             {
                 var logger = NLog.LogManager.GetCurrentClassLogger();
                 logger.Info($"📊 FrequencyTreeView.OnFrequenciesChanged called");
-                logger.Info($"   ⏳ Old value: {(e.OldValue as ObservableCollection<FrequencyGroupViewModel>)?.Count ?? 0} groups");
-                logger.Info($"   ✅ New value: {(e.NewValue as ObservableCollection<FrequencyGroupViewModel>)?.Count ?? 0} groups");
+                
+                var oldGroups = e.OldValue as ObservableCollection<FrequencyGroupViewModel>;
+                var newGroups = e.NewValue as ObservableCollection<FrequencyGroupViewModel>;
+                
+                logger.Info($"   ⏳ Old value: {oldGroups?.Count ?? 0} groups");
+                logger.Info($"   ✅ New value: {newGroups?.Count ?? 0} groups");
+                
+                // Log details about new groups
+                if (newGroups != null && newGroups.Count > 0)
+                {
+                    int totalFreqs = 0;
+                    foreach (var group in newGroups)
+                    {
+                        int freqCount = group.Frequencies?.Count ?? 0;
+                        totalFreqs += freqCount;
+                        logger.Info($"      📁 Group: {group.Name} ({freqCount} frequencies)");
+                    }
+                    logger.Info($"   📊 Total frequencies across all groups: {totalFreqs}");
+                }
+                else
+                {
+                    logger.Warn($"   ⚠️ New frequency collection is {(newGroups == null ? "NULL" : "EMPTY")}");
+                }
                 
                 // Unsubscribe from old collection
-                if (e.OldValue is ObservableCollection<FrequencyGroupViewModel> oldCollection)
+                if (oldGroups != null)
                 {
-                    oldCollection.CollectionChanged -= control.OnFrequenciesCollectionChanged;
+                    oldGroups.CollectionChanged -= control.OnFrequenciesCollectionChanged;
                 }
                 
                 // Subscribe to new collection
-                if (e.NewValue is ObservableCollection<FrequencyGroupViewModel> newCollection)
+                if (newGroups != null)
                 {
-                    newCollection.CollectionChanged += control.OnFrequenciesCollectionChanged;
+                    newGroups.CollectionChanged += control.OnFrequenciesCollectionChanged;
                     
-                    var totalFreqs = newCollection.Sum(g => g.Frequencies.Count);
-                    control.SetStatus($"Loaded {newCollection.Count} groups with {totalFreqs} frequencies");
+                    var totalFreqs = newGroups.Sum(g => g.Frequencies?.Count ?? 0);
+                    control.SetStatus($"Loaded {newGroups.Count} groups with {totalFreqs} frequencies");
                 }
                 else
                 {
@@ -413,6 +434,241 @@ namespace AeroDebrief.UI.Controls
             }
 
             return contentPanel;
+        }
+
+        private void OnPlayerCheckboxChanged(PlayerFrequencyInfo player, bool isChecked)
+        {
+            player.IsSelected = isChecked;
+            
+            var action = isChecked ? "Including" : "Excluding";
+            SetStatus($"{action} pilot: {player.Name}");
+            
+            // Find the associated frequency view model
+            var frequency = Frequencies
+                ?.SelectMany(g => g.Frequencies)
+                .FirstOrDefault(f => f.SourceData?.Players.Contains(player) == true);
+            
+            if (frequency != null)
+            {
+                FrequencySelectionChanged?.Invoke(this, new FrequencySelectionChangedEventArgs(frequency, isChecked));
+            }
+        }
+
+        private FrameworkElement CreatePlayerInfoPanel(PlayerFrequencyInfo player, double contributionPercent)
+        {
+            // Outer container with glow effect support
+            var outerBorder = new Border
+            {
+                Background = Brushes.Transparent,
+                CornerRadius = new CornerRadius(3),
+                Margin = new Thickness(0, 1, 0, 1)
+            };
+
+            // Minimalistic single-line design with contribution percentage and pilot filter controls
+            var border = new Border
+            {
+                Background = new SolidColorBrush(Color.FromArgb(25, 128, 128, 128)), // Subtle background
+                BorderBrush = new SolidColorBrush(Color.FromArgb(40, 128, 128, 128)),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(3),
+                Padding = new Thickness(6, 3, 6, 3)
+            };
+
+            var mainPanel = new DockPanel();
+
+            // Coalition dot indicator (left-most)
+            if (!string.IsNullOrEmpty(player.Coalition) && player.Coalition != "Unknown")
+            {
+                var coalitionDot = new Ellipse
+                {
+                    Width = 8,
+                    Height = 8,
+                    Fill = GetCoalitionBrush(player.Coalition),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(0, 0, 6, 0),
+                    ToolTip = $"{player.Coalition} Coalition"
+                };
+                DockPanel.SetDock(coalitionDot, Dock.Left);
+                mainPanel.Children.Add(coalitionDot);
+            }
+
+            // Pilot checkbox filter
+            var pilotCheckBox = new CheckBox
+            {
+                IsChecked = player.IsSelected,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(4, 0, 6, 0),
+                ToolTip = player.IsSelected ? "Deselect pilot (filter out)" : "Select pilot (include in playback)"
+            };
+
+            pilotCheckBox.Checked += (s, e) =>
+            {
+                player.IsSelected = true;
+                pilotCheckBox.ToolTip = "Deselect pilot (filter out)";
+                
+                SetStatus($"Including pilot: {player.Name}");
+                
+                // Fire event for ViewModel to handle
+                var freqViewModel = Frequencies
+                    .SelectMany(g => g.Frequencies)
+                    .FirstOrDefault(f => f.SourceData?.Players.Contains(player) == true);
+                if (freqViewModel != null)
+                {
+                    OnMixerBooleanChanged(freqViewModel, "PilotSelected", true, player);
+                }
+            };
+
+            pilotCheckBox.Unchecked += (s, e) =>
+            {
+                player.IsSelected = false;
+                pilotCheckBox.ToolTip = "Select pilot (include in playback)";
+                
+                SetStatus($"Filtering out pilot: {player.Name}");
+                
+                // Fire event for ViewModel to handle
+                var freqViewModel = Frequencies
+                    .SelectMany(g => g.Frequencies)
+                    .FirstOrDefault(f => f.SourceData?.Players.Contains(player) == true);
+                if (freqViewModel != null)
+                {
+                    OnMixerBooleanChanged(freqViewModel, "PilotSelected", false, player);
+                }
+            };
+
+            DockPanel.SetDock(pilotCheckBox, Dock.Right);
+            mainPanel.Children.Add(pilotCheckBox);
+
+            // Contribution percentage badge (right-most)
+            var contributionBadge = new Border
+            {
+                Background = GetContributionBrush(contributionPercent),
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(6, 1, 6, 1),
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(4, 0, 0, 0),
+                ToolTip = $"{contributionPercent:F1}% of activity on this frequency\n{player.PacketCount} packets transmitted"
+            };
+
+            var contributionText = new TextBlock
+            {
+                Text = $"{contributionPercent:F0}%",
+                FontSize = 9,
+                FontWeight = FontWeights.Bold,
+                Foreground = Brushes.White
+            };
+
+            contributionBadge.Child = contributionText;
+            DockPanel.SetDock(contributionBadge, Dock.Right);
+            mainPanel.Children.Add(contributionBadge);
+
+            // Main info panel (fills remaining space)
+            var infoPanel = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+
+            // Player name
+            var nameText = new TextBlock
+            {
+                Text = player.Name,
+                FontSize = 10,
+                FontWeight = FontWeights.SemiBold,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 6, 0),
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                MaxWidth = 120
+            };
+            infoPanel.Children.Add(nameText);
+
+            // Aircraft icon + name
+            if (!string.IsNullOrEmpty(player.Aircraft) && player.Aircraft != "Unknown")
+            {
+                var aircraftIcon = IconHelper.CreateFaIcon(FontAwesomeIcon.Plane, 12, TryFindResource("TextSecondaryBrush") as Brush ?? Brushes.Gray);
+                infoPanel.Children.Add(aircraftIcon);
+
+                var aircraftText = new TextBlock
+                {
+                    Text = player.Aircraft,
+                    FontSize = 9,
+                    Foreground = TryFindResource("TextSecondaryBrush") as Brush ?? Brushes.Gray,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(0, 0, 8, 0),
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                    MaxWidth = 80
+                };
+                infoPanel.Children.Add(aircraftText);
+            }
+
+            // Time range with clock icon
+            var duration = player.LastSeen - player.FirstSeen;
+            var durationText = duration.TotalMinutes >= 1 
+                ? $"{duration.TotalMinutes:F0}m" 
+                : $"{duration.TotalSeconds:F0}s";
+
+            var timeIconElement = IconHelper.CreateIconTextBlock("\u23F0", 9, TryFindResource("TextSecondaryBrush") as Brush ?? Brushes.Gray);
+            timeIconElement.Margin = new Thickness(0, 0, 2, 0);
+            infoPanel.Children.Add(timeIconElement);
+
+            var timeText = new TextBlock
+            {
+                Text = durationText,
+                FontSize = 9,
+                Foreground = TryFindResource("TextSecondaryBrush") as Brush ?? Brushes.Gray,
+                VerticalAlignment = VerticalAlignment.Center,
+                ToolTip = $"Active from {player.FirstSeen:HH:mm:ss} to {player.LastSeen:HH:mm:ss}"
+            };
+            infoPanel.Children.Add(timeText);
+
+            mainPanel.Children.Add(infoPanel);
+
+            // Set overall tooltip
+            var selectionStatus = player.IsSelected ? "SELECTED (audio included)" : "DESELECTED (audio filtered out)";
+
+            border.ToolTip = $"{player.Name}\n" +
+                            $"Coalition: {player.Coalition}\n" +
+                            $"Aircraft: {player.Aircraft}\n" +
+                            $"Contribution: {contributionPercent:F1}% ({player.PacketCount} packets)\n" +
+                            $"Active: {player.FirstSeen:HH:mm:ss} - {player.LastSeen:HH:mm:ss} ({duration.TotalMinutes:F1}min)\n" +
+                            $"Status: {selectionStatus}";
+
+            border.Child = mainPanel;
+            outerBorder.Child = border;
+
+            // NEW: Glow effect animation for newly discovered pilots
+            if (player.IsNewlyDiscovered)
+            {
+                var logger = NLog.LogManager.GetCurrentClassLogger();
+                logger.Info($"✨ Applying glow effect to newly discovered pilot: {player.Name}");
+
+                // Animate the outer border background from green to transparent
+                var colorAnimation = new System.Windows.Media.Animation.ColorAnimation
+                {
+                    From = Color.FromRgb(76, 175, 80), // Green (#4CAF50)
+                    To = Colors.Transparent,
+                    Duration = new Duration(TimeSpan.FromSeconds(2)),
+                    AutoReverse = false
+                };
+
+                var storyboard = new System.Windows.Media.Animation.Storyboard();
+                System.Windows.Media.Animation.Storyboard.SetTarget(colorAnimation, outerBorder);
+                System.Windows.Media.Animation.Storyboard.SetTargetProperty(colorAnimation, 
+                    new PropertyPath("(Border.Background).(SolidColorBrush.Color)"));
+                storyboard.Children.Add(colorAnimation);
+
+                // Start animation
+                outerBorder.Background = new SolidColorBrush(Color.FromRgb(76, 175, 80));
+                storyboard.Begin();
+
+                // Clear flag after animation completes
+                storyboard.Completed += (s, e) =>
+                {
+                    player.IsNewlyDiscovered = false;
+                    logger.Debug($"Glow animation completed for pilot: {player.Name}");
+                };
+            }
+
+            return outerBorder;
         }
 
         private FrameworkElement CreateGroupHeader(FrequencyGroupViewModel group)
@@ -879,9 +1135,17 @@ namespace AeroDebrief.UI.Controls
         {
             MixerBooleanChanged?.Invoke(this, new MixerBooleanChangedEventArgs(frequency, property, value, player));
         }
-
+        /*
         private FrameworkElement CreatePlayerInfoPanel(PlayerFrequencyInfo player, double contributionPercent)
         {
+            // Outer container with glow effect support
+            var outerBorder = new Border
+            {
+                Background = Brushes.Transparent,
+                CornerRadius = new CornerRadius(3),
+                Margin = new Thickness(0, 1, 0, 1)
+            };
+
             // Minimalistic single-line design with contribution percentage and pilot filter controls
             var border = new Border
             {
@@ -889,7 +1153,6 @@ namespace AeroDebrief.UI.Controls
                 BorderBrush = new SolidColorBrush(Color.FromArgb(40, 128, 128, 128)),
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(3),
-                Margin = new Thickness(0, 1, 0, 1),
                 Padding = new Thickness(6, 3, 6, 3)
             };
 
@@ -1052,9 +1315,44 @@ namespace AeroDebrief.UI.Controls
                             $"Status: {selectionStatus}";
 
             border.Child = mainPanel;
-            return border;
-        }
+            outerBorder.Child = border;
 
+            // NEW: Glow effect animation for newly discovered pilots
+            if (player.IsNewlyDiscovered)
+            {
+                var logger = NLog.LogManager.GetCurrentClassLogger();
+                logger.Info($"✨ Applying glow effect to newly discovered pilot: {player.Name}");
+
+                // Animate the outer border background from green to transparent
+                var colorAnimation = new System.Windows.Media.Animation.ColorAnimation
+                {
+                    From = Color.FromRgb(76, 175, 80), // Green (#4CAF50)
+                    To = Colors.Transparent,
+                    Duration = new Duration(TimeSpan.FromSeconds(2)),
+                    AutoReverse = false
+                };
+
+                var storyboard = new System.Windows.Media.Animation.Storyboard();
+                System.Windows.Media.Animation.Storyboard.SetTarget(colorAnimation, outerBorder);
+                System.Windows.Media.Animation.Storyboard.SetTargetProperty(colorAnimation, 
+                    new PropertyPath("(Border.Background).(SolidColorBrush.Color)"));
+                storyboard.Children.Add(colorAnimation);
+
+                // Start animation
+                outerBorder.Background = new SolidColorBrush(Color.FromRgb(76, 175, 80));
+                storyboard.Begin();
+
+                // Clear flag after animation completes
+                storyboard.Completed += (s, e) =>
+                {
+                    player.IsNewlyDiscovered = false;
+                    logger.Debug($"Glow animation completed for pilot: {player.Name}");
+                };
+            }
+
+            return outerBorder;
+        }
+        */
         private Brush GetContributionBrush(double percent)
         {
             // Color-code contribution percentage for visual hierarchy

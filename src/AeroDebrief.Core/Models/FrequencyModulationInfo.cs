@@ -47,6 +47,12 @@ namespace AeroDebrief.Core.Models
         public bool IsSelected { get; set; } = true; // Default to selected
 
         /// <summary>
+        /// Indicates if this pilot was just discovered during live recording
+        /// Used for visual feedback (glow effect animation)
+        /// </summary>
+        public bool IsNewlyDiscovered { get; set; }
+
+        /// <summary>
         /// Gets a formatted display string for UI presentation
         /// </summary>
         public string GetDisplayText()

@@ -1,4 +1,5 @@
 using AeroDebrief.Core;
+using AeroDebrief.Core.Audio;
 using AeroDebrief.Integrations.Tacview.Models;
 using AeroDebrief.Integrations.Tacview.Protocol.Messages;
 using NLog;
@@ -8,8 +9,9 @@ namespace AeroDebrief.Integrations.Tacview.Pilot;
 /// <summary>
 /// Filters audio packets based on Tacview pilot selection and frequency configuration
 /// Implements frequency-based filtering for selected and non-selected pilots
+/// Implements IAudioPacketFilter and ISpatialAudioProvider for Core integration
 /// </summary>
-public class TacviewAudioFilter
+public class TacviewAudioFilter : IAudioPacketFilter, ISpatialAudioProvider
 {
     private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
     

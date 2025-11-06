@@ -1,4 +1,5 @@
 using System.Globalization;
+using AeroDebrief.Core;
 using AeroDebrief.Core.Playback;
 using AeroDebrief.Integrations.Tacview.Models;
 using AeroDebrief.Integrations.Tacview.Protocol.Messages;
@@ -9,8 +10,9 @@ namespace AeroDebrief.Integrations.Tacview.Sync;
 /// <summary>
 /// Synchronizes AeroDebrief playback with Tacview timeline
 /// Handles time updates, drift correction, and playback state changes
+/// Implements IExternalTimeSource for integration with PlaybackController
 /// </summary>
-public class TacviewSyncService
+public class TacviewSyncService : IExternalTimeSource
 {
     private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
     
@@ -23,6 +25,11 @@ public class TacviewSyncService
     private bool _isInitialized;
     private DateTime _lastSyncTime = DateTime.MinValue;
     private int _syncUpdateCount;
+    
+    // IExternalTimeSource implementation fields
+    private TimeSpan _currentTime;
+    private bool _isPlaying;
+    private double _playbackSpeed = 1.0;
     
     /// <summary>
     /// Current sync quality (0-100%)
@@ -43,6 +50,15 @@ public class TacviewSyncService
     /// True if currently synchronized with Tacview
     /// </summary>
     public bool IsSynchronized { get; private set; }
+    
+    // IExternalTimeSource interface implementation
+    public TimeSpan CurrentTime => TargetPosition;
+    public bool IsPlaying => _isPlaying;
+    public double PlaybackSpeed => _playbackSpeed;
+    
+    public event EventHandler<TimeSpan>? TimeChanged;
+    public event EventHandler<bool>? PlaybackStateChanged;
+    public event EventHandler<double>? PlaybackSpeedChanged;
     
     /// <summary>
     /// Fired when sync quality changes significantly (>5%)
@@ -101,6 +117,9 @@ public class TacviewSyncService
             // Convert to offset from recording start
             TargetPosition = tacviewTime - _recordingStartUtc;
             
+            // Fire TimeChanged event for IExternalTimeSource
+            TimeChanged?.Invoke(this, TargetPosition);
+            
             // Get current playback position
             var currentPosition = _playbackController.CurrentPosition;
             
@@ -109,10 +128,12 @@ public class TacviewSyncService
             CurrentDriftMs = (int)Math.Abs(drift);
             
             // Update playback speed if changed
-            if (Math.Abs(message.PlaybackSpeed - _playbackController.PlaybackSpeed) > 0.01)
+            if (Math.Abs(message.PlaybackSpeed - _playbackSpeed) > 0.01)
             {
+                _playbackSpeed = message.PlaybackSpeed;
                 _playbackController.SetPlaybackSpeed(message.PlaybackSpeed);
-                Logger.Debug($"Playback speed updated: {message.PlaybackSpeed:F2}x");
+                PlaybackSpeedChanged?.Invoke(this, _playbackSpeed);
+                Logger.Debug($"Playback speed updated: {_playbackSpeed:F2}x");
             }
             
             // Process scrubbing and get audio mute state
@@ -269,6 +290,13 @@ public class TacviewSyncService
     private async Task UpdatePlaybackStateAsync(string playbackState, CancellationToken cancellationToken)
     {
         var shouldPlay = playbackState?.ToLowerInvariant() == "playing";
+        
+        // Fire PlaybackStateChanged event if state changed
+        if (shouldPlay != _isPlaying)
+        {
+            _isPlaying = shouldPlay;
+            PlaybackStateChanged?.Invoke(this, _isPlaying);
+        }
         
         if (shouldPlay && !_playbackController.IsPlaying)
         {

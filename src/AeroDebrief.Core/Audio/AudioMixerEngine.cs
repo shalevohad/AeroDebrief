@@ -11,6 +11,7 @@ namespace AeroDebrief.Core.Audio
     /// High-performance audio mixer with per-frequency volume (0-200%) and stereo pan control.
     /// Features soft-clip limiter on master bus, lock-free parameter updates, and zero-allocation hot path.
     /// Implements equal-power pan law for professional stereo imaging.
+    /// Supports external audio packet filtering (e.g., for Tacview integration).
     /// </summary>
     public sealed class AudioMixerEngine : IDisposable
     {
@@ -23,7 +24,11 @@ namespace AeroDebrief.Core.Audio
         private volatile float _masterGain = 1.0f;
         private volatile bool _isMuted;
         private volatile bool _softClipEnabled = true;
-
+        
+        // NEW: Audio packet filter support
+        private IAudioPacketFilter? _packetFilter;
+        private ISpatialAudioProvider? _spatialAudioProvider;
+        
         public event EventHandler<ChannelSettingsChangedEventArgs>? ChannelSettingsChanged;
 
         /// <summary>
@@ -82,6 +87,78 @@ namespace AeroDebrief.Core.Audio
         public AudioMixerEngine()
         {
             Logger.Debug("AudioMixerEngine initialized with soft-clip limiter");
+        }
+
+        /// <summary>
+        /// Sets an external audio packet filter (e.g., Tacview frequency filtering)
+        /// </summary>
+        /// <param name="filter">Filter to apply, or null to disable filtering</param>
+        public void SetPacketFilter(IAudioPacketFilter? filter)
+        {
+            lock (_lockObject)
+            {
+                _packetFilter = filter;
+                Logger.Info($"Audio packet filter {(filter != null ? "enabled" : "disabled")}");
+            }
+        }
+        
+        /// <summary>
+        /// Sets an external spatial audio provider (e.g., Tacview pan control)
+        /// </summary>
+        /// <param name="provider">Spatial audio provider, or null to disable</param>
+        public void SetSpatialAudioProvider(ISpatialAudioProvider? provider)
+        {
+            lock (_lockObject)
+            {
+                _spatialAudioProvider = provider;
+                Logger.Info($"Spatial audio provider {(provider != null ? "enabled" : "disabled")}");
+            }
+        }
+        
+        /// <summary>
+        /// Checks if a packet should be played based on the current filter
+        /// </summary>
+        /// <param name="packet">Audio packet metadata</param>
+        /// <returns>True if packet should be played, false if filtered</returns>
+        public bool ShouldPlayPacket(AudioPacketMetadata packet)
+        {
+            lock (_lockObject)
+            {
+                // If no filter is set, allow all packets
+                if (_packetFilter == null)
+                    return true;
+                
+                // Apply filter
+                return _packetFilter.ShouldPlayPacket(packet);
+            }
+        }
+        
+        /// <summary>
+        /// Gets the spatial audio pan for a packet, considering both manual settings and external provider
+        /// </summary>
+        /// <param name="packet">Audio packet metadata</param>
+        /// <returns>Pan value from -1.0 (left) to +1.0 (right)</returns>
+        public float GetPacketPan(AudioPacketMetadata packet)
+        {
+            lock (_lockObject)
+            {
+                // First check if there's an external spatial audio provider (e.g., Tacview)
+                if (_spatialAudioProvider != null)
+                {
+                    try
+                    {
+                        var externalPan = _spatialAudioProvider.GetPanForPilot(packet.TransmitterGuid);
+                        return (float)Math.Clamp(externalPan, -1.0, 1.0);
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Error(ex, "Error getting pan from spatial audio provider");
+                    }
+                }
+                
+                // Fall back to channel-based pan setting
+                return GetChannelPan(packet.Frequency);
+            }
         }
 
         /// <summary>
@@ -506,5 +583,31 @@ namespace AeroDebrief.Core.Audio
             Frequency = frequency;
             Settings = settings;
         }
+    }
+
+    /// <summary>
+    /// Interface for external audio packet filtering
+    /// </summary>
+    public interface IAudioPacketFilter
+    {
+        /// <summary>
+        /// Determines if a packet should be played
+        /// </summary>
+        /// <param name="packet">Audio packet metadata</param>
+        /// <returns>True if packet should be played, false if filtered</returns>
+        bool ShouldPlayPacket(AudioPacketMetadata packet);
+    }
+
+    /// <summary>
+    /// Interface for external spatial audio providers
+    /// </summary>
+    public interface ISpatialAudioProvider
+    {
+        /// <summary>
+        /// Gets the pan value for a pilot's audio, from -1.0 (full left) to +1.0 (full right)
+        /// </summary>
+        /// <param name="pilotId">The pilot identifier (GUID string)</param>
+        /// <returns>The pan value, or 0 if not available</returns>
+        double GetPanForPilot(string pilotId);
     }
 }

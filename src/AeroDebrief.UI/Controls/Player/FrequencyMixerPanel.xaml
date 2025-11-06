@@ -4,8 +4,16 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:local="clr-namespace:AeroDebrief.UI.Controls"
+             xmlns:helpers="clr-namespace:AeroDebrief.UI.Helpers"
+             xmlns:fa="http://schemas.fontawesome.io/icons/"
              mc:Ignorable="d" 
              d:DesignHeight="600" d:DesignWidth="350">
+    
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisConverter"/>
+        <helpers:NullOrEmptyToVisibilityConverter x:Key="NullOrEmptyToVisConverter"/>
+        <helpers:NullOrEmptyToInverseVisibilityConverter x:Key="NullOrEmptyToInverseVisConverter"/>
+    </UserControl.Resources>
     
     <Grid>
         <Grid.RowDefinitions>
@@ -49,13 +57,62 @@
             </StackPanel>
         </Grid>
         
-        <!-- Frequency Tree View -->
-        <local:FrequencyTreeView x:Name="FrequencyTree"
-                               Grid.Row="1"
-                               Frequencies="{Binding Frequencies, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                               FrequencySelectionChanged="FrequencyTree_SelectionChanged"
-                               MixerValueChanged="FrequencyTree_MixerValueChanged"
-                               MixerBooleanChanged="FrequencyTree_MixerBooleanChanged"
-                               Margin="0"/>
+        <!-- Content Area with Overlay Support -->
+        <Grid Grid.Row="1">
+            <!-- Empty State Placeholder - Shows when no frequencies loaded -->
+            <Border x:Name="EmptyStatePlaceholder"
+                    Background="{StaticResource PrimaryBackgroundBrush}"
+                    BorderBrush="{StaticResource BorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    Padding="24"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Visibility="Collapsed">
+                
+                <StackPanel HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           MaxWidth="280">
+                    <!-- Icon -->
+                    <fa:ImageAwesome Icon="VolumeOff"
+                                    Width="48"
+                                    Height="48"
+                                    Foreground="{StaticResource TextSecondaryBrush}"
+                                    HorizontalAlignment="Center"
+                                    Margin="0,0,0,16"/>
+                    
+                    <!-- Title -->
+                    <TextBlock Text="No Frequencies Loaded"
+                              FontSize="16"
+                              FontWeight="SemiBold"
+                              Foreground="{StaticResource TextPrimaryBrush}"
+                              HorizontalAlignment="Center"
+                              TextAlignment="Center"
+                              Margin="0,0,0,8"/>
+                    
+                    <!-- Message -->
+                    <TextBlock TextWrapping="Wrap"
+                              FontSize="12"
+                              Foreground="{StaticResource TextSecondaryBrush}"
+                              HorizontalAlignment="Center"
+                              TextAlignment="Center"
+                              LineHeight="18">
+                        <Run Text="Load an audio recording file to analyze and display available radio frequencies."/>
+                        <LineBreak/>
+                        <LineBreak/>
+                        <Run Text="Once loaded, you can select frequencies to visualize their waveforms and control their audio mix."/>
+                    </TextBlock>
+                </StackPanel>
+            </Border>
+            
+            <!-- Frequency Tree View - Visible when frequencies are loaded -->
+            <local:FrequencyTreeView x:Name="FrequencyTree"
+                                   Frequencies="{Binding Frequencies, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                   FrequencySelectionChanged="FrequencyTree_SelectionChanged"
+                                   MixerValueChanged="FrequencyTree_MixerValueChanged"
+                                   MixerBooleanChanged="FrequencyTree_MixerBooleanChanged"
+                                   Visibility="Visible"
+                                   Margin="0"/>
+        </Grid>
     </Grid>
 </UserControl>

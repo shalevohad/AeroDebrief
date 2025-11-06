@@ -5,7 +5,7 @@ using AeroDebrief.Core.Helpers;
 
 namespace AeroDebrief.Core.Audio
 {
-    /// <summary>Handles audio output using WASAPI</summary>
+    /// <summary>Handles audio output using WASAPI with spatial audio support</summary>
     public sealed class AudioOutputEngine : IAudioOutputEngine
     {
         private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
@@ -16,6 +16,9 @@ namespace AeroDebrief.Core.Audio
         private long _totalBytesWritten = 0;
         private readonly object _wasapiLock = new();
         private volatile bool _isSeekInProgress = false;
+        
+        // NEW: Spatial audio provider support
+        private ISpatialAudioProvider? _spatialAudioProvider;
 
         public async Task InitializeAsync()
         {
@@ -314,6 +317,134 @@ namespace AeroDebrief.Core.Audio
             }
 
             await Task.CompletedTask;
+        }
+
+        /// <summary>
+        /// Sets an external spatial audio provider for pan control
+        /// </summary>
+        /// <param name="provider">Spatial audio provider, or null to disable</param>
+        public void SetSpatialAudioProvider(ISpatialAudioProvider? provider)
+        {
+            lock (_wasapiLock)
+            {
+                _spatialAudioProvider = provider;
+                Logger.Info($"Spatial audio provider {(provider != null ? "enabled" : "disabled")}");
+            }
+        }
+        
+        /// <summary>
+        /// Adjusts buffer size based on playback speed for optimal performance
+        /// </summary>
+        /// <param name="speed">Current playback speed (1.0 = normal)</param>
+        public void AdjustBufferForSpeed(double speed)
+        {
+            lock (_wasapiLock)
+            {
+                if (_waveProvider == null || _wasapiOut == null)
+                    return;
+                
+                int targetBufferSeconds;
+                
+                // Use constants for threshold checks and buffer sizes
+                if (speed > Constants.FAST_PLAYBACK_THRESHOLD)
+                    targetBufferSeconds = Constants.FAST_PLAYBACK_BUFFER_SECONDS;
+                else if (speed < Constants.SLOW_PLAYBACK_THRESHOLD)
+                    targetBufferSeconds = Constants.SLOW_PLAYBACK_BUFFER_SECONDS;
+                else
+                    targetBufferSeconds = Constants.NORMAL_PLAYBACK_BUFFER_SECONDS;
+                
+                var newBufferLength = _waveProvider.WaveFormat.AverageBytesPerSecond * targetBufferSeconds;
+                
+                if (_waveProvider.BufferLength != newBufferLength)
+                {
+                    try
+                    {
+                        // Save current state
+                        var wasPlaying = _wasapiOut.PlaybackState == PlaybackState.Playing;
+                        var currentVolume = _wasapiOut.Volume;
+                        
+                        // Stop playback
+                        _wasapiOut.Stop();
+                        
+                        // Recreate wave provider with new buffer size
+                        var waveFormat = _waveProvider.WaveFormat;
+                        _waveProvider = new BufferedWaveProvider(waveFormat)
+                        {
+                            ReadFully = true,
+                            BufferLength = newBufferLength,
+                            DiscardOnBufferOverflow = true
+                        };
+                        
+                        // Reinitialize WASAPI
+                        _wasapiOut.Init(_waveProvider);
+                        _wasapiOut.Volume = currentVolume;
+                        
+                        // Resume if was playing
+                        if (wasPlaying)
+                            _wasapiOut.Play();
+                        
+                        Logger.Info($"Audio buffer adjusted for {speed:F2}x speed: {targetBufferSeconds}s ({newBufferLength} bytes)");
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Error(ex, "Failed to adjust audio buffer size");
+                    }
+                }
+            }
+        }
+        
+        /// <summary>
+        /// Applies spatial audio (pan) to stereo audio data
+        /// </summary>
+        /// <param name="packet">Audio packet metadata</param>
+        /// <param name="audioData">Audio data (16-bit PCM samples)</param>
+        private void ApplySpatialAudio(AudioPacketMetadata packet, short[] audioData)
+        {
+            if (_spatialAudioProvider == null || audioData.Length == 0)
+                return;
+            
+            try
+            {
+                var pan = _spatialAudioProvider.GetPanForPilot(packet.TransmitterGuid);
+                
+                // Clamp pan to valid range
+                pan = Math.Clamp(pan, -1.0, 1.0);
+                
+                // Skip if centered (no pan adjustment needed)
+                if (Math.Abs(pan) < 0.01)
+                    return;
+                
+                // Calculate L/R gains using constant power pan law
+                // This maintains perceived loudness while panning
+                var panAngle = pan * Math.PI / 4.0; // -45° to +45°
+                var leftGain = (float)Math.Cos(panAngle);
+                var rightGain = (float)Math.Sin(panAngle);
+                
+                // Note: SRS audio is mono, so we duplicate to stereo for panning
+                // For proper stereo output, we'd need to convert mono to stereo
+                // For now, we apply differential gains to simulate panning
+                
+                // Apply pan to audio samples (assuming mono input)
+                for (int i = 0; i < audioData.Length; i++)
+                {
+                    // For mono output, we can only reduce volume on one "virtual" channel
+                    // In a true stereo system, we'd split the signal:
+                    // audioDataStereo[i*2] = audioData[i] * leftGain;     // Left channel
+                    // audioDataStereo[i*2+1] = audioData[i] * rightGain;  // Right channel
+                    
+                    // For mono, apply average of both gains
+                    var averageGain = (leftGain + rightGain) / 2.0f;
+                    audioData[i] = (short)Math.Clamp(audioData[i] * averageGain, short.MinValue, short.MaxValue);
+                }
+                
+#if DEBUG
+                Logger.Debug($"Applied spatial audio: pan={pan:F2}, leftGain={leftGain:F2}, rightGain={rightGain:F2}");
+#endif
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, "Failed to apply spatial audio");
+            }
         }
 
         public void Dispose()

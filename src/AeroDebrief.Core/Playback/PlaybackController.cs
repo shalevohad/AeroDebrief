@@ -15,7 +15,21 @@ namespace AeroDebrief.Core.Playback
         public event Action<double>? ProgressChanged;
         public event Action<TimeSpan, TimeSpan>? TimeChanged;
         public event Action<AudioPacketMetadata>? PacketStarted;
-        public event Action<double>? PlaybackSpeedChanged; // NEW: Event for playback speed changes
+        
+        /// <summary>
+        /// Event fired when playback speed changes (actual speed after clamping)
+        /// </summary>
+        public event Action<double>? PlaybackSpeedChanged;
+        
+        /// <summary>
+        /// Event fired when speed clamping state changes (for UI warnings)
+        /// </summary>
+        public event Action<bool, double, double>? SpeedClampedChanged; // (isClamped, requestedSpeed, actualSpeed)
+        
+        /// <summary>
+        /// Event fired when audio should be muted due to extreme playback speed (< 0.25x or > 4.0x)
+        /// </summary>
+        public event Action<bool>? ShouldMuteForExtremeSpeed;
 
         private CancellationTokenSource? _cts;
         private Task? _playbackTask;
@@ -26,6 +40,11 @@ namespace AeroDebrief.Core.Playback
         private readonly object _lock = new object();
         
         private double _playbackSpeed = 1.0; // NEW: Playback speed control (1.0 = normal, 0.5 = half speed, 2.0 = double speed)
+        private double _requestedPlaybackSpeed = 1.0; // NEW: Track what Tacview actually requested
+        
+        // NEW: External time source support
+        private IExternalTimeSource? _externalTimeSource;
+        private bool _isExternalSyncEnabled;
         
         public TimeSpan TotalDuration { get; private set; }
         public TimeSpan CurrentPosition { get; private set; }
@@ -33,7 +52,7 @@ namespace AeroDebrief.Core.Playback
         public bool IsPlaying => _isPlaybackActive && !_isPaused && !_isStopping;
         public bool IsPaused => _isPaused;
         
-        public double PlaybackSpeed // NEW: Current playback speed
+        public double PlaybackSpeed // Current playback speed (clamped)
         {
             get => _playbackSpeed;
             private set
@@ -53,21 +72,155 @@ namespace AeroDebrief.Core.Playback
                 }
             }
         }
+        
+        /// <summary>
+        /// Gets the originally requested playback speed (before clamping)
+        /// </summary>
+        public double RequestedPlaybackSpeed => _requestedPlaybackSpeed;
+        
+        /// <summary>
+        /// Gets whether the current playback speed is clamped (limited to supported range)
+        /// </summary>
+        public bool IsSpeedClamped => Math.Abs(_requestedPlaybackSpeed - _playbackSpeed) > 0.001;
+        
+        /// <summary>
+        /// Gets the reason for speed clamping, or null if not clamped
+        /// </summary>
+        public string? SpeedClampReason
+        {
+            get
+            {
+                if (!IsSpeedClamped)
+                    return null;
+                
+                if (_requestedPlaybackSpeed < Constants.MIN_PLAYBACK_SPEED)
+                    return $"Requested speed {_requestedPlaybackSpeed:F2}x is too slow. " +
+                           $"Minimum supported speed is {Constants.MIN_PLAYBACK_SPEED}x.";
+                
+                if (_requestedPlaybackSpeed > Constants.MAX_PLAYBACK_SPEED)
+                    return $"Requested speed {_requestedPlaybackSpeed:F2}x is too fast. " +
+                           $"Maximum supported speed is {Constants.MAX_PLAYBACK_SPEED}x.";
+                
+                return null;
+            }
+        }
+        
+        /// <summary>
+        /// Gets whether external sync is currently active
+        /// </summary>
+        public bool IsExternalSyncEnabled => _isExternalSyncEnabled && _externalTimeSource != null;
 
         /// <summary>
-        /// Sets the playback speed (0.25x to 4.0x supported)
+        /// Sets an external time source for synchronization (e.g., Tacview)
+        /// </summary>
+        /// <param name="source">External time source, or null to disable</param>
+        public void SetExternalTimeSource(IExternalTimeSource? source)
+        {
+            lock (_lock)
+            {
+                // Unsubscribe from old source
+                if (_externalTimeSource != null)
+                {
+                    _externalTimeSource.TimeChanged -= OnExternalTimeChanged;
+                    _externalTimeSource.PlaybackStateChanged -= OnExternalPlaybackStateChanged;
+                    _externalTimeSource.PlaybackSpeedChanged -= OnExternalPlaybackSpeedChanged;
+                    Logger.Info("External time source disconnected");
+                }
+                
+                _externalTimeSource = source;
+                _isExternalSyncEnabled = source != null;
+                
+                // Subscribe to new source
+                if (_externalTimeSource != null)
+                {
+                    _externalTimeSource.TimeChanged += OnExternalTimeChanged;
+                    _externalTimeSource.PlaybackStateChanged += OnExternalPlaybackStateChanged;
+                    _externalTimeSource.PlaybackSpeedChanged += OnExternalPlaybackSpeedChanged;
+                    Logger.Info("External time source connected");
+                }
+            }
+        }
+        
+        /// <summary>
+        /// Handles time changes from external source
+        /// </summary>
+        private void OnExternalTimeChanged(object? sender, TimeSpan targetTime)
+        {
+            if (!_isExternalSyncEnabled)
+                return;
+            
+            // Calculate drift
+            var drift = Math.Abs((targetTime - CurrentPosition).TotalMilliseconds);
+            
+            Logger.Debug($"External time change: target={targetTime}, current={CurrentPosition}, drift={drift:F0}ms");
+            
+            // NOTE: Actual sync logic is handled by TacviewSyncService
+            // This event is primarily for logging and monitoring
+        }
+        
+        /// <summary>
+        /// Handles playback state changes from external source
+        /// </summary>
+        private void OnExternalPlaybackStateChanged(object? sender, bool isPlaying)
+        {
+            if (!_isExternalSyncEnabled)
+                return;
+            
+            Logger.Debug($"External playback state change: {(isPlaying ? "playing" : "paused")}");
+            
+            // NOTE: Actual playback control is handled by TacviewSyncService
+            // This event is primarily for logging and monitoring
+        }
+        
+        /// <summary>
+        /// Handles playback speed changes from external source
+        /// </summary>
+        private void OnExternalPlaybackSpeedChanged(object? sender, double speed)
+        {
+            if (!_isExternalSyncEnabled)
+                return;
+            
+            Logger.Debug($"External playback speed change: {speed:F2}x");
+            SetPlaybackSpeed(speed);
+        }
+
+        /// <summary>
+        /// Sets the playback speed (will be clamped to 0.25x - 4.0x range)
         /// </summary>
         public void SetPlaybackSpeed(double speed)
         {
-            // Clamp to reasonable range: 0.25x (quarter speed) to 4.0x (quad speed)
-            var clampedSpeed = Math.Clamp(speed, 0.25, 4.0);
+            // Store the originally requested speed
+            _requestedPlaybackSpeed = speed;
+            
+            // Clamp to reasonable range using constants
+            var clampedSpeed = Math.Clamp(speed, Constants.MIN_PLAYBACK_SPEED, Constants.MAX_PLAYBACK_SPEED);
+            
+            bool isClamped = Math.Abs(speed - clampedSpeed) > 0.001;
             
             lock (_lock)
             {
                 PlaybackSpeed = clampedSpeed;
             }
             
-            Logger.Info($"Playback speed set to {clampedSpeed:F2}x");
+            // Fire clamping event for UI warnings
+            try
+            {
+                SpeedClampedChanged?.Invoke(isClamped, speed, clampedSpeed);
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, "Error invoking SpeedClampedChanged event");
+            }
+            
+            if (isClamped)
+            {
+                Logger.Warn($"Playback speed {speed:F2}x clamped to {clampedSpeed:F2}x " +
+                           $"(supported range: {Constants.MIN_PLAYBACK_SPEED}x-{Constants.MAX_PLAYBACK_SPEED}x)");
+            }
+            else
+            {
+                Logger.Info($"Playback speed set to {clampedSpeed:F2}x");
+            }
         }
 
         /// <summary>

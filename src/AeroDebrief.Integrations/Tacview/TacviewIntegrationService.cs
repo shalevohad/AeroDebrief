@@ -1,4 +1,5 @@
 using AeroDebrief.Core.Playback;
+using AeroDebrief.Core.Audio;
 using AeroDebrief.Integrations.Tacview.Client;
 using AeroDebrief.Integrations.Tacview.Models;
 using AeroDebrief.Integrations.Tacview.Pilot;
@@ -12,6 +13,7 @@ namespace AeroDebrief.Integrations.Tacview;
 /// <summary>
 /// Main orchestrator for Tacview integration
 /// Manages connection, synchronization, filtering, and bidirectional communication
+/// Wires up Core interfaces for external sync, packet filtering, and spatial audio
 /// </summary>
 public class TacviewIntegrationService : IDisposable
 {
@@ -27,6 +29,12 @@ public class TacviewIntegrationService : IDisposable
     private CancellationTokenSource? _reconnectCts;
     private Task? _reconnectTask;
     private bool _isDisposed;
+    private bool _isInitialized;
+    
+    // Core component references (set during Initialize)
+    private PlaybackController? _playbackController;
+    private AudioMixerEngine? _audioMixer;
+    private AudioOutputEngine? _audioOutputEngine;
     
     /// <summary>
     /// Current connection state
@@ -63,6 +71,12 @@ public class TacviewIntegrationService : IDisposable
     /// </summary>
     public event EventHandler<PilotSelectionMessage>? PilotSelectionChanged;
     
+    /// <summary>
+    /// Fired when playback speed is clamped to supported range
+    /// Args: (isClamped, requestedSpeed, actualSpeed)
+    /// </summary>
+    public event EventHandler<(bool isClamped, double requestedSpeed, double actualSpeed)>? SpeedClampedChanged;
+    
     public TacviewIntegrationService(
         PlaybackController playbackController,
         SeekController seekController,
@@ -81,6 +95,9 @@ public class TacviewIntegrationService : IDisposable
         _audioFilter = new TacviewAudioFilter();
         _reconnectionStrategy = new TacviewReconnectionStrategy();
         
+        // Store playback controller for later initialization
+        _playbackController = playbackController;
+        
         // Wire up events
         _client.ConnectionStateChanged += OnConnectionStateChanged;
         _client.MessageReceived += OnMessageReceived;
@@ -90,7 +107,69 @@ public class TacviewIntegrationService : IDisposable
         _syncService.SyncQualityChanged += (s, quality) => SyncQualityChanged?.Invoke(this, quality);
         _audioFilter.SelectionUpdated += (s, selection) => PilotSelectionChanged?.Invoke(this, selection);
         
+        // Subscribe to speed clamping events from PlaybackController
+        playbackController.SpeedClampedChanged += (isClamped, requestedSpeed, actualSpeed) =>
+        {
+            SpeedClampedChanged?.Invoke(this, (isClamped, requestedSpeed, actualSpeed));
+        };
+        
         Logger.Info("Tacview integration service created");
+    }
+    
+    /// <summary>
+    /// Initializes core component integration (external sync, filtering, spatial audio)
+    /// MUST be called before StartAsync() to enable full integration
+    /// </summary>
+    /// <param name="audioMixer">Audio mixer for packet filtering</param>
+    /// <param name="audioOutputEngine">Audio output engine for spatial audio</param>
+    public void InitializeCoreIntegration(
+        AudioMixerEngine? audioMixer = null,
+        AudioOutputEngine? audioOutputEngine = null)
+    {
+        if (_isInitialized)
+        {
+            Logger.Warn("Core integration already initialized");
+            return;
+        }
+        
+        Logger.Info("Initializing core component integration...");
+        
+        // Set up external time source for sync
+        if (_playbackController != null)
+        {
+            _playbackController.SetExternalTimeSource(_syncService);
+            Logger.Info("? External time source connected to PlaybackController");
+        }
+        
+        // Set up packet filtering
+        if (audioMixer != null)
+        {
+            _audioMixer = audioMixer;
+            _audioMixer.SetPacketFilter(_audioFilter);
+            _audioMixer.SetSpatialAudioProvider(_audioFilter);
+            Logger.Info("? Packet filter and spatial audio provider connected to AudioMixer");
+        }
+        
+        // Set up spatial audio on output engine
+        if (audioOutputEngine != null)
+        {
+            _audioOutputEngine = audioOutputEngine;
+            _audioOutputEngine.SetSpatialAudioProvider(_audioFilter);
+            Logger.Info("? Spatial audio provider connected to AudioOutputEngine");
+        }
+        
+        // Subscribe to playback speed changes to adjust audio buffering
+        if (_playbackController != null && _audioOutputEngine != null)
+        {
+            _playbackController.PlaybackSpeedChanged += (speed) =>
+            {
+                _audioOutputEngine.AdjustBufferForSpeed(speed);
+            };
+            Logger.Info("? Playback speed monitoring connected for buffer adjustment");
+        }
+        
+        _isInitialized = true;
+        Logger.Info("Core integration initialized successfully");
     }
     
     /// <summary>
@@ -98,6 +177,11 @@ public class TacviewIntegrationService : IDisposable
     /// </summary>
     public async Task StartAsync(DateTime recordingStartUtc, CancellationToken cancellationToken = default)
     {
+        if (!_isInitialized)
+        {
+            Logger.Warn("Core integration not initialized - some features may not work. Call InitializeCoreIntegration() first.");
+        }
+        
         Logger.Info("Starting Tacview integration service...");
         
         // Initialize sync service with recording start time

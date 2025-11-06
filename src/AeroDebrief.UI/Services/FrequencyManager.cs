@@ -127,6 +127,10 @@ namespace AeroDebrief.UI.Services
                         _frequencies.Add(group);
                         Logger.Debug($"   Added complete group: {group.Name} with {group.Frequencies.Count} frequencies");
                     }
+                    
+                    // Now that UI has processed all groups, auto-select all frequencies
+                    Logger.Info("Auto-selecting all frequencies after UI load...");
+                    SelectAll();
                 });
 
                 var totalFrequencies = completeGroups.Sum(g => g.Freqs.Count);
@@ -261,7 +265,7 @@ namespace AeroDebrief.UI.Services
                 Modulation = fi.Modulation,
                 DisplayName = fi.DisplayName,
                 PacketCount = fi.PacketCount,
-                IsSelected = true, // Default to selected
+                IsSelected = false, // Default to NOT selected - user must explicitly select frequencies
                 WaveformColor = wpfColor,
                 SourceData = sourceData
             };
