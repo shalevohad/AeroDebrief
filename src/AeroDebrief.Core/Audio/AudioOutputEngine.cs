@@ -429,7 +429,7 @@ namespace AeroDebrief.Core.Audio
                 
                 // Calculate L/R gains using constant power pan law
                 // This maintains perceived loudness while panning
-                var panAngle = pan * Math.PI / 4.0; // -45° to +45°
+                var panAngle = pan * Math.PI / 4.0; // -45Â° to +45Â°
                 var leftGain = (float)Math.Cos(panAngle);
                 var rightGain = (float)Math.Sin(panAngle);
                 
@@ -438,17 +438,17 @@ namespace AeroDebrief.Core.Audio
                 // For now, we apply differential gains to simulate panning
                 
                 // Apply pan to audio samples (assuming mono input)
+                // Convert mono audioData to stereo and apply pan gains
+                var stereoData = new short[audioData.Length * 2];
                 for (int i = 0; i < audioData.Length; i++)
                 {
-                    // For mono output, we can only reduce volume on one "virtual" channel
-                    // In a true stereo system, we'd split the signal:
-                    // audioDataStereo[i*2] = audioData[i] * leftGain;     // Left channel
-                    // audioDataStereo[i*2+1] = audioData[i] * rightGain;  // Right channel
-                    
-                    // For mono, apply average of both gains
-                    var averageGain = (leftGain + rightGain) / 2.0f;
-                    audioData[i] = (short)Math.Clamp(audioData[i] * averageGain, short.MinValue, short.MaxValue);
+                    // Left channel
+                    stereoData[i * 2] = (short)Math.Clamp(audioData[i] * leftGain, short.MinValue, short.MaxValue);
+                    // Right channel
+                    stereoData[i * 2 + 1] = (short)Math.Clamp(audioData[i] * rightGain, short.MinValue, short.MaxValue);
                 }
+                // If downstream expects stereo, pass stereoData instead of audioData.
+                // If not, you may need to update downstream code to handle stereo buffers.
                 
 #if DEBUG
                 Logger.Debug($"Applied spatial audio: pan={pan:F2}, leftGain={leftGain:F2}, rightGain={rightGain:F2}");
