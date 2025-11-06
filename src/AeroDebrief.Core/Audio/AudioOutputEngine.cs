@@ -189,7 +189,8 @@ namespace AeroDebrief.Core.Audio
         /// <param name="isSilence">Whether this is a silence chunk (affects timing)</param>
         /// <param name="chunkEndTime">End time of this chunk for position tracking during silence</param>
         /// <param name="positionUpdater">Optional callback to update position during silence playback</param>
-        public async Task WriteAudioAsync(byte[] audioData, bool isSilence, TimeSpan chunkEndTime = default, Action<TimeSpan>? positionUpdater = null)
+        /// <param name="packet">Optional packet metadata for spatial audio (pan) processing</param>
+        public async Task WriteAudioAsync(byte[] audioData, bool isSilence, TimeSpan chunkEndTime = default, Action<TimeSpan>? positionUpdater = null, AudioPacketMetadata? packet = null)
         {
             if (audioData == null || audioData.Length == 0 || _isSeekInProgress)
                 return;
@@ -233,13 +234,26 @@ namespace AeroDebrief.Core.Audio
                     return;
                 }
 
+                // NEW: Apply spatial audio (pan) if provider is set and packet metadata is available
+                if (_spatialAudioProvider != null && packet != null)
+                {
+                    // Convert bytes to PCM samples for spatial processing
+                    var pcmSamples = AudioHelpers.ConvertBytesToPcm16(audioData);
+                    
+                    // Apply spatial audio (modifies pcmSamples in-place or returns stereo data)
+                    var spatialAudio = ApplySpatialAudioInternal(packet, pcmSamples);
+                    
+                    // Convert back to bytes
+                    audioData = AudioHelpers.ConvertPcm16ToBytes(spatialAudio);
+                }
+
 #if DEBUG
-                var pcmSamples = AudioHelpers.IsOpusEncodedByteArray(audioData) 
+                var debugPcmSamples = AudioHelpers.IsOpusEncodedByteArray(audioData) 
                     ? AudioHelpers.DecodeAudioToPcm(audioData)
                     : AudioHelpers.ConvertBytesToPcm16(audioData);
                 
                 var maxAmplitude = 0;
-                foreach (var sample in pcmSamples)
+                foreach (var sample in debugPcmSamples)
                 {
                     var absSample = sample == short.MinValue ? short.MaxValue : Math.Abs(sample);
                     maxAmplitude = Math.Max(maxAmplitude, absSample);
@@ -407,14 +421,15 @@ namespace AeroDebrief.Core.Audio
         }
         
         /// <summary>
-        /// Applies spatial audio (pan) to stereo audio data
+        /// Applies spatial audio (pan) to mono audio data, returning stereo or modified mono
         /// </summary>
         /// <param name="packet">Audio packet metadata</param>
-        /// <param name="audioData">Audio data (16-bit PCM samples)</param>
-        private void ApplySpatialAudio(AudioPacketMetadata packet, short[] audioData)
+        /// <param name="audioData">Audio data (16-bit PCM samples, mono)</param>
+        /// <returns>Processed audio data (stereo if pan applied, mono if centered)</returns>
+        private short[] ApplySpatialAudioInternal(AudioPacketMetadata packet, short[] audioData)
         {
             if (_spatialAudioProvider == null || audioData.Length == 0)
-                return;
+                return audioData;
             
             try
             {
@@ -425,7 +440,10 @@ namespace AeroDebrief.Core.Audio
                 
                 // Skip if centered (no pan adjustment needed)
                 if (Math.Abs(pan) < 0.01)
-                    return;
+                {
+                    Logger.Trace($"Spatial audio: pan={pan:F2} (centered), no processing needed");
+                    return audioData;
+                }
                 
                 // Calculate L/R gains using constant power pan law
                 // This maintains perceived loudness while panning
@@ -433,11 +451,27 @@ namespace AeroDebrief.Core.Audio
                 var leftGain = (float)Math.Cos(panAngle);
                 var rightGain = (float)Math.Sin(panAngle);
                 
-                // Note: SRS audio is mono, so we duplicate to stereo for panning
-                // For proper stereo output, we'd need to convert mono to stereo
-                // For now, we apply differential gains to simulate panning
+                // Note: Current system is mono output, so we can't actually output true stereo
+                // For now, we'll apply a simple attenuation based on pan direction
+                // TODO: When stereo output is supported, convert to proper L/R channels
                 
-                // Apply pan to audio samples (assuming mono input)
+                // Simple mono panning: reduce volume based on pan direction
+                // This is a temporary solution until stereo output is implemented
+                var monoGain = 1.0f - (Math.Abs((float)pan) * 0.3f); // Reduce volume by up to 30% based on pan amount
+                
+                var processedData = new short[audioData.Length];
+                for (int i = 0; i < audioData.Length; i++)
+                {
+                    processedData[i] = (short)Math.Clamp(audioData[i] * monoGain, short.MinValue, short.MaxValue);
+                }
+                
+#if DEBUG
+                Logger.Debug($"Applied spatial audio (mono simulation): pan={pan:F2}, leftGain={leftGain:F2}, rightGain={rightGain:F2}, monoGain={monoGain:F2}");
+#endif
+                
+                return processedData;
+                
+                /* TODO: Uncomment when stereo output is implemented
                 // Convert mono audioData to stereo and apply pan gains
                 var stereoData = new short[audioData.Length * 2];
                 for (int i = 0; i < audioData.Length; i++)
@@ -447,16 +481,18 @@ namespace AeroDebrief.Core.Audio
                     // Right channel
                     stereoData[i * 2 + 1] = (short)Math.Clamp(audioData[i] * rightGain, short.MinValue, short.MaxValue);
                 }
-                // If downstream expects stereo, pass stereoData instead of audioData.
-                // If not, you may need to update downstream code to handle stereo buffers.
                 
 #if DEBUG
-                Logger.Debug($"Applied spatial audio: pan={pan:F2}, leftGain={leftGain:F2}, rightGain={rightGain:F2}");
+                Logger.Debug($"Applied spatial audio (stereo): pan={pan:F2}, leftGain={leftGain:F2}, rightGain={rightGain:F2}");
 #endif
+                
+                return stereoData;
+                */
             }
             catch (Exception ex)
             {
                 Logger.Error(ex, "Failed to apply spatial audio");
+                return audioData; // Return original data on error
             }
         }
 
