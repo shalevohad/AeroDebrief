@@ -28,6 +28,35 @@ public class TacviewReconnectionStrategy
         if (config == null)
             throw new ArgumentNullException(nameof(config));
         
+        // Use connection delegate for testability
+        return await TryReconnectAsync(
+            async (ct) => 
+            {
+                await client.ConnectAsync(ct);
+                return client.IsConnected;
+            },
+            config,
+            cancellationToken);
+    }
+    
+    /// <summary>
+    /// Attempts to reconnect using a connection delegate (for testability)
+    /// </summary>
+    /// <param name="connectFunc">Function that attempts to connect and returns success status</param>
+    /// <param name="config">Configuration with reconnection settings</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>True if reconnection was successful</returns>
+    public async Task<bool> TryReconnectAsync(
+        Func<CancellationToken, Task<bool>> connectFunc,
+        TacviewConfiguration config,
+        CancellationToken cancellationToken = default)
+    {
+        if (connectFunc == null)
+            throw new ArgumentNullException(nameof(connectFunc));
+        
+        if (config == null)
+            throw new ArgumentNullException(nameof(config));
+        
         int attempt = 0;
         int maxAttempts = config.MaxReconnectAttempts;
         
@@ -65,10 +94,17 @@ public class TacviewReconnectionStrategy
                 await Task.Delay(TimeSpan.FromSeconds(delaySeconds), cancellationToken);
                 
                 Logger.Info($"Attempting to reconnect to Tacview ({config.Host}:{config.Port})...");
-                await client.ConnectAsync(cancellationToken);
+                var success = await connectFunc(cancellationToken);
                 
-                Logger.Info("? Reconnection successful!");
-                return true;
+                if (success)
+                {
+                    Logger.Info("? Reconnection successful!");
+                    return true;
+                }
+                else
+                {
+                    Logger.Warn($"Reconnection attempt {attempt} returned false (not connected)");
+                }
             }
             catch (OperationCanceledException)
             {

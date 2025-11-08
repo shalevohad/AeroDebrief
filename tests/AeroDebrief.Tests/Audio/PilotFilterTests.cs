@@ -423,9 +423,40 @@ namespace AeroDebrief.Tests.Audio
             float maxDelta = 0.0f;
             float totalSlope = 0.0f;
             int clickCount = 0;
+            int fadeEndIndex = -1;
             const float clickThreshold = 0.5f;
+            const float silenceThreshold = 0.0001f; // Consider values below this as silent
 
-            for (int i = 1; i < samples.Length; i++)
+            // Find where fade ends (first sample that's effectively silent and stays silent)
+            for (int i = 0; i < samples.Length; i++)
+            {
+                if (Math.Abs(samples[i]) < silenceThreshold)
+                {
+                    // Check if remaining samples are also silent
+                    bool allSilent = true;
+                    for (int j = i; j < Math.Min(i + 10, samples.Length); j++)
+                    {
+                        if (Math.Abs(samples[j]) >= silenceThreshold)
+                        {
+                            allSilent = false;
+                            break;
+                        }
+                    }
+                    
+                    if (allSilent)
+                    {
+                        fadeEndIndex = i;
+                        break;
+                    }
+                }
+            }
+            
+            // If no fade end found, use full length
+            if (fadeEndIndex < 0)
+                fadeEndIndex = samples.Length;
+
+            // Only measure slope during the fade period
+            for (int i = 1; i < fadeEndIndex; i++)
             {
                 float delta = Math.Abs(samples[i] - samples[i - 1]);
                 float slope = samples[i] - samples[i - 1];
@@ -442,7 +473,7 @@ namespace AeroDebrief.Tests.Audio
             return new DiscontinuityMetrics
             {
                 MaxSampleDelta = maxDelta,
-                AverageFadeSlope = totalSlope / (samples.Length - 1),
+                AverageFadeSlope = fadeEndIndex > 1 ? totalSlope / (fadeEndIndex - 1) : 0.0f,
                 ClickCount = clickCount
             };
         }

@@ -244,9 +244,36 @@ public class FrequencyFilterTests
         // Act
         filter.UpdateSelection(selection2);
 
-        // Assert
-        Assert.False(filter.ShouldPlayPacket(CreateTestPacket("pilot-1", 251000000.0)));
-        Assert.False(filter.ShouldPlayPacket(CreateTestPacket("pilot-2", 251000000.0)));
+        // Assert - pilot-1 should be filtered out (no longer selected)
+        Assert.False(filter.ShouldPlayPacket(CreateTestPacket("pilot-1", 251000000.0)), 
+            "Pilot-1 should be filtered after selection update (no longer selected, general frequencies empty)");
+        
+        // Pilot-2 IS selected, and with null/empty EnabledFrequencies, allows all frequencies (default behavior)
+        Assert.True(filter.ShouldPlayPacket(CreateTestPacket("pilot-2", 251000000.0)), 
+            "Pilot-2 should be allowed (selected pilot with no frequency restriction = allow all)");
+        
+        // Now explicitly set pilot-2 to have NO enabled frequencies by using an explicit empty list
+        // To actually filter pilot-2, we need to deselect them or set specific frequencies
+        var selection3 = new PilotSelectionMessage
+        {
+            SelectedPilots = new List<PilotData>
+            {
+                new() 
+                { 
+                    PilotId = "pilot-2", 
+                    PilotName = "Viper 1-2",
+                    EnabledFrequencies = new List<double> { 305000000.0 } // Only allow 305 MHz
+                }
+            },
+            GeneralEnabledFrequencies = new List<double>()
+        };
+        filter.UpdateSelection(selection3);
+        
+        // Now pilot-2 should be filtered on 251 MHz (only 305 MHz is enabled)
+        Assert.False(filter.ShouldPlayPacket(CreateTestPacket("pilot-2", 251000000.0)), 
+            "Pilot-2 should be filtered on 251 MHz when only 305 MHz is enabled");
+        Assert.True(filter.ShouldPlayPacket(CreateTestPacket("pilot-2", 305000000.0)), 
+            "Pilot-2 should be allowed on 305 MHz");
     }
 
     [Fact]

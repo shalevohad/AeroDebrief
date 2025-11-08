@@ -2,6 +2,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using AeroDebrief.Core.Playback;
 using AeroDebrief.Core.IO;
 using AeroDebrief.Core.Audio;
+using AeroDebrief.Tests.TestHelpers;
 using System;
 using System.IO;
 using System.Threading.Tasks;
@@ -21,7 +22,25 @@ namespace AeroDebrief.Tests.Playback
         [TestInitialize]
         public void Setup()
         {
-            _testFilePath = GetTestRecordingFile();
+            // Create a mock recording file for testing
+            _testFilePath = CreateMockRecordingFile();
+        }
+
+        [TestCleanup]
+        public void Cleanup()
+        {
+            // Clean up temporary test file
+            if (_testFilePath != null && File.Exists(_testFilePath))
+            {
+                try
+                {
+                    File.Delete(_testFilePath);
+                }
+                catch
+                {
+                    // Ignore cleanup errors
+                }
+            }
         }
 
         [TestMethod]
@@ -45,14 +64,8 @@ namespace AeroDebrief.Tests.Playback
         [TestMethod]
         public async Task OpenAsync_WithValidSource_InitializesPipeline()
         {
-            if (_testFilePath == null)
-            {
-                Assert.Inconclusive("No test recording file available");
-                return;
-            }
-
             // Arrange
-            var source = new FilePacketSource(_testFilePath);
+            var source = new FilePacketSource(_testFilePath!);
             await source.OpenAsync();
             var pipeline = new FilePlaybackPipeline(source);
 
@@ -73,14 +86,8 @@ namespace AeroDebrief.Tests.Playback
         [TestMethod]
         public async Task GetAvailableFrequencies_ReturnsFrequencies()
         {
-            if (_testFilePath == null)
-            {
-                Assert.Inconclusive("No test recording file available");
-                return;
-            }
-
             // Arrange
-            var source = new FilePacketSource(_testFilePath);
+            var source = new FilePacketSource(_testFilePath!);
             await source.OpenAsync();
             var pipeline = new FilePlaybackPipeline(source);
             await pipeline.OpenAsync();
@@ -106,14 +113,8 @@ namespace AeroDebrief.Tests.Playback
         [TestMethod]
         public async Task SetFrequencyGate_Performance_IsInstant()
         {
-            if (_testFilePath == null)
-            {
-                Assert.Inconclusive("No test recording file available");
-                return;
-            }
-
             // Arrange
-            var source = new FilePacketSource(_testFilePath);
+            var source = new FilePacketSource(_testFilePath!);
             await source.OpenAsync();
             var pipeline = new FilePlaybackPipeline(source);
             await pipeline.OpenAsync();
@@ -146,14 +147,8 @@ namespace AeroDebrief.Tests.Playback
         [TestMethod]
         public async Task SetPilotGate_Performance_IsInstant()
         {
-            if (_testFilePath == null)
-            {
-                Assert.Inconclusive("No test recording file available");
-                return;
-            }
-
             // Arrange
-            var source = new FilePacketSource(_testFilePath);
+            var source = new FilePacketSource(_testFilePath!);
             await source.OpenAsync();
             var pipeline = new FilePlaybackPipeline(source);
             pipeline.EnablePerPilotMixing = true;
@@ -169,7 +164,7 @@ namespace AeroDebrief.Tests.Playback
             }
 
             var testFreq = frequencies.First().Frequency;
-            var testPilot = "TEST-PILOT-123";
+            var testPilot = "Viper-1"; // From mock data
             var stopwatch = Stopwatch.StartNew();
 
             // Act
@@ -188,14 +183,8 @@ namespace AeroDebrief.Tests.Playback
         [TestMethod]
         public async Task PlayAsync_StartPlayback_SetsIsPlaying()
         {
-            if (_testFilePath == null)
-            {
-                Assert.Inconclusive("No test recording file available");
-                return;
-            }
-
             // Arrange
-            var source = new FilePacketSource(_testFilePath);
+            var source = new FilePacketSource(_testFilePath!);
             await source.OpenAsync();
             var pipeline = new FilePlaybackPipeline(source);
             await pipeline.OpenAsync();
@@ -217,14 +206,8 @@ namespace AeroDebrief.Tests.Playback
         [TestMethod]
         public async Task Pause_DuringPlayback_SetsPausedState()
         {
-            if (_testFilePath == null)
-            {
-                Assert.Inconclusive("No test recording file available");
-                return;
-            }
-
             // Arrange
-            var source = new FilePacketSource(_testFilePath);
+            var source = new FilePacketSource(_testFilePath!);
             await source.OpenAsync();
             var pipeline = new FilePlaybackPipeline(source);
             await pipeline.OpenAsync();
@@ -245,16 +228,10 @@ namespace AeroDebrief.Tests.Playback
         }
 
         [TestMethod]
-        public async Task Resume_AfterPause_ClearsPassedState()
+        public async Task Resume_AfterPause_ClearsPausedState()
         {
-            if (_testFilePath == null)
-            {
-                Assert.Inconclusive("No test recording file available");
-                return;
-            }
-
             // Arrange
-            var source = new FilePacketSource(_testFilePath);
+            var source = new FilePacketSource(_testFilePath!);
             await source.OpenAsync();
             var pipeline = new FilePlaybackPipeline(source);
             await pipeline.OpenAsync();
@@ -278,14 +255,8 @@ namespace AeroDebrief.Tests.Playback
         [TestMethod]
         public async Task StopAsync_DuringPlayback_StopsPlayback()
         {
-            if (_testFilePath == null)
-            {
-                Assert.Inconclusive("No test recording file available");
-                return;
-            }
-
             // Arrange
-            var source = new FilePacketSource(_testFilePath);
+            var source = new FilePacketSource(_testFilePath!);
             await source.OpenAsync();
             var pipeline = new FilePlaybackPipeline(source);
             await pipeline.OpenAsync();
@@ -308,14 +279,8 @@ namespace AeroDebrief.Tests.Playback
         [TestMethod]
         public async Task SeekAsync_ToValidPosition_UpdatesPosition()
         {
-            if (_testFilePath == null)
-            {
-                Assert.Inconclusive("No test recording file available");
-                return;
-            }
-
             // Arrange
-            var source = new FilePacketSource(_testFilePath);
+            var source = new FilePacketSource(_testFilePath!);
             await source.OpenAsync();
             var pipeline = new FilePlaybackPipeline(source);
             await pipeline.OpenAsync();
@@ -342,14 +307,8 @@ namespace AeroDebrief.Tests.Playback
         [TestMethod]
         public async Task FullPipeline_PlaybackWithFiltering_Works()
         {
-            if (_testFilePath == null)
-            {
-                Assert.Inconclusive("No test recording file available");
-                return;
-            }
-
             // Arrange
-            var source = new FilePacketSource(_testFilePath);
+            var source = new FilePacketSource(_testFilePath!);
             await source.OpenAsync();
             var pipeline = new FilePlaybackPipeline(source);
             pipeline.EnablePerPilotMixing = true;
@@ -374,7 +333,7 @@ namespace AeroDebrief.Tests.Playback
             await Task.Delay(200);
 
             // Apply pilot filter
-            pipeline.SetPilotGate("TEST-PILOT", testFreq, PilotGateMode.Mute);
+            pipeline.SetPilotGate("Viper-1", testFreq, PilotGateMode.Mute);
             await Task.Delay(200);
 
             // Verify state
@@ -395,14 +354,8 @@ namespace AeroDebrief.Tests.Playback
         [TestMethod]
         public async Task Properties_AfterOpen_HaveCorrectValues()
         {
-            if (_testFilePath == null)
-            {
-                Assert.Inconclusive("No test recording file available");
-                return;
-            }
-
             // Arrange
-            var source = new FilePacketSource(_testFilePath);
+            var source = new FilePacketSource(_testFilePath!);
             await source.OpenAsync();
             var pipeline = new FilePlaybackPipeline(source);
 
@@ -420,26 +373,77 @@ namespace AeroDebrief.Tests.Playback
             source.Dispose();
         }
 
-        /// <summary>
-        /// Helper to find a test recording file
-        /// </summary>
-        private string? GetTestRecordingFile()
+        [TestMethod]
+        public async Task GetAvailableFrequencies_WithMultipleFrequencies_ReturnsAll()
         {
-            var testPaths = new[]
+            // Arrange - Create a multi-frequency test file
+            var multiFreqFile = MockRecordingFileBuilder.CreateMultiFrequencyTestFile();
+            
+            try
             {
-                @"..\..\..\..\TestData\sample.srs",
-                @"TestData\sample.srs",
-                @"C:\Temp\test.srs"
-            };
+                var source = new FilePacketSource(multiFreqFile);
+                await source.OpenAsync();
+                var pipeline = new FilePlaybackPipeline(source);
+                await pipeline.OpenAsync();
 
-            foreach (var path in testPaths)
-            {
-                var fullPath = Path.GetFullPath(path);
-                if (File.Exists(fullPath))
-                    return fullPath;
+                // Act
+                var frequencies = pipeline.GetAvailableFrequencies();
+
+                // Assert
+                Assert.IsTrue(frequencies.Count >= 3, "Should have at least 3 frequencies from mock data");
+                
+                // Verify we have the expected frequencies from CreateMultiFrequencyTestFile
+                var freqValues = frequencies.Select(f => f.Frequency).ToList();
+                Assert.IsTrue(freqValues.Contains(251_000_000.0), "Should have UHF frequency");
+                Assert.IsTrue(freqValues.Contains(127_500_000.0), "Should have VHF frequency");
+                Assert.IsTrue(freqValues.Contains(305_000_000.0), "Should have UHF2 frequency");
+
+                // Cleanup
+                pipeline.Dispose();
+                source.Dispose();
             }
+            finally
+            {
+                if (File.Exists(multiFreqFile))
+                    File.Delete(multiFreqFile);
+            }
+        }
 
-            return null;
+        [TestMethod]
+        public async Task GetAvailableFrequencies_IncludesPlayerInformation()
+        {
+            // Arrange
+            var source = new FilePacketSource(_testFilePath!);
+            await source.OpenAsync();
+            var pipeline = new FilePlaybackPipeline(source);
+            await pipeline.OpenAsync();
+
+            // Act
+            var frequencies = pipeline.GetAvailableFrequencies();
+
+            // Assert
+            Assert.IsTrue(frequencies.Count > 0);
+            
+            var firstFreq = frequencies.First();
+            Assert.IsNotNull(firstFreq.Players, "Should have player list");
+            Assert.IsTrue(firstFreq.Players.Count > 0, "Should have at least one player");
+            
+            var firstPlayer = firstFreq.Players.First();
+            Assert.IsFalse(string.IsNullOrEmpty(firstPlayer.Name), "Player should have a name");
+            Assert.IsFalse(string.IsNullOrEmpty(firstPlayer.TransmitterGuid), "Player should have a GUID");
+
+            // Cleanup
+            pipeline.Dispose();
+            source.Dispose();
+        }
+
+        /// <summary>
+        /// Helper to create a mock recording file for testing
+        /// </summary>
+        private string CreateMockRecordingFile()
+        {
+            // Create a conversation-style recording with 10 seconds of data
+            return MockRecordingFileBuilder.CreateConversationTestFile(durationSeconds: 10);
         }
     }
 }

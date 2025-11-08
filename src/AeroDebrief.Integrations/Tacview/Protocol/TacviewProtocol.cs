@@ -52,6 +52,8 @@ public static class TacviewProtocol
                 "playback_command" => JsonSerializer.Deserialize<PlaybackCommandMessage>(json, SerializerOptions),
                 "seek" => JsonSerializer.Deserialize<SeekMessage>(json, SerializerOptions),
                 "ready" => JsonSerializer.Deserialize<ReadyMessage>(json, SerializerOptions),
+                "speaking_status" => JsonSerializer.Deserialize<SpeakingStatusMessage>(json, SerializerOptions),
+                "sync_status" => JsonSerializer.Deserialize<SyncStatusMessage>(json, SerializerOptions),
                 _ => throw new NotSupportedException($"Unknown message type: {type}")
             };
         }

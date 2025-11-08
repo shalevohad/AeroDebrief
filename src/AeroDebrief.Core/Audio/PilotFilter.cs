@@ -185,7 +185,27 @@ namespace AeroDebrief.Core.Audio
                     // Determine target gain based on current state
                     float targetGain = shouldBeAudible ? 1.0f : 0.0f;
 
-                    // Update fade state machine
+                    // Update fade state machine - check transitions BEFORE processing sample
+                    if (state.FadeState == FadeState.Silent && shouldBeAudible)
+                    {
+                        // Start fading in from silence
+                        state.FadeState = FadeState.FadingIn;
+                        state.CurrentGain = 0.0f;
+                        Logger.Trace($"PilotFilter: {pilotId} starting fade-in from Silent");
+                    }
+                    else if (state.FadeState == FadeState.FullVolume && !shouldBeAudible)
+                    {
+                        // Start fading out from full volume
+                        state.FadeState = FadeState.FadingOut;
+                        state.CurrentGain = 1.0f;
+                        Logger.Trace($"PilotFilter: {pilotId} starting fade-out from FullVolume");
+                    }
+
+                    // Apply current gain to output sample BEFORE updating gain
+                    output[sampleIndex] = input[sampleIndex] * state.CurrentGain;
+                    state.LastAppliedGain = state.CurrentGain;
+
+                    // Update gain AFTER applying it to the sample
                     if (state.FadeState == FadeState.FadingOut)
                     {
                         // Fade out to zero
@@ -208,24 +228,7 @@ namespace AeroDebrief.Core.Audio
                             Logger.Trace($"PilotFilter: {pilotId} fade-in complete ? FullVolume");
                         }
                     }
-                    else if (state.FadeState == FadeState.Silent && shouldBeAudible)
-                    {
-                        // Start fading in from silence
-                        state.FadeState = FadeState.FadingIn;
-                        state.CurrentGain = 0.0f;
-                        Logger.Trace($"PilotFilter: {pilotId} starting fade-in from Silent");
-                    }
-                    else if (state.FadeState == FadeState.FullVolume && !shouldBeAudible)
-                    {
-                        // Start fading out from full volume
-                        state.FadeState = FadeState.FadingOut;
-                        state.CurrentGain = 1.0f;
-                        Logger.Trace($"PilotFilter: {pilotId} starting fade-out from FullVolume");
-                    }
 
-                    // Apply current gain to output sample
-                    output[sampleIndex] = input[sampleIndex] * state.CurrentGain;
-                    state.LastAppliedGain = state.CurrentGain;
                     sampleIndex++;
                 }
             }

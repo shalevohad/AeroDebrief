@@ -32,10 +32,11 @@ namespace AeroDebrief.Core.IO
         public FilePacketSource(string filePath)
         {
             _filePath = filePath ?? throw new ArgumentNullException(nameof(filePath));
-            _indexPath = Path.ChangeExtension(filePath, ".pkidx");
             
-            if (!File.Exists(_filePath))
-                throw new FileNotFoundException($"Recording file not found: {_filePath}");
+            if (string.IsNullOrWhiteSpace(filePath))
+                throw new ArgumentException("File path cannot be empty or whitespace.", nameof(filePath));
+            
+            _indexPath = Path.ChangeExtension(filePath, ".pkidx");
         }
 
         /// <summary>
@@ -43,6 +44,9 @@ namespace AeroDebrief.Core.IO
         /// </summary>
         public async Task OpenAsync(IProgress<string>? progress = null, CancellationToken cancellationToken = default)
         {
+            if (!File.Exists(_filePath))
+                throw new FileNotFoundException($"Recording file not found: {_filePath}");
+            
             Logger.Info($"Opening file packet source: {_filePath}");
             progress?.Report("Opening file...");
 
@@ -405,21 +409,20 @@ namespace AeroDebrief.Core.IO
                         {
                             fs.Seek(searchPos, SeekOrigin.Begin);
                             
-                            // Try reading timestamp
+                            // Attempt to read timestamp and frequency
                             long ticks = reader.ReadInt64();
-                            if (ticks >= Constants.MinValidTimestamp.Ticks && ticks <= Constants.MaxValidTimestamp.Ticks)
+                            double freq = reader.ReadDouble();
+
+                            // Check if the read values are within reasonable ranges
+                            if (ticks >= Constants.MinValidTimestamp.Ticks && ticks <= Constants.MaxValidTimestamp.Ticks &&
+                                freq >= Constants.MinValidFrequencyHz && freq <= Constants.MaxValidFrequencyHz && 
+                                !double.IsNaN(freq) && !double.IsInfinity(freq))
                             {
-                                // Timestamp looks valid, check frequency
-                                double freq = reader.ReadDouble();
-                                if (freq >= Constants.MinValidFrequencyHz && freq <= Constants.MaxValidFrequencyHz && 
-                                    !double.IsNaN(freq) && !double.IsInfinity(freq))
-                                {
-                                    // Found what looks like a valid packet header!
-                                    fs.Seek(searchPos, SeekOrigin.Begin);
-                                    foundValidPacket = true;
-                                    Logger.Debug($"Found valid packet signature at {searchPos:N0} (skipped {searchPos - offset} bytes from {offset:N0})");
-                                    break;
-                                }
+                                // Found what looks like a valid packet header!
+                                fs.Seek(searchPos, SeekOrigin.Begin);
+                                foundValidPacket = true;
+                                Logger.Debug($"Found valid packet signature at {searchPos:N0} (skipped {searchPos - offset} bytes from {offset:N0})");
+                                break;
                             }
                         }
                         catch

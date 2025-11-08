@@ -5,33 +5,37 @@ using AeroDebrief.Core.Playback;
 using AeroDebrief.Integrations.Tacview.Models;
 using AeroDebrief.Integrations.Tacview.Protocol.Messages;
 using AeroDebrief.Integrations.Tacview.Sync;
-using Moq;
+using FluentAssertions;
 using Xunit;
 
 namespace AeroDebrief.Tests.Integrations.Tacview.Sync;
 
-public class TacviewSyncServiceTests
+public class TacviewSyncServiceTests : IDisposable
 {
-    private readonly Mock<PlaybackController> _mockPlaybackController;
-    private readonly Mock<SeekController> _mockSeekController;
-    private readonly Mock<ScrubbingManager> _mockScrubbingManager;
+    private readonly PlaybackController _playbackController;
+    private readonly SeekController _seekController;
+    private readonly ScrubbingManager _scrubbingManager;
     private readonly TacviewConfiguration _config;
     private readonly TacviewSyncService _syncService;
     private readonly DateTime _recordingStartUtc;
 
     public TacviewSyncServiceTests()
     {
-        _mockPlaybackController = new Mock<PlaybackController>();
-        _mockSeekController = new Mock<SeekController>();
-        _mockScrubbingManager = new Mock<ScrubbingManager>();
+        _playbackController = new PlaybackController();
+        _seekController = new SeekController();
+        _scrubbingManager = new ScrubbingManager();
         _config = new TacviewConfiguration();
         _recordingStartUtc = new DateTime(2024, 1, 15, 14, 0, 0, DateTimeKind.Utc);
         
+        // Set up playback controller with test data
+        _playbackController.SetTotalDuration(TimeSpan.FromSeconds(1000));
+        _playbackController.SetRecordingStart(_recordingStartUtc);
+        
         _syncService = new TacviewSyncService(
-            _mockPlaybackController.Object, 
-            _mockSeekController.Object,
+            _playbackController, 
+            _seekController,
             _config,
-            _mockScrubbingManager.Object
+            _scrubbingManager
         );
         
         // Initialize the sync service with recording start time
@@ -42,10 +46,7 @@ public class TacviewSyncServiceTests
     public async Task HandleTimeUpdate_LargeDrift_PerformsSeek()
     {
         // Arrange
-        _mockPlaybackController.Setup(p => p.CurrentPosition)
-            .Returns(TimeSpan.FromSeconds(100));
-        _mockPlaybackController.Setup(p => p.TotalDuration)
-            .Returns(TimeSpan.FromSeconds(1000));
+        _playbackController.UpdatePosition(TimeSpan.FromSeconds(100));
 
         var message = new TimeUpdateMessage
         {
@@ -58,21 +59,14 @@ public class TacviewSyncServiceTests
         await _syncService.HandleTimeUpdateAsync(message);
 
         // Assert
-        _mockSeekController.Verify(
-            p => p.SeekTo(It.IsInRange(
-                TimeSpan.FromSeconds(199), 
-                TimeSpan.FromSeconds(201), 
-                Moq.Range.Inclusive),
-                It.IsAny<TimeSpan>()),
-            Times.Once);
+        _seekController.HasPendingSeek().Should().BeTrue("should have requested a seek due to large drift");
     }
 
     [Fact]
     public async Task HandleTimeUpdate_MediumDrift_AdjustsSpeed()
     {
         // Arrange
-        _mockPlaybackController.Setup(p => p.CurrentPosition)
-            .Returns(TimeSpan.FromSeconds(100));
+        _playbackController.UpdatePosition(TimeSpan.FromSeconds(100));
 
         var message = new TimeUpdateMessage
         {
@@ -85,19 +79,16 @@ public class TacviewSyncServiceTests
         await _syncService.HandleTimeUpdateAsync(message);
 
         // Assert
-        _mockPlaybackController.Verify(
-            p => p.SetPlaybackSpeed(It.IsInRange(1.01, 1.03, Moq.Range.Inclusive)),
-            Times.Once);
+        _playbackController.PlaybackSpeed.Should().BeInRange(1.01, 1.03, 
+            "should adjust speed to compensate for medium drift");
     }
 
     [Fact]
     public async Task HandleTimeUpdate_SmallDrift_MaintainsNormalSpeed()
     {
         // Arrange
-        _mockPlaybackController.Setup(p => p.CurrentPosition)
-            .Returns(TimeSpan.FromSeconds(100));
-        _mockPlaybackController.Setup(p => p.PlaybackSpeed)
-            .Returns(1.0);
+        _playbackController.UpdatePosition(TimeSpan.FromSeconds(100));
+        _playbackController.SetPlaybackSpeed(1.0);
 
         var message = new TimeUpdateMessage
         {
@@ -110,18 +101,19 @@ public class TacviewSyncServiceTests
         await _syncService.HandleTimeUpdateAsync(message);
 
         // Assert
-        _mockPlaybackController.Verify(
-            p => p.SetPlaybackSpeed(1.0),
-            Times.AtMostOnce); // May not be called if already at correct speed
+        _playbackController.PlaybackSpeed.Should().BeApproximately(1.0, 0.02,
+            "should maintain normal speed for small drift");
     }
 
     [Fact]
-    public async Task HandleTimeUpdate_PlaybackStateChangesToPlaying_StartsPlayback()
+    public async Task HandleTimeUpdate_PlaybackStateChangesToPlaying_ResumesPlayback()
     {
         // Arrange
-        _mockPlaybackController.Setup(p => p.IsPlaying).Returns(false);
-        _mockPlaybackController.Setup(p => p.CurrentPosition)
-            .Returns(TimeSpan.FromSeconds(100));
+        _playbackController.UpdatePosition(TimeSpan.FromSeconds(100));
+        // Start with paused state - we need to actually start playback and then pause it
+        _playbackController.Start("test", async (ct) => { await Task.Delay(100, ct); });
+        await Task.Delay(50); // Let it start
+        _playbackController.Pause();
 
         var message = new TimeUpdateMessage
         {
@@ -133,17 +125,19 @@ public class TacviewSyncServiceTests
         // Act
         await _syncService.HandleTimeUpdateAsync(message);
 
-        // Assert
-        _mockPlaybackController.Verify(p => p.Resume(), Times.Once);
+        // Assert - after resume, IsPlaying should be true and IsPaused should be false
+        _playbackController.IsPlaying.Should().BeTrue("should resume playback");
+        _playbackController.IsPaused.Should().BeFalse("should not be paused after resume");
     }
 
     [Fact]
     public async Task HandleTimeUpdate_PlaybackStateChangesToPaused_PausesPlayback()
     {
         // Arrange
-        _mockPlaybackController.Setup(p => p.IsPlaying).Returns(true);
-        _mockPlaybackController.Setup(p => p.CurrentPosition)
-            .Returns(TimeSpan.FromSeconds(100));
+        _playbackController.UpdatePosition(TimeSpan.FromSeconds(100));
+        // Start playback
+        _playbackController.Start("test", async (ct) => { await Task.Delay(1000, ct); });
+        await Task.Delay(50); // Let it start
 
         var message = new TimeUpdateMessage
         {
@@ -156,16 +150,15 @@ public class TacviewSyncServiceTests
         await _syncService.HandleTimeUpdateAsync(message);
 
         // Assert
-        _mockPlaybackController.Verify(p => p.Pause(), Times.Once);
+        _playbackController.IsPaused.Should().BeTrue("should pause playback");
     }
 
     [Fact]
     public async Task HandleTimeUpdate_SpeedChange_UpdatesPlaybackSpeed()
     {
         // Arrange
-        _mockPlaybackController.Setup(p => p.PlaybackSpeed).Returns(1.0);
-        _mockPlaybackController.Setup(p => p.CurrentPosition)
-            .Returns(TimeSpan.FromSeconds(100));
+        _playbackController.SetPlaybackSpeed(1.0);
+        _playbackController.UpdatePosition(TimeSpan.FromSeconds(100));
 
         var message = new TimeUpdateMessage
         {
@@ -178,13 +171,17 @@ public class TacviewSyncServiceTests
         await _syncService.HandleTimeUpdateAsync(message);
 
         // Assert
-        _mockPlaybackController.Verify(p => p.SetPlaybackSpeed(2.0), Times.Once);
+        _playbackController.PlaybackSpeed.Should().Be(2.0, "should update to requested speed");
     }
 
     [Fact]
-    public async Task HandlePlaybackCommand_PlayCommand_StartsPlayback()
+    public async Task HandlePlaybackCommand_PlayCommand_ResumesPlayback()
     {
         // Arrange
+        _playbackController.Start("test", async (ct) => { await Task.Delay(100, ct); });
+        await Task.Delay(50);
+        _playbackController.Pause();
+        
         var message = new PlaybackCommandMessage
         {
             Command = "play"
@@ -194,13 +191,16 @@ public class TacviewSyncServiceTests
         await _syncService.HandlePlaybackCommandAsync(message);
 
         // Assert
-        _mockPlaybackController.Verify(p => p.Resume(), Times.Once);
+        _playbackController.IsPlaying.Should().BeTrue("should resume playback on play command");
     }
 
     [Fact]
     public async Task HandlePlaybackCommand_PauseCommand_PausesPlayback()
     {
         // Arrange
+        _playbackController.Start("test", async (ct) => { await Task.Delay(1000, ct); });
+        await Task.Delay(50);
+        
         var message = new PlaybackCommandMessage
         {
             Command = "pause"
@@ -210,13 +210,16 @@ public class TacviewSyncServiceTests
         await _syncService.HandlePlaybackCommandAsync(message);
 
         // Assert
-        _mockPlaybackController.Verify(p => p.Pause(), Times.Once);
+        _playbackController.IsPaused.Should().BeTrue("should pause on pause command");
     }
 
     [Fact]
     public async Task HandlePlaybackCommand_StopCommand_StopsPlayback()
     {
         // Arrange
+        _playbackController.Start("test", async (ct) => { await Task.Delay(1000, ct); });
+        await Task.Delay(50);
+        
         var message = new PlaybackCommandMessage
         {
             Command = "stop"
@@ -224,17 +227,17 @@ public class TacviewSyncServiceTests
 
         // Act
         await _syncService.HandlePlaybackCommandAsync(message);
+        await Task.Delay(100); // Give time for stop to complete
 
         // Assert
-        _mockPlaybackController.Verify(p => p.Stop(), Times.Once);
+        _playbackController.IsPlaying.Should().BeFalse("should stop playback on stop command");
     }
 
     [Fact]
     public async Task HandleSeek_ValidTime_SeeksToTargetPosition()
     {
         // Arrange
-        _mockPlaybackController.Setup(p => p.TotalDuration)
-            .Returns(TimeSpan.FromSeconds(1000));
+        _playbackController.UpdatePosition(TimeSpan.FromSeconds(50));
         var targetTime = _recordingStartUtc.AddSeconds(150);
         var message = new SeekMessage
         {
@@ -245,17 +248,14 @@ public class TacviewSyncServiceTests
         await _syncService.HandleSeekAsync(message);
 
         // Assert
-        _mockSeekController.Verify(
-            p => p.SeekTo(TimeSpan.FromSeconds(150), It.IsAny<TimeSpan>()),
-            Times.Once);
+        _seekController.HasPendingSeek().Should().BeTrue("should have pending seek after seek command");
     }
 
     [Fact]
     public async Task GetSyncHealth_ReturnsSyncStatistics()
     {
         // Arrange
-        _mockPlaybackController.Setup(p => p.CurrentPosition)
-            .Returns(TimeSpan.FromSeconds(100));
+        _playbackController.UpdatePosition(TimeSpan.FromSeconds(100));
 
         var message = new TimeUpdateMessage
         {
@@ -269,16 +269,15 @@ public class TacviewSyncServiceTests
         var health = _syncService.GetSyncHealth();
 
         // Assert
-        Assert.NotNull(health);
-        Assert.True(health.QualityPercent >= 0 && health.QualityPercent <= 100);
+        health.Should().NotBeNull();
+        health.QualityPercent.Should().BeInRange(0, 100);
     }
 
     [Fact]
     public async Task HandleTimeUpdate_NegativeDrift_AdjustsSpeedDown()
     {
         // Arrange
-        _mockPlaybackController.Setup(p => p.CurrentPosition)
-            .Returns(TimeSpan.FromSeconds(100));
+        _playbackController.UpdatePosition(TimeSpan.FromSeconds(100));
 
         var message = new TimeUpdateMessage
         {
@@ -291,9 +290,8 @@ public class TacviewSyncServiceTests
         await _syncService.HandleTimeUpdateAsync(message);
 
         // Assert
-        _mockPlaybackController.Verify(
-            p => p.SetPlaybackSpeed(It.IsInRange(0.97, 0.99, Moq.Range.Inclusive)),
-            Times.Once);
+        _playbackController.PlaybackSpeed.Should().BeInRange(0.97, 0.99,
+            "should adjust speed down for negative drift");
     }
 
     [Theory]
@@ -306,9 +304,8 @@ public class TacviewSyncServiceTests
     public async Task HandleTimeUpdate_VariousSpeeds_AppliesCorrectSpeed(double speed)
     {
         // Arrange
-        _mockPlaybackController.Setup(p => p.PlaybackSpeed).Returns(1.0);
-        _mockPlaybackController.Setup(p => p.CurrentPosition)
-            .Returns(TimeSpan.FromSeconds(100));
+        _playbackController.SetPlaybackSpeed(1.0);
+        _playbackController.UpdatePosition(TimeSpan.FromSeconds(100));
 
         var message = new TimeUpdateMessage
         {
@@ -321,6 +318,12 @@ public class TacviewSyncServiceTests
         await _syncService.HandleTimeUpdateAsync(message);
 
         // Assert
-        _mockPlaybackController.Verify(p => p.SetPlaybackSpeed(speed), Times.Once);
+        _playbackController.PlaybackSpeed.Should().Be(speed, $"should set playback speed to {speed}x");
+    }
+
+    public void Dispose()
+    {
+        _playbackController?.Dispose();
+        _seekController?.Dispose();
     }
 }

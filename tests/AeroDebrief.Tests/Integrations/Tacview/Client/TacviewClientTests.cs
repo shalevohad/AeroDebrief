@@ -8,15 +8,16 @@ using System.Threading.Tasks;
 using AeroDebrief.Integrations.Tacview.Client;
 using AeroDebrief.Integrations.Tacview.Models;
 using AeroDebrief.Integrations.Tacview.Protocol.Messages;
+using AeroDebrief.Tests.TestHelpers;
 using Xunit;
 
 namespace AeroDebrief.Tests.Integrations.Tacview.Client;
 
 public class TacviewClientTests : IDisposable
 {
-    private TcpListener? _mockServer;
+    private MockTacviewServer? _mockServer;
     private CancellationTokenSource _cts;
-    private const int TestPort = 52099; // Use different port to avoid conflicts
+    private const int TestPort = 52199; // Use different port to avoid conflicts
 
     public TacviewClientTests()
     {
@@ -27,7 +28,9 @@ public class TacviewClientTests : IDisposable
     public async Task ConnectAsync_SuccessfulConnection_ConnectsToServer()
     {
         // Arrange
-        var mockServer = StartMockServer();
+        _mockServer = new MockTacviewServer(TestPort);
+        _mockServer.Start();
+        
         var config = new TacviewConfiguration { Host = "127.0.0.1", Port = TestPort };
         var client = new TacviewClient(config);
 
@@ -35,14 +38,19 @@ public class TacviewClientTests : IDisposable
         {
             // Act
             await client.ConnectAsync(_cts.Token);
+            
+            // Wait for server to fully accept connection
+            var clientConnected = await _mockServer.WaitForClientAsync();
 
             // Assert
+            Assert.True(clientConnected, "Client failed to connect to mock server");
             Assert.True(client.IsConnected);
+            Assert.Equal(1, _mockServer.ConnectedClientCount);
         }
         finally
         {
             await client.DisconnectAsync();
-            mockServer?.Stop();
+            _mockServer.Stop();
         }
     }
 
@@ -64,25 +72,36 @@ public class TacviewClientTests : IDisposable
     public async Task DisconnectAsync_WhenConnected_DisconnectsCleanly()
     {
         // Arrange
-        var mockServer = StartMockServer();
+        _mockServer = new MockTacviewServer(TestPort);
+        _mockServer.Start();
+        
         var config = new TacviewConfiguration { Host = "127.0.0.1", Port = TestPort };
         var client = new TacviewClient(config);
         await client.ConnectAsync(_cts.Token);
+        
+        // Wait for server to fully accept connection
+        await _mockServer.WaitForClientAsync();
 
         // Act
         await client.DisconnectAsync();
+        
+        // Give server time to process disconnect
+        await Task.Delay(200);
 
         // Assert
         Assert.False(client.IsConnected);
+        Assert.Equal(0, _mockServer.ConnectedClientCount);
 
-        mockServer?.Stop();
+        _mockServer.Stop();
     }
 
     [Fact]
     public async Task MessageReceived_WhenServerSendsMessage_RaisesEvent()
     {
         // Arrange
-        var mockServer = StartMockServer();
+        _mockServer = new MockTacviewServer(TestPort);
+        _mockServer.Start();
+        
         var config = new TacviewConfiguration { Host = "127.0.0.1", Port = TestPort };
         var client = new TacviewClient(config);
         var receivedMessage = false;
@@ -95,6 +114,10 @@ public class TacviewClientTests : IDisposable
         };
 
         await client.ConnectAsync(_cts.Token);
+        
+        // Wait for server to fully accept client and client receive loop to be ready
+        var clientConnected = await _mockServer.WaitForClientAsync();
+        Assert.True(clientConnected, "Client failed to connect to mock server");
 
         // Act
         var testMessage = new TimeUpdateMessage
@@ -103,29 +126,34 @@ public class TacviewClientTests : IDisposable
             PlaybackState = "playing",
             PlaybackSpeed = 1.0
         };
-        await SendMessageFromServer(testMessage);
+        await _mockServer.SendMessageToAllAsync(testMessage);
 
         // Wait for message processing
         await Task.Delay(500);
 
         // Assert
-        Assert.True(receivedMessage);
+        Assert.True(receivedMessage, "Message was not received by client");
         Assert.NotNull(receivedTimeUpdate);
         Assert.Equal("playing", receivedTimeUpdate.PlaybackState);
         Assert.Equal(1.0, receivedTimeUpdate.PlaybackSpeed);
 
         await client.DisconnectAsync();
-        mockServer?.Stop();
+        _mockServer.Stop();
     }
 
     [Fact]
     public async Task SendMessageAsync_ValidMessage_SendsSuccessfully()
     {
         // Arrange
-        var mockServer = StartMockServer();
+        _mockServer = new MockTacviewServer(TestPort);
+        _mockServer.Start();
+        
         var config = new TacviewConfiguration { Host = "127.0.0.1", Port = TestPort };
         var client = new TacviewClient(config);
         await client.ConnectAsync(_cts.Token);
+        
+        // Wait for server to fully accept connection
+        await _mockServer.WaitForClientAsync();
 
         var message = new SpeakingStatusMessage
         {
@@ -143,16 +171,24 @@ public class TacviewClientTests : IDisposable
 
         // Assert
         Assert.Null(exception);
+        
+        // Wait for server to receive message
+        await Task.Delay(200);
+        
+        // Verify server received the message
+        Assert.NotEmpty(_mockServer.ReceivedMessages);
 
         await client.DisconnectAsync();
-        mockServer?.Stop();
+        _mockServer.Stop();
     }
 
     [Fact]
     public async Task Disconnected_WhenServerDisconnects_RaisesEvent()
     {
         // Arrange
-        var mockServer = StartMockServer();
+        _mockServer = new MockTacviewServer(TestPort);
+        _mockServer.Start();
+        
         var config = new TacviewConfiguration { Host = "127.0.0.1", Port = TestPort };
         var client = new TacviewClient(config);
         var disconnectedRaised = false;
@@ -165,14 +201,19 @@ public class TacviewClientTests : IDisposable
         };
 
         await client.ConnectAsync(_cts.Token);
+        
+        // Wait for server to fully accept connection
+        await _mockServer.WaitForClientAsync();
 
         // Act
-        mockServer?.Stop(); // Simulate server disconnect
+        _mockServer.DisconnectAllClients(); // Simulate server disconnect
         await Task.Delay(1000); // Wait for disconnect detection
 
         // Assert
         Assert.True(disconnectedRaised);
         Assert.NotNull(disconnectReason);
+        
+        _mockServer.Stop();
     }
 
     [Fact]
@@ -184,75 +225,17 @@ public class TacviewClientTests : IDisposable
         var cts = new CancellationTokenSource();
         cts.Cancel(); // Cancel immediately
 
-        // Act & Assert
-        await Assert.ThrowsAsync<OperationCanceledException>(async () =>
+        // Act & Assert - TaskCanceledException inherits from OperationCanceledException
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
         {
             await client.ConnectAsync(cts.Token);
         });
     }
 
-    private TcpListener StartMockServer()
-    {
-        _mockServer = new TcpListener(IPAddress.Loopback, TestPort);
-        _mockServer.Start();
-
-        // Accept connections in background
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                while (!_cts.Token.IsCancellationRequested)
-                {
-                    var client = await _mockServer.AcceptTcpClientAsync(_cts.Token);
-                    _ = HandleClientAsync(client);
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                // Expected when test completes
-            }
-        }, _cts.Token);
-
-        return _mockServer;
-    }
-
-    private async Task HandleClientAsync(TcpClient client)
-    {
-        try
-        {
-            var stream = client.GetStream();
-            var buffer = new byte[8192];
-
-            while (!_cts.Token.IsCancellationRequested && client.Connected)
-            {
-                var bytesRead = await stream.ReadAsync(buffer, _cts.Token);
-                if (bytesRead == 0) break;
-
-                // Echo back for testing
-                await stream.WriteAsync(buffer.AsMemory(0, bytesRead), _cts.Token);
-            }
-        }
-        catch (Exception)
-        {
-            // Ignore errors in mock server
-        }
-        finally
-        {
-            client.Close();
-        }
-    }
-
-    private async Task SendMessageFromServer(object message)
-    {
-        // Simulate server sending a message
-        // This is a simplified version - in real tests you'd need to track the accepted client
-        await Task.Delay(100);
-    }
-
     public void Dispose()
     {
         _cts.Cancel();
-        _mockServer?.Stop();
+        _mockServer?.Dispose();
         _cts.Dispose();
     }
 }

@@ -50,7 +50,7 @@ namespace AeroDebrief.Core.IO
             
             _inputChannel = Channel.CreateBounded<RadioPacket>(new BoundedChannelOptions(inputBufferSize)
             {
-                FullMode = BoundedChannelFullMode.DropOldest,
+                FullMode = BoundedChannelFullMode.DropWrite, // Return false when full instead of dropping oldest
                 SingleWriter = false,
                 SingleReader = true
             });

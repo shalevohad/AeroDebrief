@@ -43,10 +43,6 @@
     <ProjectReference Include="..\..\src\AeroDebrief.Integrations\AeroDebrief.Integrations.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Folder Include="TestHelpers\" />
-  </ItemGroup>
-
   <!-- CRITICAL: Ensure tests always use the LATEST build -->
   <Target Name="EnsureFreshBuild" BeforeTargets="Build">
     <Message Text="========================================" Importance="High" />

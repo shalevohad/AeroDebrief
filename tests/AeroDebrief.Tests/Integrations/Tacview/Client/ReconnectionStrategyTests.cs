@@ -3,7 +3,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using AeroDebrief.Integrations.Tacview.Client;
 using AeroDebrief.Integrations.Tacview.Models;
-using Moq;
 using Xunit;
 
 namespace AeroDebrief.Tests.Integrations.Tacview.Client;
@@ -22,19 +21,14 @@ public class ReconnectionStrategyTests
             ReconnectIntervalSeconds = 1
         };
 
-        var mockClient = new Mock<TacviewClient>(config);
-        mockClient.Setup(c => c.ConnectAsync(It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
-        mockClient.Setup(c => c.IsConnected).Returns(true);
-
+        var connectFunc = (CancellationToken ct) => Task.FromResult(true);
         var strategy = new TacviewReconnectionStrategy();
 
         // Act
-        var result = await strategy.TryReconnectAsync(mockClient.Object, config, CancellationToken.None);
+        var result = await strategy.TryReconnectAsync(connectFunc, config, CancellationToken.None);
 
         // Assert
         Assert.True(result);
-        mockClient.Verify(c => c.ConnectAsync(It.IsAny<CancellationToken>()), Times.AtLeastOnce);
     }
 
     [Fact]
@@ -49,18 +43,21 @@ public class ReconnectionStrategyTests
             ReconnectIntervalSeconds = 1
         };
 
-        var mockClient = new Mock<TacviewClient>(config);
-        mockClient.Setup(c => c.ConnectAsync(It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new Exception("Connection failed"));
+        var attemptCount = 0;
+        Func<CancellationToken, Task<bool>> connectFunc = (ct) =>
+        {
+            attemptCount++;
+            throw new Exception("Connection failed");
+        };
 
         var strategy = new TacviewReconnectionStrategy();
 
         // Act
-        var result = await strategy.TryReconnectAsync(mockClient.Object, config, CancellationToken.None);
+        var result = await strategy.TryReconnectAsync(connectFunc, config, CancellationToken.None);
 
         // Assert
         Assert.False(result);
-        mockClient.Verify(c => c.ConnectAsync(It.IsAny<CancellationToken>()), Times.Exactly(3));
+        Assert.Equal(3, attemptCount);
     }
 
     [Fact]
@@ -75,21 +72,19 @@ public class ReconnectionStrategyTests
             ReconnectIntervalSeconds = 1
         };
 
-        var mockClient = new Mock<TacviewClient>(config);
         var attemptCount = 0;
-        mockClient.Setup(c => c.ConnectAsync(It.IsAny<CancellationToken>()))
-            .Returns(() =>
-            {
-                attemptCount++;
-                if (attemptCount < 2)
-                    throw new Exception("Connection failed");
-                return Task.CompletedTask;
-            });
+        Func<CancellationToken, Task<bool>> connectFunc = (ct) =>
+        {
+            attemptCount++;
+            if (attemptCount < 2)
+                throw new Exception("Connection failed");
+            return Task.FromResult(true);
+        };
 
         var strategy = new TacviewReconnectionStrategy();
 
         // Act
-        var result = await strategy.TryReconnectAsync(mockClient.Object, config, CancellationToken.None);
+        var result = await strategy.TryReconnectAsync(connectFunc, config, CancellationToken.None);
 
         // Assert
         Assert.True(result);
@@ -108,9 +103,10 @@ public class ReconnectionStrategyTests
             ReconnectIntervalSeconds = 5
         };
 
-        var mockClient = new Mock<TacviewClient>(config);
-        mockClient.Setup(c => c.ConnectAsync(It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new Exception("Connection failed"));
+        Func<CancellationToken, Task<bool>> connectFunc = (ct) =>
+        {
+            throw new Exception("Connection failed");
+        };
 
         var strategy = new TacviewReconnectionStrategy();
         var cts = new CancellationTokenSource();
@@ -119,10 +115,10 @@ public class ReconnectionStrategyTests
         cts.CancelAfter(2000);
 
         // Act
-        var result = await strategy.TryReconnectAsync(mockClient.Object, config, cts.Token);
+        var result = await strategy.TryReconnectAsync(connectFunc, config, cts.Token);
 
         // Assert
-        Assert.False(result, "Should return false when cancelled");
+        Assert.False(result);
     }
 
     [Fact]
@@ -137,15 +133,16 @@ public class ReconnectionStrategyTests
             ReconnectIntervalSeconds = 1
         };
 
-        var mockClient = new Mock<TacviewClient>(config);
-        mockClient.Setup(c => c.ConnectAsync(It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new Exception("Connection failed"));
+        Func<CancellationToken, Task<bool>> connectFunc = (ct) =>
+        {
+            throw new Exception("Connection failed");
+        };
 
         var strategy = new TacviewReconnectionStrategy();
         var startTime = DateTime.UtcNow;
 
         // Act
-        await strategy.TryReconnectAsync(mockClient.Object, config, CancellationToken.None);
+        await strategy.TryReconnectAsync(connectFunc, config, CancellationToken.None);
 
         var totalTime = (DateTime.UtcNow - startTime).TotalSeconds;
 
@@ -162,34 +159,28 @@ public class ReconnectionStrategyTests
         {
             Host = "127.0.0.1",
             Port = 52001,
-            MaxReconnectAttempts = 50, // Large number to test max delay
-            ReconnectIntervalSeconds = 25 // Large base interval to hit 60s cap
+            MaxReconnectAttempts = 2, // Only 2 attempts to keep test fast
+            ReconnectIntervalSeconds = 50 // Large base interval to hit 60s cap
         };
 
-        var mockClient = new Mock<TacviewClient>(config);
-        mockClient.Setup(c => c.ConnectAsync(It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new Exception("Connection failed"));
+        Func<CancellationToken, Task<bool>> connectFunc = (ct) =>
+        {
+            throw new Exception("Connection failed");
+        };
 
         var strategy = new TacviewReconnectionStrategy();
-
-        // Mock to track delays (this would require exposing delay calculation or using a spy)
-        // For now, we'll just verify the pattern exists by checking total time
-        var cts = new CancellationTokenSource(TimeSpan.FromSeconds(65)); // Allow time for one capped delay
+        var startTime = DateTime.UtcNow;
 
         // Act
-        try
-        {
-            await strategy.TryReconnectAsync(mockClient.Object, config, cts.Token);
-        }
-        catch (OperationCanceledException)
-        {
-            // Expected
-        }
+        await strategy.TryReconnectAsync(connectFunc, config, CancellationToken.None);
+
+        var totalTime = (DateTime.UtcNow - startTime).TotalSeconds;
 
         // Assert
-        // With cap at 60s, delays should be: 25s, 50s, 60s (capped), 60s (capped), etc.
-        // We can't easily verify exact delays without refactoring, but this test documents the behavior
-        Assert.True(true, "Max delay cap should prevent delays exceeding 60 seconds");
+        // With cap at 60s: attempt 1: 50s, attempt 2: 60s (capped from 100s)
+        // Total should be around 110s, but at least 50s
+        Assert.True(totalTime >= 50, $"Expected at least 50 seconds, got {totalTime}");
+        Assert.True(totalTime <= 125, $"Expected at most 125 seconds (with some margin), got {totalTime}");
     }
 
     [Theory]
@@ -208,20 +199,21 @@ public class ReconnectionStrategyTests
             ReconnectIntervalSeconds = 1
         };
 
-        var mockClient = new Mock<TacviewClient>(config);
-        mockClient.Setup(c => c.ConnectAsync(It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new Exception("Connection failed"));
+        var attemptCount = 0;
+        Func<CancellationToken, Task<bool>> connectFunc = (ct) =>
+        {
+            attemptCount++;
+            throw new Exception("Connection failed");
+        };
 
         var strategy = new TacviewReconnectionStrategy();
 
         // Act
-        var result = await strategy.TryReconnectAsync(mockClient.Object, config, CancellationToken.None);
+        var result = await strategy.TryReconnectAsync(connectFunc, config, CancellationToken.None);
 
         // Assert
         Assert.False(result);
-        mockClient.Verify(
-            c => c.ConnectAsync(It.IsAny<CancellationToken>()), 
-            Times.Exactly(maxAttempts));
+        Assert.Equal(maxAttempts, attemptCount);
     }
 
     [Fact]
@@ -236,22 +228,20 @@ public class ReconnectionStrategyTests
             ReconnectIntervalSeconds = 1
         };
 
-        var mockClient = new Mock<TacviewClient>(config);
         var attemptCount = 0;
-        mockClient.Setup(c => c.ConnectAsync(It.IsAny<CancellationToken>()))
-            .Returns(() =>
-            {
-                attemptCount++;
-                // Succeed after 3 attempts to avoid infinite loop
-                if (attemptCount >= 3)
-                    return Task.CompletedTask;
-                throw new Exception("Connection failed");
-            });
+        Func<CancellationToken, Task<bool>> connectFunc = (ct) =>
+        {
+            attemptCount++;
+            // Succeed after 3 attempts to avoid infinite loop
+            if (attemptCount >= 3)
+                return Task.FromResult(true);
+            throw new Exception("Connection failed");
+        };
 
         var strategy = new TacviewReconnectionStrategy();
 
         // Act
-        var result = await strategy.TryReconnectAsync(mockClient.Object, config, CancellationToken.None);
+        var result = await strategy.TryReconnectAsync(connectFunc, config, CancellationToken.None);
 
         // Assert
         Assert.True(result);

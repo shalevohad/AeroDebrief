@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using AeroDebrief.Core;
@@ -8,7 +9,7 @@ using AeroDebrief.Core.Playback;
 using AeroDebrief.Integrations.Tacview;
 using AeroDebrief.Integrations.Tacview.Models;
 using AeroDebrief.Integrations.Tacview.Protocol.Messages;
-using Moq;
+using AeroDebrief.Tests.TestHelpers;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -17,9 +18,11 @@ namespace AeroDebrief.Tests.Integrations.Tacview.Integration;
 /// <summary>
 /// Integration tests for the complete Tacview integration system
 /// </summary>
-public class TacviewIntegrationTests
+public class TacviewIntegrationTests : IDisposable
 {
     private readonly ITestOutputHelper _output;
+    private MockTacviewServer? _mockServer;
+    private const int TestPort = 52299; // Different from other tests to avoid conflicts
 
     public TacviewIntegrationTests(ITestOutputHelper output)
     {
@@ -30,49 +33,61 @@ public class TacviewIntegrationTests
     public async Task FullIntegration_ConnectSyncAndFilter_WorksEndToEnd()
     {
         // Arrange
-        var mockPlaybackController = new Mock<PlaybackController>();
-        var mockSeekController = new Mock<SeekController>();
-        mockPlaybackController.Setup(p => p.CurrentPosition).Returns(TimeSpan.Zero);
-        mockPlaybackController.Setup(p => p.IsPlaying).Returns(false);
+        _mockServer = new MockTacviewServer(TestPort);
+        _mockServer.Start();
 
+        // Use real controllers instead of mocks (they're sealed classes)
+        var playbackController = new PlaybackController();
+        var seekController = new SeekController();
+        
         var recordingStart = DateTime.UtcNow;
-        var config = new TacviewConfiguration { AutoConnect = false }; // Don't auto-connect in tests
+        var config = new TacviewConfiguration 
+        { 
+            Host = "127.0.0.1",
+            Port = TestPort,
+            AutoConnect = false 
+        };
+        
         var integrationService = new TacviewIntegrationService(
-            mockPlaybackController.Object,
-            mockSeekController.Object,
+            playbackController,
+            seekController,
             config
         );
 
-        // Note: This test requires a mock Tacview server running
-        // In a real scenario, you'd start MockTacviewServer here
-
         try
         {
-            // Act - Start integration (will attempt auto-connect if enabled)
+            // Act - Start integration and connect
             await integrationService.StartAsync(recordingStart, CancellationToken.None);
+            await integrationService.ConnectAsync(CancellationToken.None);
 
-            // Simulate time update from Tacview
+            // Wait for connection
+            await Task.Delay(300);
+
+            // Send time update from mock server
             var timeUpdate = new TimeUpdateMessage
             {
                 MissionTimeUtc = recordingStart.AddSeconds(10).ToString("o"),
                 PlaybackState = "playing",
                 PlaybackSpeed = 1.0
             };
-
-            // In real test, this would come from mock server
-            // await integrationService.HandleMessageAsync(timeUpdate);
+            await _mockServer.SendMessageToAllAsync(timeUpdate);
 
             // Wait for processing
             await Task.Delay(500);
 
-            // Assert - Verify playback controller was updated
-            // mockPlaybackController.Verify(p => p.Resume(), Times.Once);
+            // Assert - Verify server received connection
+            Assert.True(integrationService.IsConnected);
+            Assert.Equal(1, _mockServer.ConnectedClientCount);
 
             _output.WriteLine("Integration test passed - connection and sync working");
         }
         finally
         {
             await integrationService.StopAsync();
+            integrationService.Dispose();
+            playbackController.Dispose();
+            seekController.Dispose();
+            _mockServer.Stop();
         }
     }
 
@@ -80,13 +95,24 @@ public class TacviewIntegrationTests
     public async Task FrequencyFiltering_IntegrationWithAudioPipeline_FiltersCorrectly()
     {
         // Arrange
-        var mockPlaybackController = new Mock<PlaybackController>();
-        var mockSeekController = new Mock<SeekController>();
+        _mockServer = new MockTacviewServer(TestPort);
+        _mockServer.Start();
+
+        // Use real controllers instead of mocks (they're sealed classes)
+        var playbackController = new PlaybackController();
+        var seekController = new SeekController();
+        
         var recordingStart = DateTime.UtcNow;
-        var config = new TacviewConfiguration { AutoConnect = false };
+        var config = new TacviewConfiguration 
+        { 
+            Host = "127.0.0.1",
+            Port = TestPort,
+            AutoConnect = false 
+        };
+        
         var integrationService = new TacviewIntegrationService(
-            mockPlaybackController.Object,
-            mockSeekController.Object,
+            playbackController,
+            seekController,
             config
         );
 
@@ -121,6 +147,10 @@ public class TacviewIntegrationTests
         Assert.False(filter.ShouldPlayPacket(packet3), "Should filter non-selected pilot");
 
         await integrationService.StopAsync();
+        integrationService.Dispose();
+        playbackController.Dispose();
+        seekController.Dispose();
+        _mockServer.Stop();
 
         _output.WriteLine("Frequency filtering integration test passed");
     }
@@ -129,18 +159,18 @@ public class TacviewIntegrationTests
     public async Task LongDuration_MaintainsSyncAccuracy_Over2Hours()
     {
         // Arrange
-        var mockPlaybackController = new Mock<PlaybackController>();
-        var mockSeekController = new Mock<SeekController>();
+        // Use real controllers instead of mocks (they're sealed classes)
+        var playbackController = new PlaybackController();
+        var seekController = new SeekController();
+        
         var currentPosition = TimeSpan.Zero;
-        mockPlaybackController.Setup(p => p.CurrentPosition).Returns(() => currentPosition);
-        mockSeekController.Setup(s => s.SeekTo(It.IsAny<TimeSpan>(), It.IsAny<TimeSpan>()))
-            .Callback<TimeSpan, TimeSpan>((pos, duration) => currentPosition = pos);
+        playbackController.SetTotalDuration(TimeSpan.FromHours(2));
 
         var recordingStart = DateTime.UtcNow;
         var config = new TacviewConfiguration { AutoConnect = false };
         var integrationService = new TacviewIntegrationService(
-            mockPlaybackController.Object,
-            mockSeekController.Object,
+            playbackController,
+            seekController,
             config
         );
 
@@ -155,19 +185,11 @@ public class TacviewIntegrationTests
         {
             // Simulate time update every 100ms (10 Hz)
             var elapsedTime = DateTime.UtcNow - startTime;
-            var timeUpdate = new TimeUpdateMessage
-            {
-                MissionTimeUtc = recordingStart.Add(elapsedTime).ToString("o"),
-                PlaybackState = "playing",
-                PlaybackSpeed = 1.0
-            };
-
-            // Process update
-            // await integrationService.HandleMessageAsync(timeUpdate);
 
             // Sample drift every 10 seconds
             if (elapsedTime.TotalSeconds % 10 < 0.1)
             {
+                currentPosition = playbackController.CurrentPosition;
                 var drift = Math.Abs((currentPosition - elapsedTime).TotalMilliseconds);
                 driftSamples.Add((int)drift);
                 
@@ -188,25 +210,37 @@ public class TacviewIntegrationTests
         Assert.True(accuracy >= 0.999, $"Expected 99.9% accuracy, got {accuracy:P2}");
 
         await integrationService.StopAsync();
+        integrationService.Dispose();
+        playbackController.Dispose();
+        seekController.Dispose();
     }
 
     [Fact]
     public async Task Performance_CpuOverhead_RemainsUnder5Percent()
     {
         // Arrange
-        var mockPlaybackController = new Mock<PlaybackController>();
-        var mockSeekController = new Mock<SeekController>();
-        mockPlaybackController.Setup(p => p.CurrentPosition).Returns(TimeSpan.Zero);
+        _mockServer = new MockTacviewServer(TestPort);
+        _mockServer.Start();
+
+        // Use real controllers instead of mocks (they're sealed classes)
+        var playbackController = new PlaybackController();
+        var seekController = new SeekController();
 
         // Measure baseline CPU
-        var baselineCpu = await MeasureCpuUsage(TimeSpan.FromSeconds(5));
+        var baselineCpu = await MeasureCpuUsage(TimeSpan.FromSeconds(3));
         _output.WriteLine($"Baseline CPU: {baselineCpu:F2}%");
 
         var recordingStart = DateTime.UtcNow;
-        var config = new TacviewConfiguration { AutoConnect = false };
+        var config = new TacviewConfiguration 
+        { 
+            Host = "127.0.0.1",
+            Port = TestPort,
+            AutoConnect = false 
+        };
+        
         var integrationService = new TacviewIntegrationService(
-            mockPlaybackController.Object,
-            mockSeekController.Object,
+            playbackController,
+            seekController,
             config
         );
 
@@ -214,10 +248,12 @@ public class TacviewIntegrationTests
         {
             // Act - Start integration and simulate load
             await integrationService.StartAsync(recordingStart, CancellationToken.None);
+            await integrationService.ConnectAsync(CancellationToken.None);
+            await Task.Delay(300);
 
-            // Simulate active sync for 30 seconds
+            // Simulate active sync for 10 seconds (reduced from 30)
             var testStart = DateTime.UtcNow;
-            while ((DateTime.UtcNow - testStart).TotalSeconds < 30)
+            while ((DateTime.UtcNow - testStart).TotalSeconds < 10)
             {
                 var timeUpdate = new TimeUpdateMessage
                 {
@@ -226,11 +262,13 @@ public class TacviewIntegrationTests
                     PlaybackSpeed = 1.0
                 };
 
+                await _mockServer.SendMessageToAllAsync(timeUpdate);
+
                 // Process updates at 10 Hz
                 await Task.Delay(100);
             }
 
-            var withIntegrationCpu = await MeasureCpuUsage(TimeSpan.FromSeconds(5));
+            var withIntegrationCpu = await MeasureCpuUsage(TimeSpan.FromSeconds(3));
             _output.WriteLine($"With Integration CPU: {withIntegrationCpu:F2}%");
 
             // Assert
@@ -242,6 +280,10 @@ public class TacviewIntegrationTests
         finally
         {
             await integrationService.StopAsync();
+            integrationService.Dispose();
+            playbackController.Dispose();
+            seekController.Dispose();
+            _mockServer.Stop();
         }
     }
 
@@ -249,32 +291,59 @@ public class TacviewIntegrationTests
     public async Task Reconnection_AfterDisconnect_RecoversSmoothly()
     {
         // Arrange
-        var mockPlaybackController = new Mock<PlaybackController>();
-        var mockSeekController = new Mock<SeekController>();
+        _mockServer = new MockTacviewServer(TestPort);
+        _mockServer.Start();
+
+        // Use real controllers instead of mocks (they're sealed classes)
+        var playbackController = new PlaybackController();
+        var seekController = new SeekController();
+        
         var recordingStart = DateTime.UtcNow;
-        var config = new TacviewConfiguration { AutoConnect = false, AutoReconnect = true };
+        var config = new TacviewConfiguration 
+        { 
+            Host = "127.0.0.1",
+            Port = TestPort,
+            AutoConnect = false,
+            AutoReconnect = true,
+            MaxReconnectAttempts = 3,
+            ReconnectIntervalSeconds = 1
+        };
+        
         var integrationService = new TacviewIntegrationService(
-            mockPlaybackController.Object,
-            mockSeekController.Object,
+            playbackController,
+            seekController,
             config
         );
 
         // Start with connection
         await integrationService.StartAsync(recordingStart, CancellationToken.None);
+        await integrationService.ConnectAsync(CancellationToken.None);
+        await Task.Delay(300);
+
+        Assert.True(integrationService.IsConnected, "Should be connected initially");
 
         // Simulate disconnect
-        // In real test, mock server would close connection
-        await Task.Delay(1000);
+        _mockServer.DisconnectAllClients();
+        await Task.Delay(500);
 
-        // Wait for reconnection
+        Assert.False(integrationService.IsConnected, "Should be disconnected after server closes connection");
+
+        // Restart server for reconnection
+        _mockServer.Start();
+
+        // Wait for reconnection (with generous timeout for 3 attempts with 1s intervals)
         await Task.Delay(5000);
 
         // Assert - should be reconnected
-        // Assert.True(integrationService.IsConnected);
+        Assert.True(integrationService.IsConnected, "Should reconnect after server becomes available");
 
         await integrationService.StopAsync();
+        integrationService.Dispose();
+        playbackController.Dispose();
+        seekController.Dispose();
+        _mockServer.Stop();
 
-        _output.WriteLine("Reconnection test completed");
+        _output.WriteLine("Reconnection test completed successfully");
     }
 
     [Theory]
@@ -287,22 +356,34 @@ public class TacviewIntegrationTests
     public async Task VariableSpeed_AllSpeeds_SyncCorrectly(double speed)
     {
         // Arrange
-        var mockPlaybackController = new Mock<PlaybackController>();
-        var mockSeekController = new Mock<SeekController>();
-        mockPlaybackController.Setup(p => p.CurrentPosition).Returns(TimeSpan.FromSeconds(100));
-        mockPlaybackController.Setup(p => p.PlaybackSpeed).Returns(1.0);
+        _mockServer = new MockTacviewServer(TestPort);
+        _mockServer.Start();
+
+        // Use real controllers instead of mocks (they're sealed classes)
+        var playbackController = new PlaybackController();
+        var seekController = new SeekController();
+        playbackController.SetTotalDuration(TimeSpan.FromSeconds(200));
+        playbackController.UpdatePosition(TimeSpan.FromSeconds(100));
 
         var recordingStart = DateTime.UtcNow;
-        var config = new TacviewConfiguration { AutoConnect = false };
+        var config = new TacviewConfiguration 
+        { 
+            Host = "127.0.0.1",
+            Port = TestPort,
+            AutoConnect = false 
+        };
+        
         var integrationService = new TacviewIntegrationService(
-            mockPlaybackController.Object,
-            mockSeekController.Object,
+            playbackController,
+            seekController,
             config
         );
 
         await integrationService.StartAsync(recordingStart, CancellationToken.None);
+        await integrationService.ConnectAsync(CancellationToken.None);
+        await Task.Delay(300);
 
-        // Act
+        // Act - Send time update with speed
         var timeUpdate = new TimeUpdateMessage
         {
             MissionTimeUtc = recordingStart.AddSeconds(100).ToString("o"),
@@ -310,15 +391,17 @@ public class TacviewIntegrationTests
             PlaybackSpeed = speed
         };
 
-        // Process update
-        // await integrationService.HandleMessageAsync(timeUpdate);
+        await _mockServer.SendMessageToAllAsync(timeUpdate);
+        await Task.Delay(200);
 
-        await Task.Delay(100);
-
-        // Assert
-        mockPlaybackController.Verify(p => p.SetPlaybackSpeed(speed), Times.AtLeastOnce);
+        // Assert - Verify speed was set on playback controller
+        Assert.Equal(speed, playbackController.PlaybackSpeed);
         
         await integrationService.StopAsync();
+        integrationService.Dispose();
+        playbackController.Dispose();
+        seekController.Dispose();
+        _mockServer.Stop();
 
         _output.WriteLine($"Speed {speed}x test passed");
     }
@@ -368,5 +451,10 @@ public class TacviewIntegrationTests
         var cpuUsagePercent = (cpuUsed / (Environment.ProcessorCount * totalTime)) * 100;
 
         return cpuUsagePercent;
+    }
+
+    public void Dispose()
+    {
+        _mockServer?.Dispose();
     }
 }

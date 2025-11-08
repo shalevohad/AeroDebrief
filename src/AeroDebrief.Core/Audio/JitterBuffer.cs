@@ -7,8 +7,8 @@ using AeroDebrief.Core.IO;
 namespace AeroDebrief.Core.Audio
 {
     /// <summary>
-    /// High-performance adaptive jitter buffer with 60ms target depth based on PTS.
-    /// Optimized with SRS-inspired techniques: lock-free operations, minimal allocations.
+    /// High-performance adaptive jitter buffer optimized for voice packet playback.
+    /// Handles packet reordering and silence insertion for gaps (SRS-inspired).
     /// </summary>
     public sealed class JitterBuffer
     {
@@ -22,22 +22,26 @@ namespace AeroDebrief.Core.Audio
         
         private ulong _lastEmittedPacketId;
         private ulong _lastSequentialPacketId; // Track the last packet emitted sequentially (without gaps)
-        private DateTime _headPacketTimestamp;
-        private DateTime _tailPacketTimestamp;
+        
+        // OPTIMIZED: Track timestamps incrementally without full scans
+        private DateTime _earliestBufferedTimestamp;
+        private DateTime _latestBufferedTimestamp;
         
         // Use Interlocked for thread-safe counters (SRS pattern)
         private long _packetsAdded;
         private long _packetsEmitted;
         private long _packetsDropped;
         private long _latePackets;
+        private long _silencePacketsInserted; // NEW: Track silence insertions
         private int _currentDepth;
 
         public int CurrentDepth => _currentDepth;
-        public TimeSpan CurrentBufferDuration => _tailPacketTimestamp - _headPacketTimestamp;
+        public TimeSpan CurrentBufferDuration => _latestBufferedTimestamp - _earliestBufferedTimestamp;
         public long PacketsAdded => Interlocked.Read(ref _packetsAdded);
         public long PacketsEmitted => Interlocked.Read(ref _packetsEmitted);
         public long PacketsDropped => Interlocked.Read(ref _packetsDropped);
         public long LatePackets => Interlocked.Read(ref _latePackets);
+        public long SilencePacketsInserted => Interlocked.Read(ref _silencePacketsInserted);
 
         public JitterBuffer(int targetDepthMs = 60, int maxCapacity = 200, int maxGapMs = 100)
         {
@@ -47,12 +51,12 @@ namespace AeroDebrief.Core.Audio
             _buffer = new SortedDictionary<ulong, RadioPacket>();
             _lastEmittedPacketId = 0;
             _lastSequentialPacketId = 0;
-            _headPacketTimestamp = DateTime.MinValue;
-            _tailPacketTimestamp = DateTime.MinValue;
+            _earliestBufferedTimestamp = DateTime.MinValue;
+            _latestBufferedTimestamp = DateTime.MinValue;
         }
 
         /// <summary>
-        /// Optimized packet addition with minimal lock time and bulk operations
+        /// OPTIMIZED: Fast packet addition with incremental timestamp tracking
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         public IEnumerable<RadioPacket> AddPacket(RadioPacket packet)
@@ -64,62 +68,56 @@ namespace AeroDebrief.Core.Audio
 
             lock (_lock)
             {
-                // Fast path: Check late packet - drop if it was emitted sequentially
-                // Packets that were skipped due to gap forcing can still arrive later
-                // Only drop packets that are truly before the last sequential emission
+                // Fast path: Check late packet
                 if (packet.PacketId <= _lastSequentialPacketId && _lastSequentialPacketId > 0)
                 {
                     Interlocked.Increment(ref _latePackets);
-                    Logger.Trace($"Late packet dropped: Id={packet.PacketId}, last sequential={_lastSequentialPacketId}");
                     return Array.Empty<RadioPacket>();
                 }
 
-                // Check for duplicate (already in buffer)
+                // Check for duplicate
                 if (_buffer.ContainsKey(packet.PacketId))
                 {
-                    Logger.Trace($"Duplicate packet dropped: Id={packet.PacketId}");
                     return Array.Empty<RadioPacket>();
                 }
 
                 // Add to buffer
                 _buffer[packet.PacketId] = packet;
-
-                // Update timestamps - use the earliest packet's timestamp as head
-                if (_headPacketTimestamp == DateTime.MinValue || (_buffer.Count > 0 && _buffer.Values.First().Timestamp < _headPacketTimestamp))
-                {
-                    _headPacketTimestamp = _buffer.Values.First().Timestamp;
-                }
-                
-                // Tail is always the latest timestamp
-                if (_tailPacketTimestamp == DateTime.MinValue || packet.Timestamp > _tailPacketTimestamp)
-                {
-                    _tailPacketTimestamp = packet.Timestamp;
-                }
-
-                // Drop oldest if overflow (SRS pattern - maintain capacity) - DO THIS BEFORE EMISSION DECISION
-                while (_buffer.Count > _maxCapacity)
-                {
-                    var oldest = _buffer.First();
-                    _buffer.Remove(oldest.Key);
-                    Interlocked.Increment(ref _packetsDropped);
-                    Logger.Warn($"Buffer overflow - dropped packet: Id={oldest.Key}");
-                    
-                    // Update head timestamp after dropping
-                    if (_buffer.Count > 0)
-                    {
-                        _headPacketTimestamp = _buffer.Values.First().Timestamp;
-                    }
-                }
-
-                // Update depth AFTER overflow handling
                 _currentDepth = _buffer.Count;
 
-                // Calculate buffer duration using latest PTS minus head PTS
-                var bufferDurationMs = (_tailPacketTimestamp - _headPacketTimestamp).TotalMilliseconds;
+                // OPTIMIZED: Incremental timestamp tracking (no full scan)
+                if (_earliestBufferedTimestamp == DateTime.MinValue || packet.Timestamp < _earliestBufferedTimestamp)
+                {
+                    _earliestBufferedTimestamp = packet.Timestamp;
+                }
+                if (_latestBufferedTimestamp == DateTime.MinValue || packet.Timestamp > _latestBufferedTimestamp)
+                {
+                    _latestBufferedTimestamp = packet.Timestamp;
+                }
 
-                // Emit packets ONLY when buffer depth >= target duration
-                // Do NOT use capacity-based emission here - that's only for gap handling in EmitPacketsLocked
-                if (bufferDurationMs >= _targetDepthMs)
+                // Handle overflow - drop oldest BY TIMESTAMP (not PacketId) to better handle shuffled data
+                if (_buffer.Count > _maxCapacity)
+                {
+                    // Find packet with oldest timestamp (likely to be emitted soon anyway)
+                    var oldestByTime = _buffer.Values.OrderBy(p => p.Timestamp).First();
+                    _buffer.Remove(oldestByTime.PacketId);
+                    Interlocked.Increment(ref _packetsDropped);
+                    Logger.Warn($"Buffer overflow - dropped packet: Id={oldestByTime.PacketId} (oldest by timestamp)");
+                    
+                    // If we dropped the earliest timestamp, recalculate it
+                    if (oldestByTime.Timestamp == _earliestBufferedTimestamp && _buffer.Count > 0)
+                    {
+                        _earliestBufferedTimestamp = _buffer.Values.Min(p => p.Timestamp);
+                    }
+                    
+                    _currentDepth = _buffer.Count;
+                }
+
+                // OPTIMIZED: Fast-path emission check
+                var bufferDurationMs = (_latestBufferedTimestamp - _earliestBufferedTimestamp).TotalMilliseconds;
+                
+                // Emit when duration >= target OR buffer has 10+ packets (prevents deadlock on shuffled data)
+                if (bufferDurationMs >= _targetDepthMs || _buffer.Count >= 10)
                 {
                     return EmitPacketsLocked();
                 }
@@ -129,64 +127,97 @@ namespace AeroDebrief.Core.Audio
         }
 
         /// <summary>
-        /// Emits packets in order (must be called within lock)
-        /// Uses List<T> pre-allocation to reduce allocations
-        /// Handles gaps with timeout mechanism
+        /// SRS-INSPIRED: Creates a silence packet to fill gaps in voice transmission
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private RadioPacket CreateSilencePacket(ulong packetId, RadioPacket templatePacket)
+        {
+            // Calculate timestamp based on packet spacing (typically 40ms for Opus frames)
+            var timestamp = templatePacket.Timestamp.AddMilliseconds(-40); // One packet duration back
+            
+            return new RadioPacket
+            {
+                PacketId = packetId,
+                Timestamp = timestamp,
+                Frequency = templatePacket.Frequency,
+                Modulation = templatePacket.Modulation,
+                Encryption = templatePacket.Encryption,
+                TransmitterUnitId = templatePacket.TransmitterUnitId,
+                TransmitterGuid = templatePacket.TransmitterGuid,
+                Coalition = templatePacket.Coalition,
+                SampleRate = templatePacket.SampleRate,
+                ChannelCount = templatePacket.ChannelCount,
+                AudioPayload = new byte[0], // Empty payload = silence
+                PlayerData = templatePacket.PlayerData
+            };
+        }
+
+        /// <summary>
+        /// OPTIMIZED: Streamlined emission with silence insertion for gaps (SRS pattern)
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private List<RadioPacket> EmitPacketsLocked()
         {
-            var emitted = new List<RadioPacket>(Math.Min(_buffer.Count, 32)); // Pre-allocate reasonable size
+            var emitted = new List<RadioPacket>(Math.Min(_buffer.Count, 32));
 
             while (_buffer.Count > 0)
             {
                 var first = _buffer.First();
                 var firstKey = first.Key;
 
-                // Check if this is the next sequential packet
-                ulong expectedNextId = _lastSequentialPacketId == 0 ? _buffer.Keys.Min() : _lastSequentialPacketId + 1;
-                bool isSequential = firstKey == expectedNextId;
-
-                // Force emission if buffer is 80% full (capacity pressure)
-                bool shouldForceEmit = _buffer.Count >= (_maxCapacity * 4 / 5);
+                // Determine expected next packet
+                ulong expectedNextId = _lastSequentialPacketId == 0 
+                    ? _buffer.Keys.Min() 
+                    : _lastSequentialPacketId + 1;
                 
-                // Check for sequence gap
-                if (!shouldForceEmit && !isSequential)
+                bool isSequential = firstKey == expectedNextId;
+                bool shouldForceEmit = false;
+
+                // Check if we should force emission past a gap
+                if (!isSequential && firstKey > expectedNextId)
                 {
-                    // There's a gap - check if we should skip the missing packet(s)
-                    bool hasGap = firstKey > expectedNextId;
+                    ulong gapSize = firstKey - expectedNextId;
                     
-                    if (hasGap)
+                    // SRS-INSPIRED: Insert silence for small gaps (max 4 packets like SRS)
+                    // This maintains audio timing while handling missing voice packets
+                    if (gapSize <= 4)
                     {
-                        // We have a gap. Check if we should give up waiting for missing packet(s):
-                        // 1. Buffer is 80% full (capacity pressure) - force emission to prevent overflow
-                        // 2. Buffer duration exceeds 2x target depth (we've waited long enough)
-                        // 3. Timestamp gap between first buffered packet and next packet is too large
-                        
-                        ulong gapSize = firstKey - expectedNextId;
-                        
-                        if (_buffer.Count >= (_maxCapacity * 4 / 5))
+                        // Insert silence packets to fill the gap
+                        for (ulong i = expectedNextId; i < firstKey && i < expectedNextId + 4; i++)
                         {
-                            Logger.Warn($"Forcing emission past gap due to capacity: Expected {expectedNextId}, have {firstKey}, buffer depth={_buffer.Count}");
-                            shouldForceEmit = true;
+                            var silencePacket = CreateSilencePacket(i, first.Value);
+                            emitted.Add(silencePacket);
+                            Interlocked.Increment(ref _packetsEmitted);
+                            Interlocked.Increment(ref _silencePacketsInserted);
+                            _lastSequentialPacketId = i;
                         }
-                        else if (_buffer.Count >= 10)
+                        
+                        Logger.Debug($"Inserted {Math.Min(gapSize, 4)} silence packets for gap: {expectedNextId} to {firstKey - 1}");
+                        
+                        // Now the current packet becomes sequential
+                        isSequential = true;
+                    }
+                    else
+                    {
+                        // Large gap - force emit conditions:
+                        // 1. Buffer >= 80% capacity (prevent overflow)
+                        // 2. Buffer >= 10 packets (prevent blocking on shuffled data)
+                        if (_buffer.Count >= (_maxCapacity * 4 / 5) || _buffer.Count >= 10)
                         {
-                            // Force past gap when buffer has accumulated 10+ packets
-                            Logger.Warn($"Forcing emission past gap: Expected {expectedNextId}, have {firstKey}, buffer depth={_buffer.Count}");
                             shouldForceEmit = true;
+                            Logger.Warn($"Forcing emission past large gap ({gapSize} packets): {expectedNextId} to {firstKey}");
                         }
                         else
                         {
-                            // Check timestamp gap between consecutive packets
-                            var packetsAfterFirst = _buffer.Where(p => p.Key > firstKey).Take(1).ToList();
-                            if (packetsAfterFirst.Any())
+                            // Check timestamp gap (prevent waiting forever for missing packets)
+                            var nextPacket = _buffer.Values.FirstOrDefault(p => p.PacketId > firstKey);
+                            if (nextPacket != null)
                             {
-                                var gapDuration = (packetsAfterFirst[0].Value.Timestamp - first.Value.Timestamp).TotalMilliseconds;
+                                var gapDuration = (nextPacket.Timestamp - first.Value.Timestamp).TotalMilliseconds;
                                 if (gapDuration > _maxGapMs)
                                 {
-                                    Logger.Warn($"Gap timeout: Missing packets before {firstKey}, gap={gapDuration:F1}ms");
                                     shouldForceEmit = true;
+                                    Logger.Warn($"Forcing emission due to time gap: {gapDuration:F1}ms");
                                 }
                             }
                         }
@@ -195,10 +226,10 @@ namespace AeroDebrief.Core.Audio
 
                 if (isSequential || shouldForceEmit)
                 {
+                    // Emit packet
                     _buffer.Remove(firstKey);
                     _lastEmittedPacketId = firstKey;
                     
-                    // Only update sequential ID if this was actually sequential
                     if (isSequential)
                     {
                         _lastSequentialPacketId = firstKey;
@@ -206,29 +237,25 @@ namespace AeroDebrief.Core.Audio
                     
                     emitted.Add(first.Value);
                     Interlocked.Increment(ref _packetsEmitted);
-                    Interlocked.Decrement(ref _currentDepth);
+                    _currentDepth = _buffer.Count;
 
-                    // Update head timestamp
-                    if (_buffer.Count > 0)
+                    // OPTIMIZED: Update timestamps incrementally
+                    if (_buffer.Count == 0)
                     {
-                        _headPacketTimestamp = _buffer.Values.First().Timestamp;
+                        _earliestBufferedTimestamp = DateTime.MinValue;
+                        _latestBufferedTimestamp = DateTime.MinValue;
                     }
-                    else
+                    else if (first.Value.Timestamp == _earliestBufferedTimestamp)
                     {
-                        _headPacketTimestamp = DateTime.MinValue;
-                        _tailPacketTimestamp = DateTime.MinValue;
+                        // Only recalculate if we emitted the earliest packet
+                        _earliestBufferedTimestamp = _buffer.Values.Min(p => p.Timestamp);
                     }
                 }
                 else
                 {
-                    break; // Gap in sequence and no timeout yet
+                    // Gap in sequence, stop emitting
+                    break;
                 }
-            }
-
-            if (emitted.Count > 0)
-            {
-                var bufferDurationMs = _buffer.Count > 0 ? (_tailPacketTimestamp - _headPacketTimestamp).TotalMilliseconds : 0;
-                Logger.Trace($"Emitted {emitted.Count} packets, buffer={_buffer.Count}, duration={bufferDurationMs:F1}ms");
             }
 
             return emitted;
@@ -243,18 +270,44 @@ namespace AeroDebrief.Core.Audio
             lock (_lock)
             {
                 var allPackets = new List<RadioPacket>(_buffer.Count);
-                allPackets.AddRange(_buffer.Values.OrderBy(p => p.PacketId));
+                
+                // SRS-INSPIRED: Fill gaps with silence during flush
+                if (_buffer.Count > 0)
+                {
+                    var orderedPackets = _buffer.Values.OrderBy(p => p.PacketId).ToList();
+                    ulong lastId = 0;
+                    
+                    foreach (var packet in orderedPackets)
+                    {
+                        // Fill small gaps with silence
+                        if (lastId > 0 && packet.PacketId > lastId + 1)
+                        {
+                            ulong gapSize = packet.PacketId - (lastId + 1);
+                            if (gapSize <= 4) // Max 4 silence packets like SRS
+                            {
+                                for (ulong i = lastId + 1; i < packet.PacketId && i < lastId + 5; i++)
+                                {
+                                    var silencePacket = CreateSilencePacket(i, packet);
+                                    allPackets.Add(silencePacket);
+                                    Interlocked.Increment(ref _packetsEmitted);
+                                    Interlocked.Increment(ref _silencePacketsInserted);
+                                }
+                            }
+                        }
+                        
+                        allPackets.Add(packet);
+                        _lastEmittedPacketId = packet.PacketId;
+                        Interlocked.Increment(ref _packetsEmitted);
+                        lastId = packet.PacketId;
+                    }
+                }
                 
                 _buffer.Clear();
                 _currentDepth = 0;
-                
-                foreach (var packet in allPackets)
-                {
-                    _lastEmittedPacketId = packet.PacketId;
-                    Interlocked.Increment(ref _packetsEmitted);
-                }
+                _earliestBufferedTimestamp = DateTime.MinValue;
+                _latestBufferedTimestamp = DateTime.MinValue;
 
-                Logger.Debug($"Flushed {allPackets.Count} packets from buffer");
+                Logger.Debug($"Flushed {allPackets.Count} packets from buffer ({_silencePacketsInserted} silence packets inserted)");
                 return allPackets;
             }
         }
@@ -270,11 +323,12 @@ namespace AeroDebrief.Core.Audio
                 return new JitterBufferStats
                 {
                     CurrentDepth = _currentDepth,
-                    BufferDurationMs = (_tailPacketTimestamp - _headPacketTimestamp).TotalMilliseconds,
+                    BufferDurationMs = (_latestBufferedTimestamp - _earliestBufferedTimestamp).TotalMilliseconds,
                     PacketsAdded = PacketsAdded,
                     PacketsEmitted = PacketsEmitted,
                     PacketsDropped = PacketsDropped,
                     LatePackets = LatePackets,
+                    SilencePacketsInserted = SilencePacketsInserted,
                     TargetDepthMs = _targetDepthMs,
                     BufferUtilization = (double)_currentDepth / _maxCapacity
                 };
@@ -292,14 +346,15 @@ namespace AeroDebrief.Core.Audio
                 _buffer.Clear();
                 _lastEmittedPacketId = 0;
                 _lastSequentialPacketId = 0;
-                _headPacketTimestamp = DateTime.MinValue;
-                _tailPacketTimestamp = DateTime.MinValue;
+                _earliestBufferedTimestamp = DateTime.MinValue;
+                _latestBufferedTimestamp = DateTime.MinValue;
                 
                 Interlocked.Exchange(ref _currentDepth, 0);
                 Interlocked.Exchange(ref _packetsAdded, 0);
                 Interlocked.Exchange(ref _packetsEmitted, 0);
                 Interlocked.Exchange(ref _packetsDropped, 0);
                 Interlocked.Exchange(ref _latePackets, 0);
+                Interlocked.Exchange(ref _silencePacketsInserted, 0);
                 
                 Logger.Debug("JitterBuffer reset");
             }
@@ -317,6 +372,7 @@ namespace AeroDebrief.Core.Audio
         public long PacketsEmitted { get; init; }
         public long PacketsDropped { get; init; }
         public long LatePackets { get; init; }
+        public long SilencePacketsInserted { get; init; } // NEW
         public int TargetDepthMs { get; init; }
         public double BufferUtilization { get; init; }
 
@@ -324,7 +380,7 @@ namespace AeroDebrief.Core.Audio
         {
             return $"Depth={CurrentDepth}, Duration={BufferDurationMs:F1}ms (target={TargetDepthMs}ms), " +
                    $"Added={PacketsAdded}, Emitted={PacketsEmitted}, Dropped={PacketsDropped}, " +
-                   $"Late={LatePackets}, Utilization={BufferUtilization:P1}";
+                   $"Late={LatePackets}, Silence={SilencePacketsInserted}, Utilization={BufferUtilization:P1}";
         }
     }
 }
