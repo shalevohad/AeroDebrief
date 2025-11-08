@@ -165,6 +165,15 @@ namespace AeroDebrief.UI.Controls.Player
             remove => this.RemoveFilePanelRequestedHandler(value);
         }
 
+        /// <summary>
+        /// Raised when the user requests to open the server panel.
+        /// </summary>
+        public event RoutedEventHandler ServerPanelRequested
+        {
+            add => this.AddServerPanelRequestedHandler(value);
+            remove => this.RemoveServerPanelRequestedHandler(value);
+        }
+
         #endregion
 
         #region Constructor
@@ -180,11 +189,11 @@ namespace AeroDebrief.UI.Controls.Player
 
         /// <summary>
         /// Handles the Server Source button click.
-        /// Raises the SourceTypeSelected event with SourceType.Server.
+        /// Raises the ServerPanelRequested event to open the server panel.
         /// </summary>
         private void ServerSourceButton_Click(object sender, RoutedEventArgs e)
         {
-            this.RaiseSourceTypeSelected(SourceType.Server);
+            this.RaiseServerPanelRequested();
         }
 
         /// <summary>
@@ -203,6 +212,15 @@ namespace AeroDebrief.UI.Controls.Player
         private void OpenFilePanelButton_Click(object sender, RoutedEventArgs e)
         {
             this.RaiseFilePanelRequested();
+        }
+        
+        /// <summary>
+        /// Handles the Open Server Panel button click.
+        /// Raises the ServerPanelRequested event.
+        /// </summary>
+        private void OpenServerPanelButton_Click(object sender, RoutedEventArgs e)
+        {
+            this.RaiseServerPanelRequested();
         }
 
         #endregion

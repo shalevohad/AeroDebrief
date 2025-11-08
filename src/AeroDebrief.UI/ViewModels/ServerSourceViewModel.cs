@@ -24,12 +24,14 @@ namespace AeroDebrief.UI.ViewModels
         private AudioPacketRecorder? _recorder;
         private string _serverIp = "127.0.0.1";
         private int _serverPort = 5002;
+        private string _serverName = string.Empty;
         private bool _isConnected;
         private bool _isRecording;
         private string _connectionStatus = "Disconnected";
         private string? _serverVersion;
         private ServerBookmark? _selectedBookmark;
         private ObservableCollection<ServerBookmark> _bookmarks = new();
+        private bool _isTestingConnection;
 
         #region Properties
 
@@ -42,6 +44,7 @@ namespace AeroDebrief.UI.ViewModels
                 if (SetProperty(ref _serverIp, value))
                 {
                     OnPropertyChanged(nameof(CanConnect));
+                    OnPropertyChanged(nameof(CanTestConnection));
                 }
             }
         }
@@ -55,6 +58,20 @@ namespace AeroDebrief.UI.ViewModels
                 if (SetProperty(ref _serverPort, value))
                 {
                     OnPropertyChanged(nameof(CanConnect));
+                    OnPropertyChanged(nameof(CanTestConnection));
+                }
+            }
+        }
+
+        /// <summary>Server name (required for bookmarks)</summary>
+        public string ServerName
+        {
+            get => _serverName;
+            set
+            {
+                if (SetProperty(ref _serverName, value))
+                {
+                    OnPropertyChanged(nameof(CanAddBookmark));
                 }
             }
         }
@@ -70,6 +87,7 @@ namespace AeroDebrief.UI.ViewModels
                     OnPropertyChanged(nameof(CanConnect));
                     OnPropertyChanged(nameof(CanDisconnect));
                     OnPropertyChanged(nameof(CanRecord));
+                    OnPropertyChanged(nameof(CanTestConnection));
                     ConnectionStateChanged?.Invoke(value);
                 }
             }
@@ -124,11 +142,27 @@ namespace AeroDebrief.UI.ViewModels
             }
         }
 
+        /// <summary>Whether currently testing the connection to the server</summary>
+        public bool IsTestingConnection
+        {
+            get => _isTestingConnection;
+            private set
+            {
+                if (SetProperty(ref _isTestingConnection, value))
+                {
+                    OnPropertyChanged(nameof(CanConnect));
+                    OnPropertyChanged(nameof(CanTestConnection));
+                }
+            }
+        }
+
         // Command enablement properties
-        public bool CanConnect => !IsConnected && !string.IsNullOrWhiteSpace(ServerIp) && ServerPort > 0;
+        public bool CanConnect => !IsConnected && !IsTestingConnection && !string.IsNullOrWhiteSpace(ServerIp) && ServerPort > 0;
         public bool CanDisconnect => IsConnected;
         public bool CanRecord => IsConnected && !IsRecording;
         public bool CanStopRecording => IsRecording;
+        public bool CanAddBookmark => !string.IsNullOrWhiteSpace(ServerName) && !string.IsNullOrWhiteSpace(ServerIp) && ServerPort > 0;
+        public bool CanTestConnection => !IsConnected && !IsTestingConnection && !string.IsNullOrWhiteSpace(ServerIp) && ServerPort > 0;
 
         #endregion
 
@@ -154,6 +188,7 @@ namespace AeroDebrief.UI.ViewModels
         public ICommand MoveBookmarkDownCommand { get; }
         public ICommand ImportBookmarksCommand { get; }
         public ICommand ExportBookmarksCommand { get; }
+        public ICommand TestConnectionCommand { get; }
 
         #endregion
 
@@ -166,12 +201,13 @@ namespace AeroDebrief.UI.ViewModels
             DisconnectCommand = new RelayCommand(ExecuteDisconnect, () => CanDisconnect);
             RecordCommand = new RelayCommand(ExecuteRecord, () => CanRecord);
             StopRecordingCommand = new RelayCommand(ExecuteStopRecording, () => CanStopRecording);
-            AddBookmarkCommand = new RelayCommand(ExecuteAddBookmark);
+            AddBookmarkCommand = new RelayCommand(ExecuteAddBookmark, () => CanAddBookmark);
             DeleteBookmarkCommand = new RelayCommand<ServerBookmark>(ExecuteDeleteBookmark);
             MoveBookmarkUpCommand = new RelayCommand<ServerBookmark>(ExecuteMoveBookmarkUp);
             MoveBookmarkDownCommand = new RelayCommand<ServerBookmark>(ExecuteMoveBookmarkDown);
             ImportBookmarksCommand = new RelayCommand(async () => await ExecuteImportBookmarksAsync());
             ExportBookmarksCommand = new RelayCommand(async () => await ExecuteExportBookmarksAsync());
+            TestConnectionCommand = new RelayCommand(async () => await ExecuteTestConnectionAsync(), () => CanTestConnection);
 
             // Load bookmarks from settings
             LoadBookmarksFromSettings();
@@ -288,17 +324,34 @@ namespace AeroDebrief.UI.ViewModels
 
         private void ExecuteAddBookmark()
         {
-            var newBookmark = new ServerBookmark
-            {
-                Name = $"Server {Bookmarks.Count + 1}",
-                Ip = ServerIp,
-                Port = ServerPort
-            };
-
-            Bookmarks.Add(newBookmark);
-            SaveBookmarksToSettings();
+            // Check if a bookmark with the same IP and Port already exists
+            var existingBookmark = Bookmarks.FirstOrDefault(b => 
+                b.Ip == ServerIp && b.Port == ServerPort);
             
-            Logger.Info($"Added bookmark: {newBookmark.Name}");
+            if (existingBookmark != null)
+            {
+                // Update existing bookmark name
+                existingBookmark.Name = ServerName;
+                SaveBookmarksToSettings();
+                Logger.Info($"Updated bookmark: {existingBookmark.Name}");
+            }
+            else
+            {
+                // Add new bookmark
+                var newBookmark = new ServerBookmark
+                {
+                    Name = ServerName,
+                    Ip = ServerIp,
+                    Port = ServerPort
+                };
+
+                Bookmarks.Add(newBookmark);
+                SaveBookmarksToSettings();
+                Logger.Info($"Added bookmark: {newBookmark.Name}");
+            }
+            
+            // Don't clear the server name - keep it for the current session
+            // ServerName = string.Empty;
         }
 
         private void ExecuteDeleteBookmark(ServerBookmark? bookmark)
@@ -341,33 +394,57 @@ namespace AeroDebrief.UI.ViewModels
         {
             try
             {
-                // TODO: Show file dialog to select JSON file
-                // For now, use a hardcoded path for demonstration
-                var filePath = "server_bookmarks.json";
-
-                if (!File.Exists(filePath))
+                // Use Microsoft.Win32.OpenFileDialog for file selection
+                var dialog = new Microsoft.Win32.OpenFileDialog
                 {
-                    Logger.Warn($"Import file not found: {filePath}");
-                    return;
-                }
+                    Title = "Import Server Bookmarks",
+                    Filter = "JSON Files (*.json)|*.json|All Files (*.*)|*.*",
+                    DefaultExt = ".json",
+                    InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)
+                };
 
-                var json = await File.ReadAllTextAsync(filePath);
-                var importedBookmarks = JsonSerializer.Deserialize<ServerBookmark[]>(json);
-
-                if (importedBookmarks != null)
+                if (dialog.ShowDialog() == true)
                 {
-                    foreach (var bookmark in importedBookmarks)
+                    var filePath = dialog.FileName;
+                    var json = await File.ReadAllTextAsync(filePath);
+                    var importedBookmarks = JsonSerializer.Deserialize<ServerBookmark[]>(json);
+
+                    if (importedBookmarks != null && importedBookmarks.Length > 0)
                     {
-                        Bookmarks.Add(bookmark);
-                    }
+                        // Merge with existing bookmarks (avoid duplicates based on IP:Port)
+                        int addedCount = 0;
+                        foreach (var importedBookmark in importedBookmarks)
+                        {
+                            var existing = Bookmarks.FirstOrDefault(b => 
+                                b.Ip == importedBookmark.Ip && b.Port == importedBookmark.Port);
+                            
+                            if (existing == null)
+                            {
+                                Bookmarks.Add(importedBookmark);
+                                addedCount++;
+                            }
+                            else
+                            {
+                                // Update existing bookmark name
+                                existing.Name = importedBookmark.Name;
+                            }
+                        }
 
-                    SaveBookmarksToSettings();
-                    Logger.Info($"Imported {importedBookmarks.Length} bookmarks from {filePath}");
+                        SaveBookmarksToSettings();
+                        ConnectionStatus = $"Imported {addedCount} new bookmarks, updated {importedBookmarks.Length - addedCount} existing";
+                        Logger.Info($"Imported {addedCount} new bookmarks from {filePath}, updated {importedBookmarks.Length - addedCount}");
+                    }
+                    else
+                    {
+                        ConnectionStatus = "No bookmarks found in file";
+                        Logger.Warn($"No valid bookmarks found in {filePath}");
+                    }
                 }
             }
             catch (Exception ex)
             {
                 Logger.Error(ex, "Failed to import bookmarks");
+                ConnectionStatus = $"Import failed: {ex.Message}";
             }
         }
 
@@ -375,19 +452,112 @@ namespace AeroDebrief.UI.ViewModels
         {
             try
             {
-                // TODO: Show save file dialog
-                // For now, use a hardcoded path for demonstration
-                var filePath = "server_bookmarks.json";
+                if (Bookmarks.Count == 0)
+                {
+                    ConnectionStatus = "No bookmarks to export";
+                    Logger.Warn("Attempted to export but no bookmarks exist");
+                    return;
+                }
 
-                var options = new JsonSerializerOptions { WriteIndented = true };
-                var json = JsonSerializer.Serialize(Bookmarks.ToArray(), options);
-                
-                await File.WriteAllTextAsync(filePath, json);
-                Logger.Info($"Exported {Bookmarks.Count} bookmarks to {filePath}");
+                // Use Microsoft.Win32.SaveFileDialog for file selection
+                var dialog = new Microsoft.Win32.SaveFileDialog
+                {
+                    Title = "Export Server Bookmarks",
+                    Filter = "JSON Files (*.json)|*.json|All Files (*.*)|*.*",
+                    DefaultExt = ".json",
+                    FileName = "server_bookmarks.json",
+                    InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)
+                };
+
+                if (dialog.ShowDialog() == true)
+                {
+                    var filePath = dialog.FileName;
+                    var options = new JsonSerializerOptions { WriteIndented = true };
+                    var json = JsonSerializer.Serialize(Bookmarks.ToArray(), options);
+                    
+                    await File.WriteAllTextAsync(filePath, json);
+                    ConnectionStatus = $"Exported {Bookmarks.Count} bookmarks";
+                    Logger.Info($"Exported {Bookmarks.Count} bookmarks to {filePath}");
+                }
             }
             catch (Exception ex)
             {
                 Logger.Error(ex, "Failed to export bookmarks");
+                ConnectionStatus = $"Export failed: {ex.Message}";
+            }
+        }
+
+        private async Task ExecuteTestConnectionAsync()
+        {
+            AudioPacketRecorder? testRecorder = null;
+            bool testPassed = false;
+            string? testServerVersion = null;
+            
+            try
+            {
+                IsTestingConnection = true;
+                ConnectionStatus = "Testing connection...";
+                Logger.Info($"Testing connection to {ServerIp}:{ServerPort}");
+
+                testRecorder = new AudioPacketRecorder();
+                
+                // Wire up connection events for test
+                testRecorder.ConnectionStatusChanged += (status) =>
+                {
+                    if (status.Connected)
+                    {
+                        testPassed = true;
+                        testServerVersion = testRecorder.ServerVersion;
+                        Logger.Info($"Connection test successful - Server version: {testServerVersion}");
+                    }
+                    else
+                    {
+                        // Only show error if we haven't already passed the test
+                        // (ignore disconnect errors after successful test)
+                        if (!testPassed)
+                        {
+                            ConnectionStatus = $"? Test failed - {status.Error}";
+                            Logger.Warn($"Connection test failed: {status.Error}");
+                        }
+                    }
+                };
+
+                await testRecorder.ConnectAsync(ServerIp, ServerPort);
+
+                // Wait a moment for connection status
+                await Task.Delay(2000);
+
+                if (testPassed)
+                {
+                    // Test passed - show success message
+                    ConnectionStatus = $"? Test passed - Server reachable (v{testServerVersion})";
+                    
+                    // Auto-disconnect after successful test
+                    testRecorder.Disconnect();
+                    Logger.Info("Auto-disconnecting after successful test");
+                }
+                else
+                {
+                    // Test failed - disconnect and status already set by event handler
+                    testRecorder.Disconnect();
+                    
+                    if (string.IsNullOrEmpty(ConnectionStatus) || ConnectionStatus == "Testing connection...")
+                    {
+                        ConnectionStatus = "? Test failed - Could not reach server";
+                    }
+                }
+                
+                testRecorder = null;
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, "Connection test threw exception");
+                ConnectionStatus = $"? Test failed - {ex.Message}";
+            }
+            finally
+            {
+                testRecorder?.Disconnect();
+                IsTestingConnection = false;
             }
         }
 
@@ -400,8 +570,8 @@ namespace AeroDebrief.UI.ViewModels
             if (status.Connected)
             {
                 IsConnected = true;
-                ConnectionStatus = "Connected to SRS server";
                 ServerVersion = _recorder?.ServerVersion;
+                ConnectionStatus = $"Connected to SRS server (v{ServerVersion ?? "unknown"})";
                 
                 Logger.Info($"Connected to SRS server (version: {ServerVersion ?? "unknown"})");
                 
@@ -426,6 +596,7 @@ namespace AeroDebrief.UI.ViewModels
         {
             ServerIp = bookmark.Ip;
             ServerPort = bookmark.Port;
+            ServerName = bookmark.Name;
             Logger.Debug($"Loaded bookmark: {bookmark.Name}");
         }
 
@@ -433,16 +604,45 @@ namespace AeroDebrief.UI.ViewModels
         {
             try
             {
-                var settings = PlayerSettingsStore.Instance;
-                // TODO: Load bookmarks from settings when settings store is extended
-                // For now, add some default bookmarks
-                Bookmarks.Add(new ServerBookmark { Name = "Local Server", Ip = "127.0.0.1", Port = 5002 });
+                // Store bookmarks in user profile AppData\Roaming
+                var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+                var aeroDebriefPath = System.IO.Path.Combine(appDataPath, "AeroDebrief");
+                var bookmarksPath = System.IO.Path.Combine(aeroDebriefPath, "server_bookmarks.json");
                 
-                Logger.Debug($"Loaded {Bookmarks.Count} bookmarks from settings");
+                // Ensure directory exists
+                if (!Directory.Exists(aeroDebriefPath))
+                {
+                    Directory.CreateDirectory(aeroDebriefPath);
+                    Logger.Info($"Created AeroDebrief user data directory: {aeroDebriefPath}");
+                }
+                
+                if (File.Exists(bookmarksPath))
+                {
+                    var json = File.ReadAllText(bookmarksPath);
+                    var loadedBookmarks = JsonSerializer.Deserialize<ServerBookmark[]>(json);
+                    
+                    if (loadedBookmarks != null)
+                    {
+                        // Sort by Name descending (Z-A)
+                        var sortedBookmarks = loadedBookmarks.OrderByDescending(b => b.Name);
+                        
+                        Bookmarks.Clear();
+                        foreach (var bookmark in sortedBookmarks)
+                        {
+                            Bookmarks.Add(bookmark);
+                        }
+                        
+                        Logger.Debug($"Loaded {Bookmarks.Count} bookmarks from {bookmarksPath}");
+                    }
+                }
+                else
+                {
+                    Logger.Debug($"No bookmarks file found at {bookmarksPath}, starting with empty list");
+                }
             }
             catch (Exception ex)
             {
-                Logger.Warn(ex, "Failed to load bookmarks from settings");
+                Logger.Warn(ex, "Failed to load bookmarks from user profile");
             }
         }
 
@@ -450,13 +650,36 @@ namespace AeroDebrief.UI.ViewModels
         {
             try
             {
-                var settings = PlayerSettingsStore.Instance;
-                // TODO: Save bookmarks to settings when settings store is extended
-                Logger.Debug($"Saved {Bookmarks.Count} bookmarks to settings");
+                // Store bookmarks in user profile AppData\Roaming
+                var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+                var aeroDebriefPath = System.IO.Path.Combine(appDataPath, "AeroDebrief");
+                var bookmarksPath = System.IO.Path.Combine(aeroDebriefPath, "server_bookmarks.json");
+                
+                // Ensure directory exists
+                if (!Directory.Exists(aeroDebriefPath))
+                {
+                    Directory.CreateDirectory(aeroDebriefPath);
+                }
+                
+                // Sort by Name descending before saving
+                var sortedBookmarks = Bookmarks.OrderByDescending(b => b.Name).ToArray();
+                
+                var options = new JsonSerializerOptions { WriteIndented = true };
+                var json = JsonSerializer.Serialize(sortedBookmarks, options);
+                
+                File.WriteAllText(bookmarksPath, json);
+                Logger.Debug($"Saved {Bookmarks.Count} bookmarks to {bookmarksPath}");
+                
+                // Update the observable collection with sorted order
+                Bookmarks.Clear();
+                foreach (var bookmark in sortedBookmarks)
+                {
+                    Bookmarks.Add(bookmark);
+                }
             }
             catch (Exception ex)
             {
-                Logger.Warn(ex, "Failed to save bookmarks to settings");
+                Logger.Warn(ex, "Failed to save bookmarks to user profile");
             }
         }
 
@@ -508,10 +731,28 @@ namespace AeroDebrief.UI.ViewModels
     /// <summary>
     /// Server bookmark data model
     /// </summary>
-    public class ServerBookmark
+    public class ServerBookmark : ViewModelBase
     {
-        public string Name { get; set; } = string.Empty;
-        public string Ip { get; set; } = string.Empty;
-        public int Port { get; set; }
+        private string _name = string.Empty;
+        private string _ip = string.Empty;
+        private int _port;
+
+        public string Name
+        {
+            get => _name;
+            set => SetProperty(ref _name, value);
+        }
+
+        public string Ip
+        {
+            get => _ip;
+            set => SetProperty(ref _ip, value);
+        }
+
+        public int Port
+        {
+            get => _port;
+            set => SetProperty(ref _port, value);
+        }
     }
 }

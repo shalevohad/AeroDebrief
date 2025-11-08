@@ -31,7 +31,8 @@
                                ChangeSourceCommand="{Binding ChangeSourceCommand}"
                                OpenSettingsCommand="{Binding OpenSettingsCommand}"
                                SourceTypeSelected="OnSourceTypeSelected"
-                               FilePanelRequested="OnFilePanelRequested" Margin="0,0,0,64" Grid.RowSpan="2"/>
+                               FilePanelRequested="OnFilePanelRequested"
+                               ServerPanelRequested="OnServerPanelRequested" Margin="0,0,0,64" Grid.RowSpan="2"/>
 
         <!-- TACVIEW STATUS - Single-line status bar below player header -->
         <!-- Hidden when no source is loaded, visible (but grayed out) when disconnected -->
@@ -135,5 +136,15 @@
                                   EnableKeyboardShortcuts="True"
                                   CloseOnClickOutside="True"
                                   PanelClosed="OnFileSourcePanelClosed"/>
+
+        <!-- SERVER SOURCE PANEL OVERLAY -->
+        <player:FileSourcePanelOverlay Grid.Row="0" Grid.RowSpan="3"
+                                  x:Name="ServerOverlay"
+                                  IsOpen="{Binding IsServerSourcePanelOpen, Mode=TwoWay}"
+                                  PanelWidth="400"
+                                  PanelTitle="Connect to SRS Server"
+                                  EnableKeyboardShortcuts="True"
+                                  CloseOnClickOutside="True"
+                                  PanelClosed="OnServerSourcePanelClosed"/>
     </Grid>
 </UserControl>

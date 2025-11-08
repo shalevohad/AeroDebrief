@@ -32,6 +32,7 @@ namespace AeroDebrief.UI.Controls
         #region Fields
 
         private bool _fileLoadedEventSubscribed = false;
+        private bool _serverConnectionEventSubscribed = false;
 
         #endregion
 
@@ -78,6 +79,17 @@ namespace AeroDebrief.UI.Controls
                 };
                 FileOverlay.PanelContent = fileSourcePanel;
             }
+
+            // Initialize ServerSourcePanel content
+            if (ViewModel?.ServerSource != null && ServerOverlay != null)
+            {
+                // Create ServerSourcePanel and set as overlay content
+                var serverSourcePanel = new ServerSourcePanel
+                {
+                    DataContext = ViewModel.ServerSource
+                };
+                ServerOverlay.PanelContent = serverSourcePanel;
+            }
         }
 
         /// <summary>
@@ -86,14 +98,25 @@ namespace AeroDebrief.UI.Controls
         private void UnifiedPlayerControl_DataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
         {
             // Unsubscribe from old ViewModel
-            if (e.OldValue is UnifiedPlayerViewModel oldViewModel && oldViewModel.FileSource != null)
+            if (e.OldValue is UnifiedPlayerViewModel oldViewModel)
             {
-                oldViewModel.FileSource.FileLoaded -= OnFileLoaded;
-                _fileLoadedEventSubscribed = false;
+                if (oldViewModel.FileSource != null)
+                {
+                    oldViewModel.FileSource.FileLoaded -= OnFileLoaded;
+                    _fileLoadedEventSubscribed = false;
+                }
+                
+                if (oldViewModel.ServerSource != null)
+                {
+                    oldViewModel.ServerSource.ConnectionStateChanged -= OnServerConnected;
+                    _serverConnectionEventSubscribed = false;
+                }
             }
 
             // Subscribe to new ViewModel
             var newViewModel = e.NewValue as UnifiedPlayerViewModel;
+            
+            // Subscribe to file loaded events
             if (newViewModel?.FileSource != null && !_fileLoadedEventSubscribed)
             {
                 newViewModel.FileSource.FileLoaded += OnFileLoaded;
@@ -109,6 +132,23 @@ namespace AeroDebrief.UI.Controls
                     FileOverlay.PanelContent = fileSourcePanel;
                 }
             }
+            
+            // Subscribe to server connection events
+            if (newViewModel?.ServerSource != null && !_serverConnectionEventSubscribed)
+            {
+                newViewModel.ServerSource.ConnectionStateChanged += OnServerConnected;
+                _serverConnectionEventSubscribed = true;
+                
+                // Update ServerSourcePanel content if overlay exists
+                if (ServerOverlay != null)
+                {
+                    var serverSourcePanel = new ServerSourcePanel
+                    {
+                        DataContext = newViewModel.ServerSource
+                    };
+                    ServerOverlay.PanelContent = serverSourcePanel;
+                }
+            }
         }
 
         /// <summary>
@@ -117,7 +157,27 @@ namespace AeroDebrief.UI.Controls
         /// </summary>
         private void OnFileLoaded(string filePath)
         {
-            FileOverlay?.Close();
+            // Marshal to UI thread since this event can come from background threads
+            Dispatcher.BeginInvoke(() =>
+            {
+                FileOverlay?.Close();
+            });
+        }
+        
+        /// <summary>
+        /// Handler for when server connection state changes.
+        /// Auto-closes the server panel when connected.
+        /// </summary>
+        private void OnServerConnected(bool isConnected)
+        {
+            if (isConnected)
+            {
+                // Marshal to UI thread since this event can come from background threads (network handlers)
+                Dispatcher.BeginInvoke(() =>
+                {
+                    ServerOverlay?.Close();
+                });
+            }
         }
 
         #endregion
@@ -154,6 +214,14 @@ namespace AeroDebrief.UI.Controls
         private void OnFilePanelRequested(object sender, RoutedEventArgs e)
         {
             FileOverlay?.Open();
+        }
+
+        /// <summary>
+        /// Handles server panel request from header control.
+        /// </summary>
+        private void OnServerPanelRequested(object sender, RoutedEventArgs e)
+        {
+            ServerOverlay?.Open();
         }
 
         #endregion
@@ -385,6 +453,14 @@ namespace AeroDebrief.UI.Controls
         /// Handles file source panel closed event.
         /// </summary>
         private void OnFileSourcePanelClosed(object sender, EventArgs e)
+        {
+            // Panel closed - can add additional logic if needed
+        }
+
+        /// <summary>
+        /// Handles server source panel closed event.
+        /// </summary>
+        private void OnServerSourcePanelClosed(object sender, EventArgs e)
         {
             // Panel closed - can add additional logic if needed
         }

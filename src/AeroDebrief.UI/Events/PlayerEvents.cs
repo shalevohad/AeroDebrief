@@ -196,6 +196,16 @@ namespace AeroDebrief.UI.Events
                 typeof(RoutedEventHandler),
                 typeof(PlayerEvents));
 
+        /// <summary>
+        /// Raised when the server panel is requested
+        /// </summary>
+        public static readonly RoutedEvent ServerPanelRequestedEvent =
+            EventManager.RegisterRoutedEvent(
+                "ServerPanelRequested",
+                RoutingStrategy.Bubble,
+                typeof(RoutedEventHandler),
+                typeof(PlayerEvents));
+
         #endregion
     }
 

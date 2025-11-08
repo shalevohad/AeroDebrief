@@ -4,116 +4,467 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
              xmlns:vm="clr-namespace:AeroDebrief.UI.ViewModels"
+             xmlns:fa="http://schemas.fontawesome.io/icons/"
+             xmlns:converters="clr-namespace:AeroDebrief.UI.Helpers"
              mc:Ignorable="d" 
              d:DesignHeight="450" d:DesignWidth="300"
+             Background="{StaticResource PrimaryBackgroundBrush}"
              d:DataContext="{d:DesignInstance Type=vm:ServerSourceViewModel}">
     
-    <Grid>
+    <UserControl.Resources>
+        <converters:InverseBoolConverter x:Key="InverseBoolConverter"/>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
+        <converters:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibilityConverter"/>
+    </UserControl.Resources>
+    
+    <Grid Margin="0">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
         
-        <!-- Header -->
-        <Border Grid.Row="0" 
-                Background="{DynamicResource AccentBrush}"
-                Padding="10,8">
-            <TextBlock Text="SRS SERVER" 
-                       FontWeight="Bold" 
-                       FontSize="12"
-                       Foreground="White"/>
-        </Border>
-        
-        <!-- Connection Info -->
-        <ScrollViewer Grid.Row="1" 
-                     VerticalScrollBarVisibility="Auto">
-            <StackPanel Margin="10">
+        <!-- Main Content Area -->
+        <ScrollViewer Grid.Row="0" 
+                     VerticalScrollBarVisibility="Auto"
+                     Padding="16">
+            <StackPanel>
                 
-                <!-- Connection Status -->
-                <GroupBox Header="Connection" Margin="0,0,0,10">
+                <!-- Server Connection Card -->
+                <Border Style="{StaticResource ModernCard}" Margin="0,0,0,16">
                     <StackPanel>
-                        <TextBlock Text="{Binding ConnectionStatus}" 
-                                   TextWrapping="Wrap"
-                                   Margin="0,5"/>
+                        <Grid Margin="0,0,0,12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            
+                            <fa:FontAwesome Grid.Column="0"
+                                          Icon="Server"
+                                          FontSize="20"
+                                          Foreground="{StaticResource AccentBrush}"
+                                          Margin="0,0,12,0"
+                                          VerticalAlignment="Center"/>
+                            
+                            <TextBlock Grid.Column="1"
+                                     Style="{StaticResource SubHeaderTextStyle}" 
+                                     Text="SRS Server Connection"
+                                     VerticalAlignment="Center"
+                                     Margin="0"/>
+                        </Grid>
                         
-                        <TextBlock Text="{Binding ServerVersion, StringFormat='Version: {0}'}" 
-                                   Visibility="{Binding IsConnected, Converter={StaticResource BoolToVisConverter}}"
-                                   FontSize="11"
-                                   Opacity="0.7"/>
-                    </StackPanel>
-                </GroupBox>
-                
-                <!-- Recording Controls -->
-                <GroupBox Header="Recording" 
-                         Margin="0,0,0,10"
-                         Visibility="{Binding IsConnected, Converter={StaticResource BoolToVisConverter}}">
-                    <StackPanel>
-                        <Button Content="Start Recording" 
-                                Command="{Binding RecordCommand}"
-                                Visibility="{Binding IsRecording, Converter={StaticResource InverseBoolToVisConverter}}"
-                                Style="{StaticResource ModernButtonStyle}"
-                                Margin="0,5"/>
+                        <!-- Server Name Input -->
+                        <TextBlock Text="Server Name" 
+                                   Style="{StaticResource BodyTextStyle}"
+                                   Foreground="{StaticResource TextPrimaryBrush}"
+                                   FontWeight="Medium"
+                                   Margin="0,0,0,4"/>
+                        <Border Margin="0,0,0,12"
+                              BorderBrush="{StaticResource BorderBrush}"
+                              BorderThickness="1"
+                              CornerRadius="4">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                
+                                <Border Grid.Column="0"
+                                      Background="{StaticResource TertiaryBackgroundBrush}"
+                                      BorderBrush="{StaticResource BorderBrush}"
+                                      BorderThickness="0,0,1,0"
+                                      Padding="8,6">
+                                    <fa:FontAwesome Icon="Tag"
+                                                  FontSize="14"
+                                                  Foreground="{StaticResource TextSecondaryBrush}"
+                                                  VerticalAlignment="Center"/>
+                                </Border>
+                                
+                                <TextBox Grid.Column="1"
+                                       Text="{Binding ServerName, UpdateSourceTrigger=PropertyChanged}"
+                                       BorderThickness="0"
+                                       Padding="8,6"
+                                       VerticalContentAlignment="Center"
+                                       Background="Transparent"
+                                       ToolTip="Required for adding to bookmarks"/>
+                            </Grid>
+                        </Border>
                         
-                        <Button Content="Stop Recording" 
-                                Command="{Binding StopRecordingCommand}"
-                                Visibility="{Binding IsRecording, Converter={StaticResource BoolToVisConverter}}"
-                                Style="{StaticResource ModernButtonStyle}"
-                                Margin="0,5"/>
+                        <!-- IP Address and Port (Side by Side) -->
+                        <Grid Margin="0,0,0,12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="8"/>
+                                <ColumnDefinition Width="100"/>
+                            </Grid.ColumnDefinitions>
+                            
+                            <!-- IP Address Input -->
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="Server IP Address" 
+                                           Style="{StaticResource BodyTextStyle}"
+                                           Foreground="{StaticResource TextPrimaryBrush}"
+                                           FontWeight="Medium"
+                                           Margin="0,0,0,4"/>
+                                <Border BorderBrush="{StaticResource BorderBrush}"
+                                      BorderThickness="1"
+                                      CornerRadius="4">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*" MinWidth="140"/>
+                                        </Grid.ColumnDefinitions>
+                                        
+                                        <Border Grid.Column="0"
+                                              Background="{StaticResource TertiaryBackgroundBrush}"
+                                              BorderBrush="{StaticResource BorderBrush}"
+                                              BorderThickness="0,0,1,0"
+                                              Padding="8,6">
+                                            <fa:FontAwesome Icon="Globe"
+                                                          FontSize="14"
+                                                          Foreground="{StaticResource TextSecondaryBrush}"
+                                                          VerticalAlignment="Center"/>
+                                        </Border>
+                                        
+                                        <TextBox Grid.Column="1"
+                                               Text="{Binding ServerIp, UpdateSourceTrigger=PropertyChanged}"
+                                               BorderThickness="0"
+                                               Padding="8,6"
+                                               VerticalContentAlignment="Center"
+                                               Background="Transparent"
+                                               MaxLength="15"
+                                               IsEnabled="{Binding IsConnected, Converter={StaticResource InverseBoolConverter}}"/>
+                                    </Grid>
+                                </Border>
+                            </StackPanel>
+                            
+                            <!-- Port Input -->
+                            <StackPanel Grid.Column="2">
+                                <TextBlock Text="Port" 
+                                           Style="{StaticResource BodyTextStyle}"
+                                           Foreground="{StaticResource TextPrimaryBrush}"
+                                           FontWeight="Medium"
+                                           Margin="0,0,0,4"/>
+                                <Border BorderBrush="{StaticResource BorderBrush}"
+                                      BorderThickness="1"
+                                      CornerRadius="4">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        
+                                        <Border Grid.Column="0"
+                                              Background="{StaticResource TertiaryBackgroundBrush}"
+                                              BorderBrush="{StaticResource BorderBrush}"
+                                              BorderThickness="0,0,1,0"
+                                              Padding="6,6">
+                                            <fa:FontAwesome Icon="Plug"
+                                                          FontSize="14"
+                                                          Foreground="{StaticResource TextSecondaryBrush}"
+                                                          VerticalAlignment="Center"/>
+                                        </Border>
+                                        
+                                        <TextBox Grid.Column="1"
+                                               Text="{Binding ServerPort, UpdateSourceTrigger=PropertyChanged}"
+                                               BorderThickness="0"
+                                               Padding="6,6"
+                                               VerticalContentAlignment="Center"
+                                               Background="Transparent"
+                                               MaxLength="5"
+                                               IsEnabled="{Binding IsConnected, Converter={StaticResource InverseBoolConverter}}"/>
+                                    </Grid>
+                                </Border>
+                            </StackPanel>
+                        </Grid>
+                        
+                        <!-- Connection Status -->
+                        <Border Background="{StaticResource TertiaryBackgroundBrush}"
+                              BorderBrush="{StaticResource BorderBrush}"
+                              BorderThickness="1"
+                              CornerRadius="4"
+                              Padding="12,8"
+                              Margin="0,0,0,12">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                
+                                <fa:FontAwesome Grid.Row="0" Grid.Column="0"
+                                              Icon="InfoCircle"
+                                              FontSize="14"
+                                              Foreground="{StaticResource AccentBrush}"
+                                              Margin="0,0,8,0"
+                                              VerticalAlignment="Center"/>
+                                
+                                <StackPanel Grid.Row="0" Grid.Column="1">
+                                    <TextBlock Text="{Binding ConnectionStatus}" 
+                                             Style="{StaticResource BodyTextStyle}"
+                                             Foreground="{StaticResource TextPrimaryBrush}"
+                                             TextWrapping="Wrap"/>
+                                    
+                                    <TextBlock Text="{Binding ServerVersion, StringFormat='Server Version: {0}'}" 
+                                             Visibility="{Binding IsConnected, Converter={StaticResource BoolToVisibilityConverter}}"
+                                             Style="{StaticResource BodyTextStyle}"
+                                             FontSize="10"
+                                             Margin="0,4,0,0"/>
+                                </StackPanel>
+                                
+                                <!-- Test Connection Button -->
+                                <Button Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
+                                      Command="{Binding TestConnectionCommand}"
+                                      Style="{StaticResource ModernSecondaryButton}"
+                                      HorizontalAlignment="Stretch"
+                                      Margin="0,8,0,0"
+                                      Visibility="{Binding IsConnected, Converter={StaticResource InverseBoolToVisibilityConverter}}">
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                        <fa:FontAwesome Icon="Stethoscope" 
+                                                      FontSize="12" 
+                                                      Margin="0,0,6,0"
+                                                      VerticalAlignment="Center"/>
+                                        <TextBlock Text="Test Connection" 
+                                                 FontSize="11"
+                                                 VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
+                            </Grid>
+                        </Border>
+                        
+                        <!-- Connect Button -->
+                        <Button Command="{Binding ConnectCommand}"
+                              Style="{StaticResource ModernButton}"
+                              HorizontalAlignment="Stretch"
+                              Visibility="{Binding IsConnected, Converter={StaticResource InverseBoolToVisibilityConverter}}">
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                <fa:FontAwesome Icon="Link" 
+                                              FontSize="14" 
+                                              Margin="0,0,8,0"
+                                              VerticalAlignment="Center"/>
+                                <TextBlock Text="Connect to Server" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                        
+                        <!-- Disconnect Button -->
+                        <Button Command="{Binding DisconnectCommand}"
+                              Style="{StaticResource ModernSecondaryButton}"
+                              HorizontalAlignment="Stretch"
+                              Visibility="{Binding IsConnected, Converter={StaticResource BoolToVisibilityConverter}}">
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                <fa:FontAwesome Icon="Unlink" 
+                                              FontSize="14" 
+                                              Margin="0,0,8,0"
+                                              VerticalAlignment="Center"/>
+                                <TextBlock Text="Disconnect" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
                     </StackPanel>
-                </GroupBox>
+                </Border>
                 
-                <!-- Server Bookmarks -->
-                <GroupBox Header="Bookmarks" Margin="0,0,0,10">
+                <!-- Server Bookmarks Card -->
+                <Border Style="{StaticResource ModernCard}" Margin="0,0,0,0">
                     <StackPanel>
+                        <Grid Margin="0,0,0,12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="4"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="4"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            
+                            <fa:FontAwesome Grid.Column="0"
+                                          Icon="Bookmark"
+                                          FontSize="20"
+                                          Foreground="{StaticResource AccentBrush}"
+                                          Margin="0,0,12,0"
+                                          VerticalAlignment="Center"/>
+                            
+                            <TextBlock Grid.Column="1"
+                                     Style="{StaticResource SubHeaderTextStyle}" 
+                                     Text="Server Bookmarks"
+                                     VerticalAlignment="Center"
+                                     Margin="0"/>
+                            
+                            <!-- Import Button -->
+                            <Button Grid.Column="2"
+                                  Command="{Binding ImportBookmarksCommand}"
+                                  Style="{StaticResource ModernSecondaryButton}"
+                                  Padding="6,4"
+                                  ToolTip="Import bookmarks from file">
+                                <fa:FontAwesome Icon="Download" 
+                                              FontSize="12"
+                                              VerticalAlignment="Center"/>
+                            </Button>
+                            
+                            <!-- Export Button -->
+                            <Button Grid.Column="4"
+                                  Command="{Binding ExportBookmarksCommand}"
+                                  Style="{StaticResource ModernSecondaryButton}"
+                                  Padding="6,4"
+                                  ToolTip="Export bookmarks to file">
+                                <fa:FontAwesome Icon="Upload" 
+                                              FontSize="12"
+                                              VerticalAlignment="Center"/>
+                            </Button>
+                            
+                            <!-- Add Bookmark Button -->
+                            <Button Grid.Column="6"
+                                  Command="{Binding AddBookmarkCommand}"
+                                  Style="{StaticResource ModernSecondaryButton}"
+                                  Padding="8,4"
+                                  ToolTip="Add current server to bookmarks (or update if exists)">
+                                <StackPanel Orientation="Horizontal">
+                                    <fa:FontAwesome Icon="Plus" 
+                                                  FontSize="12" 
+                                                  Margin="0,0,4,0"
+                                                  VerticalAlignment="Center"/>
+                                    <TextBlock Text="Add" 
+                                             FontSize="11"
+                                             VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+                        </Grid>
+                        
+                        <!-- Bookmarks List -->
                         <ListBox ItemsSource="{Binding Bookmarks}"
-                                SelectedItem="{Binding SelectedBookmark, Mode=TwoWay}"
-                                Height="150"
-                                Margin="0,5">
+                               SelectedItem="{Binding SelectedBookmark, Mode=TwoWay}"
+                               Background="Transparent"
+                               BorderThickness="0"
+                               ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                               MaxHeight="200"
+                               MouseDoubleClick="BookmarksList_MouseDoubleClick">
+                            <ListBox.Style>
+                                <Style TargetType="ListBox">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Bookmarks.Count}" Value="0">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </ListBox.Style>
+                            <ListBox.ItemContainerStyle>
+                                <Style TargetType="ListBoxItem">
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                    <Setter Property="Padding" Value="0"/>
+                                    <Setter Property="Margin" Value="0,0,0,8"/>
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="ListBoxItem">
+                                                <Border x:Name="ItemBorder"
+                                                      Background="{StaticResource SecondaryBackgroundBrush}"
+                                                      BorderBrush="{StaticResource BorderBrush}"
+                                                      BorderThickness="1"
+                                                      CornerRadius="6"
+                                                      Padding="12,8"
+                                                      Cursor="Hand">
+                                                    <ContentPresenter/>
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="ItemBorder" Property="Background" Value="#E3F2FD"/>
+                                                        <Setter TargetName="ItemBorder" Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+                                                    </Trigger>
+                                                    <Trigger Property="IsSelected" Value="True">
+                                                        <Setter TargetName="ItemBorder" Property="Background" Value="#BBDEFB"/>
+                                                        <Setter TargetName="ItemBorder" Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </ListBox.ItemContainerStyle>
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
-                                    <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="{Binding Name}" 
-                                                  FontWeight="SemiBold"
-                                                  Margin="0,0,10,0"/>
-                                        <TextBlock Text="{Binding Ip}" 
-                                                  Opacity="0.7"
-                                                  Margin="0,0,5,0"/>
-                                        <TextBlock Text=":" Opacity="0.7"/>
-                                        <TextBlock Text="{Binding Port}" 
-                                                  Opacity="0.7"
-                                                  Margin="5,0,0,0"/>
-                                    </StackPanel>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        
+                                        <!-- Server Icon -->
+                                        <fa:FontAwesome Grid.Column="0"
+                                                      Icon="Server"
+                                                      FontSize="16"
+                                                      Foreground="{StaticResource TextSecondaryBrush}"
+                                                      Margin="0,0,8,0"
+                                                      VerticalAlignment="Center"/>
+                                        
+                                        <!-- Bookmark Info -->
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding Name}" 
+                                                     Style="{StaticResource BodyTextStyle}"
+                                                     Foreground="{StaticResource TextPrimaryBrush}"
+                                                     FontWeight="Medium"
+                                                     TextTrimming="CharacterEllipsis"/>
+                                            <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                                                <TextBlock Text="{Binding Ip}" 
+                                                         Style="{StaticResource BodyTextStyle}"
+                                                         FontSize="10"/>
+                                                <TextBlock Text=":" 
+                                                         Style="{StaticResource BodyTextStyle}"
+                                                         FontSize="10"
+                                                         Margin="2,0"/>
+                                                <TextBlock Text="{Binding Port}" 
+                                                         Style="{StaticResource BodyTextStyle}"
+                                                         FontSize="10"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                        
+                                        <!-- Delete Button -->
+                                        <Button Grid.Column="2" 
+                                              Command="{Binding DataContext.DeleteBookmarkCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                              CommandParameter="{Binding}"
+                                              Style="{StaticResource ModernSecondaryButton}"
+                                              Padding="6,4"
+                                              Margin="8,0,0,0"
+                                              ToolTip="Delete bookmark">
+                                            <fa:FontAwesome Icon="Trash" 
+                                                          FontSize="12"
+                                                          VerticalAlignment="Center"/>
+                                        </Button>
+                                    </Grid>
                                 </DataTemplate>
                             </ListBox.ItemTemplate>
                         </ListBox>
                         
-                        <StackPanel Orientation="Horizontal" 
-                                   HorizontalAlignment="Center"
-                                   Margin="0,5">
-                            <Button Content="+" 
-                                   Command="{Binding AddBookmarkCommand}"
-                                   ToolTip="Add current server"
-                                   Width="30"
-                                   Margin="2"/>
-                            <Button Content="?" 
-                                   Command="{Binding DeleteBookmarkCommand}"
-                                   CommandParameter="{Binding SelectedBookmark}"
-                                   ToolTip="Delete selected"
-                                   Width="30"
-                                   Margin="2"/>
+                        <!-- Empty State -->
+                        <StackPanel HorizontalAlignment="Center" 
+                                  Margin="0,24">
+                            <StackPanel.Style>
+                                <Style TargetType="StackPanel">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Bookmarks.Count}" Value="0">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </StackPanel.Style>
+                            <fa:FontAwesome Icon="Bookmark" 
+                                          FontSize="32" 
+                                          Foreground="{StaticResource TextSecondaryBrush}"
+                                          HorizontalAlignment="Center"
+                                          Opacity="0.5"
+                                          Margin="0,0,0,8"/>
+                            <TextBlock Text="No bookmarks yet" 
+                                     Style="{StaticResource BodyTextStyle}"
+                                     HorizontalAlignment="Center"
+                                     FontSize="12"/>
+                            <TextBlock Text="Add your favorite servers" 
+                                     Style="{StaticResource BodyTextStyle}"
+                                     HorizontalAlignment="Center"
+                                     FontSize="10"
+                                     Margin="0,4,0,0"/>
                         </StackPanel>
                     </StackPanel>
-                </GroupBox>
+                </Border>
             </StackPanel>
         </ScrollViewer>
-        
-        <!-- Disconnect Button -->
-        <Button Grid.Row="2" 
-                Content="Disconnect"
-                Command="{Binding DisconnectCommand}"
-                Visibility="{Binding IsConnected, Converter={StaticResource BoolToVisConverter}}"
-                Style="{StaticResource ModernButtonStyle}"
-                Margin="10"/>
     </Grid>
 </UserControl>

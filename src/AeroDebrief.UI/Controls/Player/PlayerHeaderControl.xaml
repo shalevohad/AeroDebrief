@@ -74,7 +74,7 @@
                 <StackPanel Orientation="Horizontal"
                             Visibility="{Binding IsIdle, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource BoolToVisConverter}}">
                     <Button x:Name="ServerSourceButton"
-                            Style="{StaticResource ModernSecondaryButton}"
+                            Style="{StaticResource ModernButton}"
                             Margin="0,0,8,0"
                             Click="ServerSourceButton_Click">
                         <StackPanel Orientation="Horizontal">
@@ -88,7 +88,7 @@
                     </Button>
 
                     <Button x:Name="FileSourceButton"
-                            Style="{StaticResource ModernSecondaryButton}"
+                            Style="{StaticResource ModernButton}"
                             Margin="0,0,8,0"
                             Click="FileSourceButton_Click">
                         <StackPanel Orientation="Horizontal">
@@ -102,7 +102,7 @@
                     </Button>
                 </StackPanel>
 
-                <!-- Active Mode: Change Source & File Panel Buttons -->
+                <!-- Active Mode: Change Source & Source-Specific Panel Buttons -->
                 <StackPanel Orientation="Horizontal"
                             Visibility="{Binding IsIdle, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource InverseBoolToVisConverter}}">
                     <Button Content="Change Source"
@@ -110,11 +110,21 @@
                             Style="{StaticResource ModernSecondaryButton}"
                             Margin="0,0,8,0"/>
 
+                    <!-- File Panel Button (Playback Mode) -->
                     <Button x:Name="OpenFilePanelButton"
-                            Style="{StaticResource ModernButton}"
                             ToolTip="Open file selection &amp; bookmarks"
                             Margin="0,0,6,0"
                             Click="OpenFilePanelButton_Click">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource ModernButton}">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding CurrentMode, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="Playback">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
                         <StackPanel Orientation="Horizontal">
                             <fa:FontAwesome Icon="FolderOpen" 
                                           FontSize="14" 
@@ -124,11 +134,36 @@
                                      VerticalAlignment="Center"/>
                         </StackPanel>
                     </Button>
+                    
+                    <!-- Server Panel Button (Recording Mode) -->
+                    <Button x:Name="OpenServerPanelButton"
+                            ToolTip="Open server connection panel"
+                            Margin="0,0,6,0"
+                            Click="OpenServerPanelButton_Click">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource ModernButton}">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding CurrentMode, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="Recording">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                        <StackPanel Orientation="Horizontal">
+                            <fa:FontAwesome Icon="Server" 
+                                          FontSize="14" 
+                                          Margin="0,0,8,0"
+                                          VerticalAlignment="Center"/>
+                            <TextBlock Text="SRS Server"
+                                     VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
                 </StackPanel>
 
                 <!-- Settings Button (Always Visible) -->
                 <Button Command="{Binding OpenSettingsCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                        Style="{StaticResource ModernButton}"
+                        Style="{StaticResource ModernSecondaryButton}"
                         ToolTip="Open Settings">
                     <StackPanel Orientation="Horizontal">
                         <fa:FontAwesome Icon="Cog" 

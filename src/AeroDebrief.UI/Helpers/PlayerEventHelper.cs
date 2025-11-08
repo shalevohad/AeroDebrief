@@ -297,6 +297,21 @@ namespace AeroDebrief.UI.Helpers
             element.RaiseEvent(new RoutedEventArgs(PlayerEvents.FilePanelRequestedEvent, element));
         }
 
+        public static void AddServerPanelRequestedHandler(this UIElement element, RoutedEventHandler handler)
+        {
+            element.AddHandler(PlayerEvents.ServerPanelRequestedEvent, handler);
+        }
+
+        public static void RemoveServerPanelRequestedHandler(this UIElement element, RoutedEventHandler handler)
+        {
+            element.RemoveHandler(PlayerEvents.ServerPanelRequestedEvent, handler);
+        }
+
+        public static void RaiseServerPanelRequested(this UIElement element)
+        {
+            element.RaiseEvent(new RoutedEventArgs(PlayerEvents.ServerPanelRequestedEvent, element));
+        }
+
         #endregion
     }
 }
