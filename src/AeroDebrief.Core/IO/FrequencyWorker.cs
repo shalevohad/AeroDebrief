@@ -10,6 +10,8 @@ namespace AeroDebrief.Core.IO
     /// Pipeline: JitterBuffer ? Decode ? Effects ? Output (NO filtering here!)
     /// 
     /// Filtering is applied at the MasterMixer level for instant switching.
+    /// 
+    /// NEW: Supports IAudioSource injection for testing
     /// </summary>
     public sealed class UserWorker : IAsyncDisposable
     {
@@ -20,7 +22,8 @@ namespace AeroDebrief.Core.IO
         private readonly Channel<RadioPacket> _inputChannel;
         private readonly Channel<DecodedAudioBlock> _outputChannel;
         private readonly AudioProcessingEngine _processingEngine;
-        private readonly JitterBuffer _jitterBuffer;
+        private readonly JitterBuffer? _jitterBuffer; // Nullable for test sources
+        private readonly IAudioSource? _testAudioSource; // NEW: For testing
         private readonly CancellationTokenSource _cts;
         private readonly Task _processingTask;
         
@@ -37,7 +40,7 @@ namespace AeroDebrief.Core.IO
         public bool IsIdle(TimeSpan idleThreshold) => IdleTime > idleThreshold;
 
         /// <summary>
-        /// Creates a UserWorker with bounded input/output channels
+        /// Creates a UserWorker with bounded input/output channels (production mode)
         /// </summary>
         public UserWorker(
             string userId, 
@@ -50,7 +53,7 @@ namespace AeroDebrief.Core.IO
             
             _inputChannel = Channel.CreateBounded<RadioPacket>(new BoundedChannelOptions(inputBufferSize)
             {
-                FullMode = BoundedChannelFullMode.DropWrite, // Return false when full instead of dropping oldest
+                FullMode = BoundedChannelFullMode.DropWrite,
                 SingleWriter = false,
                 SingleReader = true
             });
@@ -64,6 +67,7 @@ namespace AeroDebrief.Core.IO
 
             _processingEngine = new AudioProcessingEngine();
             _jitterBuffer = new JitterBuffer(targetDepthMs: 60, maxCapacity: 50);
+            _testAudioSource = null;
             _cts = new CancellationTokenSource();
             _lastActivityTime = DateTime.UtcNow;
 
@@ -73,16 +77,60 @@ namespace AeroDebrief.Core.IO
             // Start processing pipeline
             _processingTask = Task.Run(() => ProcessingPipelineAsync(_cts.Token));
 
-            Logger.Debug($"UserWorker created: UserId={_userId}, Frequency={_frequency:F0} Hz (filtering at MasterMixer)");
+            Logger.Debug($"UserWorker created: UserId={_userId}, Frequency={_frequency:F0} Hz (production mode)");
         }
 
         /// <summary>
-        /// Enqueues a packet for processing (non-blocking)
+        /// Creates a UserWorker with IAudioSource injection for testing
+        /// This enables direct audio injection without JitterBuffer or RadioPacket overhead
+        /// </summary>
+        public UserWorker(
+            string userId,
+            double frequency,
+            IAudioSource audioSource,
+            int outputBufferSize = 100)
+        {
+            _userId = userId ?? throw new ArgumentNullException(nameof(userId));
+            _frequency = frequency;
+            _testAudioSource = audioSource ?? throw new ArgumentNullException(nameof(audioSource));
+
+            // Input channel not used in test mode
+            _inputChannel = Channel.CreateUnbounded<RadioPacket>();
+
+            _outputChannel = Channel.CreateBounded<DecodedAudioBlock>(new BoundedChannelOptions(outputBufferSize)
+            {
+                FullMode = BoundedChannelFullMode.Wait,
+                SingleWriter = true,
+                SingleReader = false
+            });
+
+            _processingEngine = new AudioProcessingEngine();
+            _jitterBuffer = null; // No jitter buffer in test mode
+            _cts = new CancellationTokenSource();
+            _lastActivityTime = DateTime.UtcNow;
+
+            // Initialize processing engine
+            _processingEngine.Initialize();
+
+            // Start processing pipeline (test mode)
+            _processingTask = Task.Run(() => TestModePipelineAsync(_cts.Token));
+
+            Logger.Debug($"UserWorker created: UserId={_userId}, Frequency={_frequency:F0} Hz (TEST MODE - IAudioSource)");
+        }
+
+        /// <summary>
+        /// Enqueues a packet for processing (non-blocking, production mode only)
         /// </summary>
         public bool TryEnqueuePacket(RadioPacket packet)
         {
             if (_disposed || _cts.IsCancellationRequested)
                 return false;
+
+            if (_testAudioSource != null)
+            {
+                Logger.Warn("TryEnqueuePacket called in test mode - use IAudioSource instead");
+                return false;
+            }
 
             _lastActivityTime = DateTime.UtcNow;
             return _inputChannel.Writer.TryWrite(packet);
@@ -110,14 +158,14 @@ namespace AeroDebrief.Core.IO
         {
             try
             {
-                Logger.Info($"UserWorker pipeline started: UserId={_userId} (filtering at MasterMixer)");
+                Logger.Info($"UserWorker pipeline started: UserId={_userId} (production mode)");
 
                 await foreach (var packet in _inputChannel.Reader.ReadAllAsync(cancellationToken))
                 {
                     try
                     {
                         // Step 1: JitterBuffer - compensate for network jitter
-                        var bufferedPackets = _jitterBuffer.AddPacket(packet);
+                        var bufferedPackets = _jitterBuffer!.AddPacket(packet);
                         
                         foreach (var bufferedPacket in bufferedPackets)
                         {
@@ -166,6 +214,75 @@ namespace AeroDebrief.Core.IO
             catch (Exception ex)
             {
                 Logger.Error(ex, $"UserWorker pipeline failed: UserId={_userId}");
+            }
+            finally
+            {
+                _outputChannel.Writer.Complete();
+            }
+        }
+
+        /// <summary>
+        /// NEW: Test mode pipeline using IAudioSource for direct audio injection
+        /// Bypasses JitterBuffer and RadioPacket overhead for fast unit tests
+        /// </summary>
+        private async Task TestModePipelineAsync(CancellationToken cancellationToken)
+        {
+            try
+            {
+                Logger.Info($"UserWorker TEST pipeline started: UserId={_userId}");
+
+                while (!cancellationToken.IsCancellationRequested && _testAudioSource!.HasMoreData)
+                {
+                    // Read packet directly from test audio source
+                    var metadata = await _testAudioSource.ReadNextPacketAsync(cancellationToken);
+                    
+                    if (metadata == null)
+                        break;
+
+                    try
+                    {
+                        // Process audio packet (decode, effects, etc.)
+                        var processedSamples = _processingEngine.ProcessPacket(metadata);
+
+                        if (processedSamples == null || processedSamples.Length == 0)
+                        {
+                            Interlocked.Increment(ref _packetsDropped);
+                            continue;
+                        }
+
+                        // Create decoded block
+                        var block = new DecodedAudioBlock
+                        {
+                            UserId = _userId,
+                            Frequency = _frequency,
+                            Timestamp = metadata.Timestamp,
+                            AudioData = processedSamples,
+                            SampleRate = Constants.OUTPUT_SAMPLE_RATE,
+                            PacketId = metadata.PacketId,
+                            Duration = TimeSpan.FromSeconds(processedSamples.Length / (double)Constants.OUTPUT_SAMPLE_RATE)
+                        };
+
+                        // Write to output channel
+                        await _outputChannel.Writer.WriteAsync(block, cancellationToken);
+
+                        Interlocked.Increment(ref _packetsProcessed);
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Error(ex, $"Error processing test audio for user {_userId}");
+                        Interlocked.Increment(ref _packetsDropped);
+                    }
+                }
+
+                Logger.Info($"UserWorker TEST pipeline completed: UserId={_userId}, Processed={_packetsProcessed}");
+            }
+            catch (OperationCanceledException)
+            {
+                Logger.Debug($"UserWorker TEST pipeline cancelled: UserId={_userId}");
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, $"UserWorker TEST pipeline failed: UserId={_userId}");
             }
             finally
             {

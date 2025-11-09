@@ -46,85 +46,76 @@ namespace AeroDebrief.Core.Analysis
                 Logger.Info($"Starting audio activity analysis for: {filePath}");
                 Logger.Info($"Silence threshold: {silenceThreshold}/32767, Minimum activity duration: {minimumActivityDuration.TotalMilliseconds}ms");
                 
-                using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
-                using var br = new BinaryReader(fs);
-
-                while (fs.Position < fs.Length && !cancellationToken.IsCancellationRequested)
+                // Use centralized RecordingFileReader - eliminates duplicate header handling
+                foreach (var metadata in RecordingFileReader.EnumeratePackets(filePath, cancellationToken))
                 {
-                    if (AudioPacketMetadata.TryReadMetadata(br, out var metadata) && metadata != null)
+                    totalPackets++;
+                    recordingStart ??= metadata.Timestamp;
+                    recordingEnd = metadata.Timestamp;
+                    
+                    if (metadata.AudioPayload == null || metadata.AudioPayload.Length == 0)
                     {
-                        totalPackets++;
-                        recordingStart ??= metadata.Timestamp;
-                        recordingEnd = metadata.Timestamp;
+                        // No audio data - end any current activity
+                        currentActivity = EndCurrentActivity(currentActivity, activityPeriods, minimumActivityDuration);
+                        continue;
+                    }
+                    
+                    totalAudioBytes += metadata.AudioPayload.Length;
+                    
+                    // Analyze audio data for activity
+                    var audioAnalysis = AnalyzeAudioData(metadata.AudioPayload, silenceThreshold);
+                    
+                    if (audioAnalysis.HasAudio)
+                    {
+                        packetsWithAudio++;
+                        activeAudioBytes += metadata.AudioPayload.Length;
                         
-                        if (metadata.AudioPayload == null || metadata.AudioPayload.Length == 0)
+                        // Start or continue activity period
+                        if (currentActivity == null)
                         {
-                            // No audio data - end any current activity
-                            currentActivity = EndCurrentActivity(currentActivity, activityPeriods, minimumActivityDuration);
-                            continue;
-                        }
-                        
-                        totalAudioBytes += metadata.AudioPayload.Length;
-                        
-                        // Analyze audio data for activity
-                        var audioAnalysis = AnalyzeAudioData(metadata.AudioPayload, silenceThreshold);
-                        
-                        if (audioAnalysis.HasAudio)
-                        {
-                            packetsWithAudio++;
-                            activeAudioBytes += metadata.AudioPayload.Length;
-                            
-                            // Start or continue activity period
-                            if (currentActivity == null)
+                            currentActivity = new AudioActivityPeriod
                             {
-                                currentActivity = new AudioActivityPeriod
-                                {
-                                    StartTime = metadata.Timestamp,
-                                    EndTime = metadata.Timestamp,
-                                    PrimaryPlayer = metadata.PlayerData?.GetDisplayName() ?? metadata.TransmitterGuid,
-                                    PrimaryFrequency = metadata.Frequency,
-                                    MaxAmplitude = audioAnalysis.MaxAmplitude,
-                                    AverageAmplitude = audioAnalysis.AverageAmplitude,
-                                    PacketCount = 1,
-                                    Players = new HashSet<string> { metadata.PlayerData?.GetDisplayName() ?? metadata.TransmitterGuid },
-                                    Frequencies = new HashSet<double> { metadata.Frequency }
-                                };
-                            }
-                            else
-                            {
-                                // Extend current activity
-                                currentActivity.EndTime = metadata.Timestamp;
-                                currentActivity.PacketCount++;
-                                currentActivity.MaxAmplitude = Math.Max(currentActivity.MaxAmplitude, audioAnalysis.MaxAmplitude);
-                                currentActivity.AverageAmplitude = (currentActivity.AverageAmplitude + audioAnalysis.AverageAmplitude) / 2;
-                                currentActivity.Players.Add(metadata.PlayerData?.GetDisplayName() ?? metadata.TransmitterGuid);
-                                currentActivity.Frequencies.Add(metadata.Frequency);
-                            }
-                            
-                            // Track per-player activity
-                            var playerName = metadata.PlayerData?.GetDisplayName() ?? metadata.TransmitterGuid;
-                            if (!playerActivity.ContainsKey(playerName))
-                                playerActivity[playerName] = new List<AudioActivityPeriod>();
-                            
-                            // Track per-frequency activity
-                            if (!frequencyActivity.ContainsKey(metadata.Frequency))
-                                frequencyActivity[metadata.Frequency] = new List<AudioActivityPeriod>();
+                                StartTime = metadata.Timestamp,
+                                EndTime = metadata.Timestamp,
+                                PrimaryPlayer = metadata.PlayerData?.GetDisplayName() ?? metadata.TransmitterGuid,
+                                PrimaryFrequency = metadata.Frequency,
+                                MaxAmplitude = audioAnalysis.MaxAmplitude,
+                                AverageAmplitude = audioAnalysis.AverageAmplitude,
+                                PacketCount = 1,
+                                Players = new HashSet<string> { metadata.PlayerData?.GetDisplayName() ?? metadata.TransmitterGuid },
+                                Frequencies = new HashSet<double> { metadata.Frequency }
+                            };
                         }
                         else
                         {
-                            // No significant audio - end current activity if it exists
-                            currentActivity = EndCurrentActivity(currentActivity, activityPeriods, minimumActivityDuration);
+                            // Extend current activity
+                            currentActivity.EndTime = metadata.Timestamp;
+                            currentActivity.PacketCount++;
+                            currentActivity.MaxAmplitude = Math.Max(currentActivity.MaxAmplitude, audioAnalysis.MaxAmplitude);
+                            currentActivity.AverageAmplitude = (currentActivity.AverageAmplitude + audioAnalysis.AverageAmplitude) / 2;
+                            currentActivity.Players.Add(metadata.PlayerData?.GetDisplayName() ?? metadata.TransmitterGuid);
+                            currentActivity.Frequencies.Add(metadata.Frequency);
                         }
                         
-                        // Progress logging
-                        if (totalPackets % 10000 == 0)
-                        {
-                            Logger.Debug($"Analyzed {totalPackets} packets, found {activityPeriods.Count} activity periods");
-                        }
+                        // Track per-player activity
+                        var playerName = metadata.PlayerData?.GetDisplayName() ?? metadata.TransmitterGuid;
+                        if (!playerActivity.ContainsKey(playerName))
+                            playerActivity[playerName] = new List<AudioActivityPeriod>();
+                        
+                        // Track per-frequency activity
+                        if (!frequencyActivity.ContainsKey(metadata.Frequency))
+                            frequencyActivity[metadata.Frequency] = new List<AudioActivityPeriod>();
                     }
                     else
                     {
-                        break; // End of readable data
+                        // No significant audio - end current activity if it exists
+                        currentActivity = EndCurrentActivity(currentActivity, activityPeriods, minimumActivityDuration);
+                    }
+                    
+                    // Progress logging
+                    if (totalPackets % 10000 == 0)
+                    {
+                        Logger.Debug($"Analyzed {totalPackets} packets, found {activityPeriods.Count} activity periods");
                     }
                 }
                 

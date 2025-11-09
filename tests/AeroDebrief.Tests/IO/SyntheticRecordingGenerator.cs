@@ -31,23 +31,65 @@ namespace AeroDebrief.Tests.IO
             writer.Write(DateTime.UtcNow.Ticks);
 
             // Calculate packets needed for target size
-            const int avgPacketSize = 2048; // Approximate packet size
+            // Packet structure breakdown:
+            // - Fixed header: ~48 bytes (AudioPacketMetadata.FixedHeaderLength)
+            // - PlayerInfo: ~150-200 bytes (names, GUID, position, aircraft)
+            // - Audio payload: 960-1920 bytes (variable)
+            // - Other: ~10 bytes (audio length, coalition)
+            // Average total: ~1300 bytes per packet
+            const int avgPacketSize = 1300; // More accurate estimate based on actual packet structure
             long targetBytes = targetSizeMB * 1024L * 1024L;
             int estimatedPackets = (int)(targetBytes / avgPacketSize);
 
+            await GeneratePacketsAsync(writer, estimatedPackets, packetIntervalMs, cancellationToken);
+            
+            return tempFile;
+        }
+
+        /// <summary>
+        /// Generates a synthetic recording file with an exact number of packets
+        /// </summary>
+        public static async Task<string> GenerateWithPacketCountAsync(
+            int packetCount,
+            int packetIntervalMs = 40,
+            CancellationToken cancellationToken = default)
+        {
+            var tempFile = Path.Combine(Path.GetTempPath(), $"synthetic_{Guid.NewGuid()}.adb");
+            
+            await using var fs = new FileStream(tempFile, FileMode.Create, FileAccess.Write, FileShare.None);
+            await using var writer = new BinaryWriter(fs);
+
+            // Write header
+            writer.Write(Constants.RECORDING_FILE_MAGIC);
+            writer.Write("192.168.1.100");
+            writer.Write(5002);
+            writer.Write(DateTime.UtcNow.Ticks);
+
+            await GeneratePacketsAsync(writer, packetCount, packetIntervalMs, cancellationToken);
+            
+            return tempFile;
+        }
+
+        private static async Task GeneratePacketsAsync(
+            BinaryWriter writer,
+            int packetCount,
+            int packetIntervalMs,
+            CancellationToken cancellationToken)
+        {
             var startTime = DateTime.UtcNow;
             var frequencies = new[] { 251_000_000.0, 243_000_000.0, 305_000_000.0 }; // VHF AM frequencies
             var players = new[] { "Viper-1", "Enfield-2-1", "Uzi-1", "Hawg-1-1" };
 
-            for (int i = 0; i < estimatedPackets && !cancellationToken.IsCancellationRequested; i++)
+            for (int i = 0; i < packetCount && !cancellationToken.IsCancellationRequested; i++)
             {
                 var timestamp = startTime.AddMilliseconds(i * packetIntervalMs);
                 var frequency = frequencies[i % frequencies.Length];
                 var playerName = players[i % players.Length];
                 var guid = $"player-{i % players.Length:D4}";
 
-                // Generate synthetic audio packet
-                var audioLength = _random.Next(960, 1920); // OPUS frame sizes
+                // Generate synthetic audio packet with more consistent size
+                // Use average of 1440 bytes (between 960 and 1920) for more predictable file sizes
+                var audioLength = 1440 + _random.Next(-200, 200); // 1240-1640 bytes, centered around 1440
                 var audioData = GenerateSyntheticAudio(audioLength);
 
                 var playerInfo = new PlayerInfo
@@ -91,8 +133,6 @@ namespace AeroDebrief.Tests.IO
                 if (i % 100 == 0)
                     await Task.Yield();
             }
-
-            return tempFile;
         }
 
         private static byte[] GenerateSyntheticAudio(int length)

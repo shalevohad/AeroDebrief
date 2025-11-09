@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Numerics;
 using System.Threading.Tasks;
 using NLog;
 using NAudio.Wave;
@@ -148,11 +149,14 @@ namespace AeroDebrief.Core.Helpers
 
             // VALIDATION: Reject obviously corrupted data
             // Valid Opus packets are typically 20-400 bytes
-            // Valid PCM is typically 1920 bytes (40ms @ 48kHz mono)
+            // Valid PCM is typically 1920 bytes (40ms @ 48kHz mono) = OPUS_FRAME_SIZE * 2 bytes per sample
             const int minValidOpusSize = 10;     // Minimum for any valid Opus frame
             const int maxValidOpusSize = 1500;   // Maximum reasonable Opus packet
             const int minValidPcmSize = 160;     // Minimum PCM (1ms @ 48kHz)
-            const int maxValidPcmSize = 9600;    // Maximum PCM (50ms @ 48kHz stereo)
+            
+            // Expected PCM size: OPUS_FRAME_SIZE (1920 samples) * 2 bytes per sample = 3840 bytes
+            int expectedPcmSize = Constants.OPUS_FRAME_SIZE * 2;
+            int maxValidPcmSize = expectedPcmSize * 2; // Allow up to 2x for stereo or larger frames
             
             // Reject suspiciously small packets
             if (audioData.Length < minValidOpusSize)
@@ -166,8 +170,7 @@ namespace AeroDebrief.Core.Helpers
                 return false; // Way too large - corrupted data
             }
 
-            // Size-based heuristic: PCM=1920 bytes, OPUS=60-400 bytes
-            const int expectedPcmSize = Constants.OUTPUT_SAMPLE_RATE * Constants.OPUS_FRAME_DURATION_MS / 1000 * 2;
+            // Size-based heuristic: PCM=3840 bytes (OPUS_FRAME_SIZE*2), OPUS=60-400 bytes
             const int opusMaxSize = 400;
             
             if (audioData.Length <= opusMaxSize && audioData.Length < expectedPcmSize / 3)
@@ -199,9 +202,8 @@ namespace AeroDebrief.Core.Helpers
             if (audioData == null || audioData.Length == 0)
                 return Array.Empty<short>();
 
-            // VALIDATION: Detect obviously corrupted data
+            // VALIDATION: Detect obviously corrupted data using Constants
             const int minValidSize = 10;        // Minimum for any valid audio
-            const int maxValidSize = 10000;     // Maximum reasonable audio packet
             
             if (audioData.Length < minValidSize)
             {
@@ -209,7 +211,7 @@ namespace AeroDebrief.Core.Helpers
                 return Array.Empty<short>();
             }
             
-            if (audioData.Length > maxValidSize)
+            if (audioData.Length > Constants.MaxAudioPayloadBytes)
             {
                 // Way too large - definitely corruption
                 // Only log once per 100 occurrences to reduce spam
@@ -320,12 +322,11 @@ namespace AeroDebrief.Core.Helpers
             if (pcmBytes == null || pcmBytes.Length == 0)
                 return Array.Empty<short>();
 
-            // VALIDATION: Reject obviously corrupted data
-            const int maxReasonablePcmSize = 10000; // 50ms @ 48kHz stereo
-            
-            if (pcmBytes.Length > maxReasonablePcmSize)
+            // VALIDATION: Reject obviously corrupted data using configured maximum
+            if (pcmBytes.Length > Constants.MaxAudioPayloadBytes)
             {
                 // Way too large - corruption
+                Logger.Warn($"PCM byte array exceeds maximum size ({pcmBytes.Length} > {Constants.MaxAudioPayloadBytes}), rejecting");
                 return Array.Empty<short>();
             }
 
@@ -369,6 +370,7 @@ namespace AeroDebrief.Core.Helpers
 
         /// <summary>
         /// Calculates normalized peak amplitude (0.0 to 1.0) from PCM Int16 samples
+        /// Optimized using SIMD vectorization for high performance
         /// </summary>
         /// <param name="pcmSamples">PCM Int16 samples</param>
         /// <returns>Normalized peak amplitude in range [0.0, 1.0]</returns>
@@ -377,12 +379,37 @@ namespace AeroDebrief.Core.Helpers
             if (pcmSamples == null || pcmSamples.Length == 0)
                 return 0f;
 
-            // Calculate peak amplitude (maximum absolute value)
+            // Use SIMD vectorization for significantly better performance
             int maxAmplitude = 0;
-            foreach (var sample in pcmSamples)
+            int i = 0;
+
+            // Process vectors for SIMD acceleration
+            if (Vector.IsHardwareAccelerated && pcmSamples.Length >= Vector<short>.Count)
             {
-                // Cast to int before taking Abs to avoid Int16.MinValue negation overflow
-                int absSample = Math.Abs((int)sample);
+                var maxVector = Vector<short>.Zero;
+                var minVector = Vector<short>.Zero;
+                
+                int vectorCount = pcmSamples.Length - (pcmSamples.Length % Vector<short>.Count);
+                
+                for (; i < vectorCount; i += Vector<short>.Count)
+                {
+                    var vector = new Vector<short>(pcmSamples, i);
+                    maxVector = Vector.Max(maxVector, vector);
+                    minVector = Vector.Min(minVector, vector);
+                }
+                
+                // Find max/min from vectors
+                for (int j = 0; j < Vector<short>.Count; j++)
+                {
+                    maxAmplitude = Math.Max(maxAmplitude, Math.Abs((int)maxVector[j]));
+                    maxAmplitude = Math.Max(maxAmplitude, Math.Abs((int)minVector[j]));
+                }
+            }
+
+            // Process remaining samples
+            for (; i < pcmSamples.Length; i++)
+            {
+                int absSample = Math.Abs((int)pcmSamples[i]);
                 maxAmplitude = Math.Max(maxAmplitude, absSample);
             }
 

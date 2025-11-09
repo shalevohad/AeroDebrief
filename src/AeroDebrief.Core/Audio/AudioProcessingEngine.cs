@@ -83,19 +83,29 @@ namespace AeroDebrief.Core.Audio
                 if (maxAmplitudeAfterDecode > 0 && maxAmplitudeAfterDecode < 0.1f)
                 {
                     // Audio is too quiet - normalize it to use more of the dynamic range
-                    // Target peak around 0.7 (70% of full scale) to leave headroom
-                    const float targetPeak = 0.7f;
+                    // Target peak around 0.5 (50% of full scale) to leave headroom for mixing
+                    // Reduced from 0.7 to prevent clipping when multiple frequencies are mixed
+                    const float targetPeak = 0.5f;
                     float amplificationFactor = targetPeak / maxAmplitudeAfterDecode;
                     
-                    Logger.Info($"?? NORMALIZING: Audio too quiet ({maxAmplitudeAfterDecode:F4}), amplifying by {amplificationFactor:F2}x to reach {targetPeak:F2} peak");
+                    Logger.Info($"? NORMALIZING: Audio too quiet ({maxAmplitudeAfterDecode:F4}), amplifying by {amplificationFactor:F2}x to reach {targetPeak:F2} peak");
                     
+                    // Apply amplification WITHOUT hard clipping
+                    // This prevents the 25% clipping issue seen in tests
                     for (int i = 0; i < audioData.Length; i++)
                     {
-                        audioData[i] = Math.Clamp(audioData[i] * amplificationFactor, -1.0f, 1.0f);
+                        audioData[i] *= amplificationFactor;
+                        
+                        // Soft limiter: use tanh for smooth limiting instead of hard clamp
+                        // This prevents harsh clipping distortion while still keeping samples in range
+                        if (Math.Abs(audioData[i]) > 0.95f)
+                        {
+                            audioData[i] = (float)Math.Tanh(audioData[i] * 1.1) * 0.95f;
+                        }
                     }
                     
                     var maxAfterNormalization = audioData.Max(Math.Abs);
-                    Logger.Info($"?? AFTER NORMALIZATION: max amplitude={maxAfterNormalization:F4} (target was {targetPeak:F2})");
+                    Logger.Info($"? AFTER NORMALIZATION: max amplitude={maxAfterNormalization:F4} (target was {targetPeak:F2})");
                 }
 
                 // Resample if needed (ensure output sample rate)

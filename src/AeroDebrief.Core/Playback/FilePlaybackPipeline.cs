@@ -19,6 +19,7 @@ namespace AeroDebrief.Core.Playback
         private readonly FilePacketSource _packetSource;
         private PacketRouter? _packetRouter;
         private AudioOutputEngine? _audioOutput;
+        private IAudioOutputEngine? _customAudioOutput; // NEW: For test injection
         private MasterMixer? _masterMixer;
         
         // Controllers for external integration (e.g., Tacview)
@@ -89,6 +90,17 @@ namespace AeroDebrief.Core.Playback
         }
 
         /// <summary>
+        /// Creates a new FilePlaybackPipeline with a custom audio output engine (for testing).
+        /// This allows test code to inject TestAudioCapture instead of using production AudioOutputEngine.
+        /// </summary>
+        public FilePlaybackPipeline(FilePacketSource packetSource, IAudioOutputEngine audioOutputEngine)
+        {
+            _packetSource = packetSource ?? throw new ArgumentNullException(nameof(packetSource));
+            _customAudioOutput = audioOutputEngine ?? throw new ArgumentNullException(nameof(audioOutputEngine));
+            Logger.Info("FilePlaybackPipeline created with custom audio output engine (test mode)");
+        }
+
+        /// <summary>
         /// Initializes the complete playback pipeline components.
         /// FilePacketSource must already be opened before calling this.
         /// </summary>
@@ -123,14 +135,28 @@ namespace AeroDebrief.Core.Playback
                 Logger.Info($"Pre-allocated {frequencies.Count} FrequencyRoutingWorkers");
                 
                 // Step 3: Initialize AudioOutputEngine
-                Logger.Info("Step 3: Initializing AudioOutputEngine...");
-                _audioOutput = new AudioOutputEngine();
-                await _audioOutput.InitializeAsync();
-                Logger.Info("AudioOutputEngine initialized");
+                IAudioOutputEngine audioEngine;
+                if (_customAudioOutput != null)
+                {
+                    // Use custom audio output (test mode)
+                    Logger.Info("Step 3: Using custom audio output engine (test mode)...");
+                    audioEngine = _customAudioOutput;
+                    await audioEngine.InitializeAsync();
+                    Logger.Info("Custom audio output engine initialized");
+                }
+                else
+                {
+                    // Use production audio output
+                    Logger.Info("Step 3: Initializing AudioOutputEngine...");
+                    _audioOutput = new AudioOutputEngine();
+                    await _audioOutput.InitializeAsync();
+                    audioEngine = _audioOutput;
+                    Logger.Info("AudioOutputEngine initialized");
+                }
                 
                 // Step 4: Initialize MasterMixer with AudioOutputEngine
                 Logger.Info("Step 4: Initializing MasterMixer...");
-                _masterMixer = new MasterMixer(_audioOutput);
+                _masterMixer = new MasterMixer(audioEngine);
                 Logger.Info("MasterMixer initialized");
                 
                 // Step 5: Create FrequencyWorkers and register with MasterMixer
@@ -166,9 +192,16 @@ namespace AeroDebrief.Core.Playback
                 return;
             }
 
-            if (_packetRouter == null || _masterMixer == null || _audioOutput == null)
+            if (_packetRouter == null || _masterMixer == null)
             {
                 throw new InvalidOperationException("Pipeline not initialized. Call OpenAsync first.");
+            }
+
+            // Get the correct audio output (production or test)
+            var audioOutput = _customAudioOutput ?? _audioOutput;
+            if (audioOutput == null)
+            {
+                throw new InvalidOperationException("Audio output not initialized. Call OpenAsync first.");
             }
 
             try
@@ -180,7 +213,7 @@ namespace AeroDebrief.Core.Playback
                 IsPaused = false;
                 
                 // Start audio output
-                _audioOutput.Start();
+                audioOutput.Start();
                 
                 // Start streaming task (FilePacketSource ? PacketRouter ? FrequencyWorkers)
                 // Uses BATCHED streaming for 100x less async overhead
@@ -248,8 +281,9 @@ namespace AeroDebrief.Core.Playback
                 if (_positionUpdateTask != null)
                     await _positionUpdateTask;
                 
-                // Stop audio output
-                _audioOutput?.Stop();
+                // Stop audio output (production or custom test)
+                var audioOutput = _customAudioOutput ?? _audioOutput;
+                audioOutput?.Stop();
                 
                 IsPlaying = false;
                 IsPaused = false;
