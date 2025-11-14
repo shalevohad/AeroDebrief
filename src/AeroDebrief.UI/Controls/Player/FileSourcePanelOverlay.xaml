@@ -1,0 +1,92 @@
+<UserControl x:Class="AeroDebrief.UI.Controls.Player.FileSourcePanelOverlay"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:local="clr-namespace:AeroDebrief.UI.Controls"
+             xmlns:fa="http://schemas.fontawesome.io/icons/"
+             xmlns:converters="clr-namespace:AeroDebrief.UI.Helpers"
+             mc:Ignorable="d" 
+             d:DesignHeight="800" d:DesignWidth="1200">
+    
+    <UserControl.Resources>
+        <converters:BoolToVisibilityConverter x:Key="BoolToVisConverter"/>
+    </UserControl.Resources>
+    
+    <!-- Overlay Container -->
+    <Border x:Name="OverlayRoot"
+            Background="#80000000"
+            Visibility="{Binding IsOpen, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource BoolToVisConverter}}"
+            MouseDown="OverlayRoot_MouseDown">
+        
+        <!-- Slide-in panel from right -->
+        <Border x:Name="PanelContainer"
+                Background="{StaticResource PrimaryBackgroundBrush}"
+                BorderBrush="{StaticResource BorderBrush}"
+                BorderThickness="1,0,0,0"
+                Width="{Binding PanelWidth, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                HorizontalAlignment="Right"
+                Padding="0"
+                RenderTransformOrigin="1,0.5">
+            <Border.RenderTransform>
+                <TranslateTransform x:Name="PanelTransform" X="{Binding PanelWidth, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
+            </Border.RenderTransform>
+            
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/> <!-- Header -->
+                    <RowDefinition Height="*"/>    <!-- Content -->
+                </Grid.RowDefinitions>
+                
+                <!-- Panel Header -->
+                <Border Grid.Row="0"
+                        Background="{StaticResource AccentBrush}"
+                        Padding="16,12">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        
+                        <!-- Icon -->
+                        <fa:FontAwesome Grid.Column="0"
+                                      Icon="FileAudioOutline"
+                                      FontSize="20"
+                                      Foreground="White"
+                                      Margin="0,0,12,0"
+                                      VerticalAlignment="Center"/>
+                        
+                        <!-- Title -->
+                        <TextBlock Grid.Column="1"
+                                   Text="{Binding PanelTitle, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                   FontSize="16"
+                                   FontWeight="SemiBold"
+                                   Foreground="White"
+                                   VerticalAlignment="Center"/>
+                        
+                        <!-- Close Button -->
+                        <Button x:Name="CloseButton"
+                                Grid.Column="2"
+                                Click="CloseButton_Click"
+                                Style="{StaticResource ModernSecondaryButton}"
+                                Width="32"
+                                Height="32"
+                                Padding="0"
+                                ToolTip="Close (Esc)">
+                            <fa:FontAwesome Icon="Times" 
+                                          FontSize="16"
+                                          Foreground="White"/>
+                        </Button>
+                    </Grid>
+                </Border>
+                
+                <!-- Panel Content -->
+                <ContentPresenter x:Name="ContentHost"
+                                Grid.Row="1"
+                                Content="{Binding PanelContent, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                Margin="0"/>
+            </Grid>
+        </Border>
+    </Border>
+</UserControl>

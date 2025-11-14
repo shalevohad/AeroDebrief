@@ -1,0 +1,220 @@
+<Window x:Class="AeroDebrief.DevTools.Windows.ActionReplayWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        Title="AeroDebrief Action Replay Tool" 
+        Height="700" Width="1200"
+        Background="#F5F5F5"
+        Icon="/icon.ico">
+    
+    <Window.Resources>
+        <Style TargetType="Button">
+            <Setter Property="Padding" Value="10,5"/>
+            <Setter Property="Margin" Value="5"/>
+            <Setter Property="MinWidth" Value="100"/>
+            <Setter Property="Cursor" Value="Hand"/>
+        </Style>
+        
+        <Style TargetType="TextBlock" x:Key="HeaderText">
+            <Setter Property="FontSize" Value="16"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Margin" Value="0,0,0,10"/>
+        </Style>
+        
+        <Style TargetType="ListBox">
+            <Setter Property="BorderBrush" Value="#CCCCCC"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="5"/>
+        </Style>
+
+        <Style TargetType="GroupBox">
+            <Setter Property="BorderBrush" Value="#CCCCCC"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Margin" Value="0,5,0,5"/>
+        </Style>
+    </Window.Resources>
+    
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        
+        <!-- Header -->
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
+            <Image Source="/icon.ico" Width="32" Height="32" Margin="0,0,10,0"/>
+            <StackPanel>
+                <TextBlock Style="{StaticResource HeaderText}" Margin="0">
+                    AeroDebrief Action Replay Tool
+                </TextBlock>
+                <TextBlock Foreground="Gray" FontSize="11">
+                    Developer tool for reproducing user-reported bugs
+                </TextBlock>
+            </StackPanel>
+        </StackPanel>
+        
+        <!-- Controls -->
+        <StackPanel Grid.Row="1" Orientation="Vertical" Margin="0,0,0,10">
+            <!-- File Selection -->
+            <GroupBox Header="Log File" Padding="10">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBox x:Name="LogFilePathTextBox" Width="700" Margin="0,0,10,0" IsReadOnly="True"/>
+                        <Button x:Name="BrowseButton" Content="?? Browse..." Click="BrowseButton_Click"/>
+                        <Button x:Name="LoadButton" Content="?? Load" Click="LoadButton_Click" IsEnabled="False"/>
+                        <Button x:Name="OpenFolderButton" Content="?? Open Logs Folder" Click="OpenFolderButton_Click"/>
+                    </StackPanel>
+                    
+                    <!-- Recent Files -->
+                    <TextBlock Margin="0,10,0,5" FontWeight="Bold">Recent Sessions:</TextBlock>
+                    <ListBox x:Name="RecentFilesListBox" Height="100" SelectionChanged="RecentFilesListBox_SelectionChanged">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="??" Margin="0,0,5,0"/>
+                                    <TextBlock Text="{Binding FileName}" FontWeight="Bold" Width="300"/>
+                                    <TextBlock Text="{Binding CreationTime, StringFormat='Created: {0:yyyy-MM-dd HH:mm:ss}'}" Margin="10,0,0,0" Foreground="Gray"/>
+                                    <TextBlock Text="{Binding FileSizeMB, StringFormat='Size: {0:F1} MB'}" Margin="10,0,0,0" Foreground="Gray"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </StackPanel>
+            </GroupBox>
+            
+            <!-- Summary -->
+            <GroupBox Header="Summary" Padding="10">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    
+                    <TextBlock Grid.Column="0" Text="Total Actions:" FontWeight="Bold" Margin="0,0,10,0"/>
+                    <TextBlock Grid.Column="1" x:Name="TotalActionsText" Text="0" Margin="0,0,20,0"/>
+                    
+                    <TextBlock Grid.Column="2" Text="Duration:" FontWeight="Bold" Margin="0,0,10,0"/>
+                    <TextBlock Grid.Column="3" x:Name="DurationText" Text="00:00:00" Margin="0,0,20,0"/>
+                    
+                    <StackPanel Grid.Column="4" Orientation="Horizontal">
+                        <TextBlock Text="? " Foreground="Red"/>
+                        <TextBlock Text="Errors:" FontWeight="Bold" Margin="0,0,10,0"/>
+                    </StackPanel>
+                    <TextBlock Grid.Column="5" x:Name="ErrorCountText" Text="0" Foreground="Red"/>
+                </Grid>
+            </GroupBox>
+            
+            <!-- Playback Controls -->
+            <GroupBox Header="Replay Controls" Padding="10">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                        <Button x:Name="PlayButton" Content="? Play" Click="PlayButton_Click" IsEnabled="False"/>
+                        <Button x:Name="PauseButton" Content="? Pause" Click="PauseButton_Click" IsEnabled="False"/>
+                        <Button x:Name="StopButton" Content="? Stop" Click="StopButton_Click" IsEnabled="False"/>
+                    </StackPanel>
+                    
+                    <StackPanel Orientation="Horizontal" Margin="0,10,0,0" HorizontalAlignment="Center">
+                        <TextBlock Text="Speed:" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                        <Slider x:Name="SpeedSlider" Width="300" Minimum="0.1" Maximum="10" Value="1" 
+                                TickFrequency="0.5" IsSnapToTickEnabled="True" 
+                                ValueChanged="SpeedSlider_ValueChanged"/>
+                        <TextBlock x:Name="SpeedText" Text="1.0x" VerticalAlignment="Center" Margin="10,0,0,0" Width="50" FontWeight="Bold"/>
+                    </StackPanel>
+                    
+                    <!-- Progress -->
+                    <StackPanel Margin="0,10,0,0">
+                        <ProgressBar x:Name="ProgressBar" Height="25" Minimum="0" Maximum="100" Value="0"/>
+                        <TextBlock x:Name="ProgressText" Text="Ready" HorizontalAlignment="Center" Margin="0,5,0,0" FontWeight="Bold"/>
+                    </StackPanel>
+                </StackPanel>
+            </GroupBox>
+        </StackPanel>
+        
+        <!-- Action List -->
+        <GroupBox Grid.Row="2" Header="Actions" Padding="10">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="2*"/>
+                    <ColumnDefinition Width="3*"/>
+                </Grid.ColumnDefinitions>
+                
+                <!-- Actions List -->
+                <DockPanel Grid.Column="0">
+                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,5">
+                        <TextBlock Text="Filter:" VerticalAlignment="Center" Margin="0,0,10,0" FontWeight="Bold"/>
+                        <ComboBox x:Name="FilterComboBox" Width="150" SelectionChanged="FilterComboBox_SelectionChanged">
+                            <ComboBoxItem Content="All Actions" IsSelected="True"/>
+                            <ComboBoxItem Content="Errors Only"/>
+                            <ComboBoxItem Content="File Operations"/>
+                            <ComboBoxItem Content="Playback"/>
+                            <ComboBoxItem Content="Frequency"/>
+                        </ComboBox>
+                    </StackPanel>
+                    
+                    <ListBox x:Name="ActionsListBox" SelectionChanged="ActionsListBox_SelectionChanged">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="{Binding Timestamp, StringFormat='{}{0:HH:mm:ss.fff}'}" 
+                                              FontFamily="Consolas" Width="100" Foreground="Gray"/>
+                                    <TextBlock Text="{Binding ActionType}" FontWeight="Bold" Width="150"/>
+                                    <TextBlock Text="{Binding ControlName}" Foreground="Blue"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </DockPanel>
+                
+                <!-- Action Details -->
+                <GroupBox Grid.Column="1" Header="Action Details" Padding="10" Margin="10,0,0,0">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel>
+                            <TextBlock Text="Timestamp:" FontWeight="Bold"/>
+                            <TextBlock x:Name="DetailTimestampText" Margin="0,0,0,10" FontFamily="Consolas"/>
+                            
+                            <TextBlock Text="Action Type:" FontWeight="Bold"/>
+                            <TextBlock x:Name="DetailActionTypeText" Margin="0,0,0,10"/>
+                            
+                            <TextBlock Text="Control:" FontWeight="Bold"/>
+                            <TextBlock x:Name="DetailControlText" Margin="0,0,0,10"/>
+                            
+                            <TextBlock Text="Thread ID:" FontWeight="Bold"/>
+                            <TextBlock x:Name="DetailThreadText" Margin="0,0,0,10" FontFamily="Consolas"/>
+                            
+                            <TextBlock Text="Parameters:" FontWeight="Bold"/>
+                            <TextBox x:Name="DetailParametersText" Margin="0,0,0,10" 
+                                    IsReadOnly="True" TextWrapping="Wrap" 
+                                    MaxHeight="150" VerticalScrollBarVisibility="Auto"
+                                    FontFamily="Consolas" FontSize="11"/>
+                            
+                            <TextBlock Text="Result:" FontWeight="Bold"/>
+                            <TextBox x:Name="DetailResultText" 
+                                    IsReadOnly="True" TextWrapping="Wrap" 
+                                    MaxHeight="200" VerticalScrollBarVisibility="Auto"
+                                    FontFamily="Consolas" FontSize="11"/>
+                            
+                            <Button x:Name="ExportButton" Content="?? Export This Action" 
+                                   Click="ExportButton_Click" Margin="0,10,0,0" HorizontalAlignment="Left"/>
+                        </StackPanel>
+                    </ScrollViewer>
+                </GroupBox>
+            </Grid>
+        </GroupBox>
+        
+        <!-- Status Bar -->
+        <Border Grid.Row="3" Background="#E0E0E0" Padding="10,5" Margin="0,10,0,0" BorderBrush="#CCCCCC" BorderThickness="0,1,0,0">
+            <DockPanel>
+                <TextBlock x:Name="StatusText" Text="Ready. Load an action log to begin." DockPanel.Dock="Left"/>
+                <TextBlock x:Name="VersionText" Text="v1.0" DockPanel.Dock="Right" Foreground="Gray" HorizontalAlignment="Right"/>
+            </DockPanel>
+        </Border>
+    </Grid>
+</Window>

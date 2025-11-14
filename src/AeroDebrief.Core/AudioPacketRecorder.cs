@@ -6,6 +6,7 @@ using NLog;
 using System.Timers;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Models.EventMessages;
 using System.Net;
+using System.Text;
 using System.Collections.Concurrent;
 using SRSTCPClientStatusMessage = Ciribob.DCS.SimpleRadio.Standalone.Common.Models.EventMessages.TCPClientStatusMessage;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Models.Player;
@@ -123,13 +124,84 @@ namespace AeroDebrief.Core{
             }
 
             var settings = RecorderSettingsStore.Instance;
-            _outputFile = filePath ?? settings.GetRecorderSettingString(RecorderSettingKeys.RecordingFile);
+            var requestedPath = filePath ?? settings.GetRecorderSettingString(RecorderSettingKeys.RecordingFile);
+
+            // Build an output filename that includes server IP, port and start timestamp
+            var ipForName = _serverEndpoint?.Address.ToString() ?? settings.GetRecorderSettingString(RecorderSettingKeys.ServerIp) ?? string.Empty;
+            var portForName = _serverEndpoint?.Port ?? settings.GetRecorderSettingInt(RecorderSettingKeys.ServerPort);
+            var startTime = DateTime.UtcNow;
+            var timestampForName = startTime.ToString("yyyyMMddTHHmmssZ");
+
+            // Sanitize pieces for filename
+            string Sanitize(string s)
+            {
+                if (string.IsNullOrEmpty(s)) return string.Empty;
+                var invalid = Path.GetInvalidFileNameChars();
+                var sb = new StringBuilder(s.Length);
+                foreach (var c in s)
+                {
+                    if (invalid.Contains(c) || c == ':' || c == '\\' || c == '/')
+                        sb.Append('-');
+                    else
+                        sb.Append(c);
+                }
+                return sb.ToString();
+            }
+
+            var dir = Path.GetDirectoryName(requestedPath) ?? string.Empty;
+            var baseName = Path.GetFileNameWithoutExtension(requestedPath) ?? "recording";
+            var ext = Path.GetExtension(requestedPath);
+            // Use .adb extension for recording files
+            if (string.IsNullOrEmpty(ext) || !ext.Equals(".adb", StringComparison.OrdinalIgnoreCase))
+                ext = ".adb";
+
+            var sanitizedIp = Sanitize(ipForName);
+            var sanitizedBase = Sanitize(baseName);
+
+            var finalName = $"{sanitizedBase}_srv_{sanitizedIp}_{portForName}_t{timestampForName}{ext}";
+            _outputFile = string.IsNullOrEmpty(dir) ? finalName : Path.Combine(dir, finalName);
+
             Logger.Info($"Starting recording to file: {_outputFile}");
 
             try
             {
                 _fileStream = new FileStream(_outputFile, FileMode.Create, FileAccess.Write);
                 _recordingCts = new CancellationTokenSource();
+
+                // Write a small header to the recording file so CLI/players can know which server
+                // this recording originated from and when it started.
+                try
+                {
+                    var ip = _serverEndpoint?.Address.ToString() ?? settings.GetRecorderSettingString(RecorderSettingKeys.ServerIp) ?? string.Empty;
+                    var portVal = _serverEndpoint?.Port ?? settings.GetRecorderSettingInt(RecorderSettingKeys.ServerPort);
+                    var startTicks = startTime.Ticks;
+
+                    var headerStartPos = _fileStream!.Position;
+                    
+                    using var bw = new BinaryWriter(_fileStream!, Encoding.UTF8, leaveOpen: true);
+                    
+                    // CRITICAL: BinaryWriter.Write(string) automatically writes length-prefix
+                    // Format: [length:7-bit-encoded-int][string-bytes]
+                    // This is read by BinaryReader.ReadString() which expects this format
+                    bw.Write(Constants.RECORDING_FILE_MAGIC);  // e.g., "AERO_REC_V1"
+                    bw.Write(ip);                               // Server IP
+                    bw.Write(portVal);                          // Port (int32)
+                    bw.Write(startTicks);                       // Start time (int64 ticks)
+                    
+                    var headerEndPos = _fileStream.Position;
+                    var headerSize = headerEndPos - headerStartPos;
+
+                    Logger.Info($"? Recording header written successfully:");
+                    Logger.Info($"   Magic: '{Constants.RECORDING_FILE_MAGIC}'");
+                    Logger.Info($"   Server: {ip}:{portVal}");
+                    Logger.Info($"   Start: {new DateTime(startTicks, DateTimeKind.Utc):o}");
+                    Logger.Info($"   Header size: {headerSize} bytes (position: {headerStartPos} -> {headerEndPos})");
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error(ex, "Failed to write recording header to file - file may not be readable!");
+                    throw; // CRITICAL: Don't continue if header write fails
+                }
 
                 _writerRunning = true;
                 _writerTask = Task.Run(() => WriterLoop(_recordingCts.Token));
@@ -147,9 +219,14 @@ namespace AeroDebrief.Core{
             Logger.Info("Stopping recording...");
             _recordingCts?.Cancel();
             _writerRunning = false;
+            
             try
             {
-                _writerTask?.Wait();
+                // Wait up to 5 seconds for graceful shutdown
+                if (_writerTask != null && !_writerTask.Wait(TimeSpan.FromSeconds(5)))
+                {
+                    Logger.Warn("Writer task did not complete within 5 seconds");
+                }
             }
             catch (AggregateException ae)
             {
@@ -162,6 +239,21 @@ namespace AeroDebrief.Core{
             {
                 Logger.Error(ex, "Error during writer task shutdown.");
             }
+            
+            // CRITICAL: Final flush before closing to ensure all data reaches disk
+            try
+            {
+                if (_fileStream != null)
+                {
+                    _fileStream.Flush(flushToDisk: true);
+                    Logger.Info("Recording file flushed to disk");
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn(ex, "Error flushing recording file");
+            }
+            
             _fileStream?.Dispose();
             _fileStream = null;
             Logger.Info("Recording stopped and file stream disposed.");
@@ -409,6 +501,11 @@ namespace AeroDebrief.Core{
 
         private async Task WriterLoop(CancellationToken token)
         {
+            int writesSinceFlush = 0;
+            const int FLUSH_EVERY_N_WRITES = 100; // Flush every 100 packets (~2 seconds of audio)
+            
+            Logger.Info("WriterLoop started with batch flush strategy (flush every 100 packets)");
+            
             while (_writerRunning && !token.IsCancellationRequested)
             {
                 if (_writeQueue.TryDequeue(out var meta))
@@ -419,7 +516,22 @@ namespace AeroDebrief.Core{
                         {
                             using var bw = new BinaryWriter(_fileStream!, System.Text.Encoding.UTF8, leaveOpen: true);
                             if (!meta.TryWriteMetadata(bw))
+                            {
                                 Logger.Warn("Failed to write audio packet metadata.");
+                            }
+                            else
+                            {
+                                writesSinceFlush++;
+                            }
+                            
+                            // Flush periodically to balance safety vs performance
+                            if (writesSinceFlush >= FLUSH_EVERY_N_WRITES)
+                            {
+                                bw.Flush();
+                                _fileStream?.Flush(flushToDisk: true);
+                                Logger.Debug($"Flushed {writesSinceFlush} packets to disk");
+                                writesSinceFlush = 0;
+                            }
                         }
                     }
                     catch (Exception ex)
@@ -429,9 +541,45 @@ namespace AeroDebrief.Core{
                 }
                 else
                 {
+                    // Flush when idle to ensure pending writes are saved
+                    if (writesSinceFlush > 0)
+                    {
+                        try
+                        {
+                            lock (_fileWriteLock)
+                            {
+                                _fileStream?.Flush(flushToDisk: true);
+                                Logger.Debug($"Flushed {writesSinceFlush} pending packets (idle)");
+                                writesSinceFlush = 0;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Logger.Debug(ex, "Error flushing during idle");
+                        }
+                    }
+                    
                     await Task.Delay(10, token); // Avoid busy wait
                 }
             }
+            
+            // FINAL FLUSH before exiting to ensure all data is written
+            try
+            {
+                lock (_fileWriteLock)
+                {
+                    if (_fileStream != null && writesSinceFlush > 0)
+                    {
+                        _fileStream.Flush(flushToDisk: true);
+                        Logger.Info($"Final flush: {writesSinceFlush} packets written to disk");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn(ex, "Error flushing file stream on writer loop exit");
+            }
+            
             Logger.Info("WriterLoop stopped.");
         }
 

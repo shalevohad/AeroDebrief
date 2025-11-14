@@ -6,6 +6,8 @@ using System.IO;
 using System.Threading;
 using NLog;
 using SharpConfig;
+using AeroDebrief.Core;
+using AeroDebrief.Core.Helpers;
 
 namespace AeroDebrief.Core.Settings
 {
@@ -22,6 +24,12 @@ namespace AeroDebrief.Core.Settings
         LastRecordingFile,
         EnableFrequencyFilterByDefault,
         ThemeFile,
+        
+        // Audio Mixing Settings (AGC)
+        AGC_TargetDB,
+        AGC_MaxBoostDB,
+        AGC_MaxCutDB,
+        AGC_Enabled,
         
         // Window Settings
         WindowWidth,
@@ -54,6 +62,12 @@ namespace AeroDebrief.Core.Settings
             { PlayerSettingKeys.EnableFrequencyFilterByDefault.ToString(), "false" },
             { PlayerSettingKeys.ThemeFile.ToString(), "light.json" },
             
+            // Audio Mixing Settings (AGC) - Default values from Constants
+            { PlayerSettingKeys.AGC_TargetDB.ToString(), "-20.0" },      // Target RMS level in dB
+            { PlayerSettingKeys.AGC_MaxBoostDB.ToString(), "20.0" },     // Max boost in dB
+            { PlayerSettingKeys.AGC_MaxCutDB.ToString(), "-10.0" },      // Max cut in dB
+            { PlayerSettingKeys.AGC_Enabled.ToString(), "true" },        // AGC enabled by default
+            
             // Window Settings
             { PlayerSettingKeys.WindowWidth.ToString(), "950" },
             { PlayerSettingKeys.WindowHeight.ToString(), "750" },
@@ -77,6 +91,7 @@ namespace AeroDebrief.Core.Settings
 
         private PlayerSettingsStore()
         {
+            // Check for command-line override first
             var args = Environment.GetCommandLineArgs();
             foreach (var arg in args)
                 if (arg.Trim().StartsWith("-playercfg="))
@@ -86,18 +101,30 @@ namespace AeroDebrief.Core.Settings
                     Logger.Info($"Found -playercfg loading: {Path + ConfigFileName}");
                 }
 
+            // If no command-line override, use configs folder in application directory
+            if (string.IsNullOrEmpty(Path))
+            {
+                Path = System.IO.Path.Combine(AppContext.BaseDirectory, Constants.CONFIG_FOLDER);
+                if (!Directory.Exists(Path))
+                {
+                    Directory.CreateDirectory(Path);
+                    Logger.Info($"Created configs directory: {Path}");
+                }
+                Path = Path + System.IO.Path.DirectorySeparatorChar;
+            }
+
             try
             {
-                var count = 0;
-                while (IsFileLocked(new FileInfo(Path + ConfigFileName)) && count < 10)
+                var configPath = Path + ConfigFileName;
+                
+                // Use centralized file locking helper
+                if (!FileHelpers.WaitForFileUnlock(configPath, maxWaitMs: 2000, checkIntervalMs: 200))
                 {
-                    Logger.Warn($"Config file {Path + ConfigFileName} is locked. Waiting...");
-                    Thread.Sleep(200);
-                    count++;
+                    Logger.Warn($"Config file {configPath} remained locked after waiting");
                 }
 
-                _configuration = Configuration.LoadFromFile(Path + ConfigFileName);
-                Logger.Info($"Loaded player config from {Path + ConfigFileName}");
+                _configuration = Configuration.LoadFromFile(configPath);
+                Logger.Info($"Loaded player config from {configPath}");
                 
                 // Validate the loaded configuration
                 ValidateConfiguration();
@@ -203,29 +230,18 @@ namespace AeroDebrief.Core.Settings
             // Theme default
             SetPlayerSetting(PlayerSettingKeys.ThemeFile, defaultPlayerSettings[PlayerSettingKeys.ThemeFile.ToString()]);
             
+            // Audio Mixing defaults (AGC)
+            SetPlayerSetting(PlayerSettingKeys.AGC_TargetDB, double.Parse(defaultPlayerSettings[PlayerSettingKeys.AGC_TargetDB.ToString()]));
+            SetPlayerSetting(PlayerSettingKeys.AGC_MaxBoostDB, double.Parse(defaultPlayerSettings[PlayerSettingKeys.AGC_MaxBoostDB.ToString()]));
+            SetPlayerSetting(PlayerSettingKeys.AGC_MaxCutDB, double.Parse(defaultPlayerSettings[PlayerSettingKeys.AGC_MaxCutDB.ToString()]));
+            SetPlayerSetting(PlayerSettingKeys.AGC_Enabled, bool.Parse(defaultPlayerSettings[PlayerSettingKeys.AGC_Enabled.ToString()]));
+            
             // Window defaults
             SetPlayerSetting(PlayerSettingKeys.WindowWidth, int.Parse(defaultPlayerSettings[PlayerSettingKeys.WindowWidth.ToString()]));
             SetPlayerSetting(PlayerSettingKeys.WindowHeight, int.Parse(defaultPlayerSettings[PlayerSettingKeys.WindowHeight.ToString()]));
             SetPlayerSetting(PlayerSettingKeys.WindowX, int.Parse(defaultPlayerSettings[PlayerSettingKeys.WindowX.ToString()]));
             SetPlayerSetting(PlayerSettingKeys.WindowY, int.Parse(defaultPlayerSettings[PlayerSettingKeys.WindowY.ToString()]));
             SetPlayerSetting(PlayerSettingKeys.SelectedTab, int.Parse(defaultPlayerSettings[PlayerSettingKeys.SelectedTab.ToString()]));
-        }
-
-        public static bool IsFileLocked(FileInfo file)
-        {
-            if (!file.Exists) return false;
-            try
-            {
-                using (var stream = file.Open(FileMode.Open, FileAccess.Read, FileShare.None))
-                {
-                    stream.Close();
-                }
-            }
-            catch (IOException)
-            {
-                return true;
-            }
-            return false;
         }
 
         private SharpConfig.Setting GetSetting(string section, string setting)
@@ -466,5 +482,40 @@ namespace AeroDebrief.Core.Settings
         /// </summary>
         public bool GetDefaultDebugLogging() => 
             GetPlayerSettingBool(PlayerSettingKeys.EnableDebugLogging);
+        
+        /// <summary>
+        /// Get AGC target RMS level in dB
+        /// </summary>
+        public double GetAGCTargetDB() => 
+            GetPlayerSettingDouble(PlayerSettingKeys.AGC_TargetDB);
+        
+        /// <summary>
+        /// Get AGC maximum boost in dB
+        /// </summary>
+        public double GetAGCMaxBoostDB() => 
+            GetPlayerSettingDouble(PlayerSettingKeys.AGC_MaxBoostDB);
+        
+        /// <summary>
+        /// Get AGC maximum cut in dB
+        /// </summary>
+        public double GetAGCMaxCutDB() => 
+            GetPlayerSettingDouble(PlayerSettingKeys.AGC_MaxCutDB);
+        
+        /// <summary>
+        /// Get whether AGC is enabled
+        /// </summary>
+        public bool GetAGCEnabled() => 
+            GetPlayerSettingBool(PlayerSettingKeys.AGC_Enabled);
+        
+        /// <summary>
+        /// Save AGC settings
+        /// </summary>
+        public void SaveAGCSettings(double targetDB, double maxBoostDB, double maxCutDB, bool enabled)
+        {
+            SetPlayerSetting(PlayerSettingKeys.AGC_TargetDB, targetDB);
+            SetPlayerSetting(PlayerSettingKeys.AGC_MaxBoostDB, maxBoostDB);
+            SetPlayerSetting(PlayerSettingKeys.AGC_MaxCutDB, maxCutDB);
+            SetPlayerSetting(PlayerSettingKeys.AGC_Enabled, enabled);
+        }
     }
 }

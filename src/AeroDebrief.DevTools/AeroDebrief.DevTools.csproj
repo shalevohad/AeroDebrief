@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <AssemblyName>ExportFrequencyTool</AssemblyName>
+    <RootNamespace>AeroDebrief.DevTools</RootNamespace>
+    <Authors>AeroDebrief Team</Authors>
+    <Product>AeroDebrief Frequency Export Tool</Product>
+    <Description>Command-line tool to export specific frequencies from SRS recordings to WAV files</Description>
+    <Copyright>Copyright © 2024</Copyright>
+    <NoWarn>CA1416</NoWarn>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
+    <DefineConstants>TRACE</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Temporarily exclude ExportFrequencyTool.cs as it uses deprecated AudioPacketReader API -->
+    <!-- TODO: Refactor to use FilePacketSource and FilePlaybackPipeline -->
+    <Compile Remove="ExportFrequencyTool.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AeroDebrief.Core\AeroDebrief.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NLog" Version="6.0.0" />
+    <PackageReference Include="NLog.Extensions.Logging" Version="5.3.14" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="NLog.config">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>

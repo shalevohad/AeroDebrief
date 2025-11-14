@@ -298,6 +298,12 @@ namespace AeroDebrief.UI.ViewModels
         private bool _isActive;
         private DateTime _lastActivity;
         private System.Windows.Media.Color _waveformColor;
+        
+        // Mixer properties
+        private float _volume = 1.0f;
+        private float _pan = 0.0f;
+        private bool _isMuted;
+        private bool _isSolo;
 
         public double Frequency
         {
@@ -348,6 +354,86 @@ namespace AeroDebrief.UI.ViewModels
         }
 
         public FrequencyModulationInfo? SourceData { get; set; }
+
+        /// <summary>
+        /// Volume/Gain level (0.0 = silent, 1.0 = normal, 2.0 = double gain)
+        /// </summary>
+        public float Volume
+        {
+            get => _volume;
+            set
+            {
+                var clampedValue = Math.Clamp(value, 0.0f, 2.0f);
+                if (SetProperty(ref _volume, clampedValue))
+                {
+                    OnPropertyChanged(nameof(VolumePercent));
+                }
+            }
+        }
+
+        /// <summary>
+        /// Volume as a percentage (0-200%)
+        /// </summary>
+        public int VolumePercent => (int)(_volume * 100);
+
+        /// <summary>
+        /// Stereo pan position (-1.0 = full left, 0.0 = center, 1.0 = full right)
+        /// </summary>
+        public float Pan
+        {
+            get => _pan;
+            set
+            {
+                var clampedValue = Math.Clamp(value, -1.0f, 1.0f);
+                if (SetProperty(ref _pan, clampedValue))
+                {
+                    OnPropertyChanged(nameof(PanDisplay));
+                }
+            }
+        }
+
+        /// <summary>
+        /// Human-readable pan display (e.g., "Center", "L0.50", "R0.75")
+        /// </summary>
+        public string PanDisplay
+        {
+            get
+            {
+                if (Math.Abs(_pan) < 0.01f)
+                    return "Center";
+                
+                return _pan > 0 ? $"R{_pan:F2}" : $"L{Math.Abs(_pan):F2}";
+            }
+        }
+
+        /// <summary>
+        /// Whether this frequency is muted
+        /// </summary>
+        public bool IsMuted
+        {
+            get => _isMuted;
+            set => SetProperty(ref _isMuted, value);
+        }
+
+        /// <summary>
+        /// Whether this frequency is solo'd (mutes all other frequencies)
+        /// </summary>
+        public bool IsSolo
+        {
+            get => _isSolo;
+            set => SetProperty(ref _isSolo, value);
+        }
+
+        /// <summary>
+        /// Resets mixer settings to default values
+        /// </summary>
+        public void ResetMixerSettings()
+        {
+            Volume = 1.0f;
+            Pan = 0.0f;
+            IsMuted = false;
+            IsSolo = false;
+        }
 
         /// <summary>
         /// Gets the most active player on this frequency

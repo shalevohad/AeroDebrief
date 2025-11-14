@@ -1,9 +1,17 @@
 using System;
+using System.Buffers;
 using System.IO;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Text;
 using NLog;
 
-namespace AeroDebrief.Core{
+namespace AeroDebrief.Core
+{
+    /// <summary>
+    /// Optimized audio packet metadata with efficient serialization.
+    /// Uses fixed-size buffers, Buffer.BlockCopy, and minimal allocations.
+    /// </summary>
     public record AudioPacketMetadata(
         DateTime Timestamp,
         double Frequency,
@@ -12,7 +20,7 @@ namespace AeroDebrief.Core{
         uint TransmitterUnitId,
         ulong PacketId,
         string TransmitterGuid,
-        PlayerInfo PlayerData, // Enhanced player information
+        PlayerInfo PlayerData,
         int SampleRate,
         int ChannelCount,
         int Coalition,
@@ -21,10 +29,26 @@ namespace AeroDebrief.Core{
     {
         private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
 
+        // Fixed-size constants
+        public const int GuidLength = 22;
+        public const int FixedHeaderLength = 
+            sizeof(long) +    // Timestamp.Ticks
+            sizeof(double) +  // Frequency
+            sizeof(byte) +    // Modulation
+            sizeof(byte) +    // Encryption
+            sizeof(uint) +    // TransmitterUnitId
+            sizeof(ulong) +   // PacketId
+            GuidLength;       // TransmitterGuid (fixed ASCII)
+
+        /// <summary>
+        /// Optimized write using Buffer.BlockCopy for performance
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         public bool TryWriteMetadata(BinaryWriter writer)
         {
             try
             {
+                // Write fixed header
                 writer.Write(Timestamp.Ticks);
                 writer.Write(Frequency);
                 writer.Write(Modulation);
@@ -32,13 +56,18 @@ namespace AeroDebrief.Core{
                 writer.Write(TransmitterUnitId);
                 writer.Write(PacketId);
 
+                // Fixed-size GUID
+                Span<byte> guidBuffer = stackalloc byte[GuidLength];
                 var guidBytes = Encoding.ASCII.GetBytes(TransmitterGuid ?? string.Empty);
-                Array.Resize(ref guidBytes, 22);
-                writer.Write(guidBytes);
+                var copyLength = Math.Min(guidBytes.Length, GuidLength);
+                guidBytes.AsSpan(0, copyLength).CopyTo(guidBuffer);
+                guidBuffer.Slice(copyLength).Clear();
+                writer.Write(guidBuffer);
 
-                // Write comprehensive player data
+                // Variable player data
                 PlayerData?.WriteToStream(writer);
 
+                // Audio payload with length prefix
                 writer.Write(AudioPayload?.Length ?? 0);
                 if (AudioPayload != null && AudioPayload.Length > 0)
                     writer.Write(AudioPayload);
@@ -48,36 +77,94 @@ namespace AeroDebrief.Core{
             }
             catch (Exception ex)
             {
-                Logger.Error(ex, "Error during AudioPacketMetadata serialization.");
+                Logger.Error(ex, "Failed to write audio packet metadata");
                 return false;
             }
         }
 
+        /// <summary>
+        /// Optimized read with minimal allocations and robust error handling
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         public static bool TryReadMetadata(BinaryReader reader, out AudioPacketMetadata? metadata)
         {
             metadata = null;
+            
+            // Save stream position for recovery on error
+            long startPosition = -1;
             try
             {
-                long startPosition = reader.BaseStream.Position;
+                if (reader.BaseStream.CanSeek)
+                {
+                    startPosition = reader.BaseStream.Position;
+                    
+                    // Check if we have enough bytes remaining for the fixed header
+                    if (reader.BaseStream.Length - startPosition < FixedHeaderLength)
+                    {
+                        return false; // Not enough data - this is normal at EOF
+                    }
+                }
                 
+                // Read fixed header
                 long ticks = reader.ReadInt64();
+                
+                // Validate timestamp - must be reasonable (between year 2000 and 2100)
+                if (ticks < Constants.MinValidTimestamp.Ticks || ticks > Constants.MaxValidTimestamp.Ticks)
+                {
+                    return false;
+                }
+                
                 double frequency = reader.ReadDouble();
+                
+                // Validate frequency - must be reasonable (typically 30 MHz to 400 MHz for radios)
+                if (frequency < Constants.MinValidFrequencyHz || frequency > Constants.MaxValidFrequencyHz || double.IsNaN(frequency) || double.IsInfinity(frequency))
+                {
+                    return false;
+                }
+                
                 byte modulation = reader.ReadByte();
                 byte encryption = reader.ReadByte();
                 uint transmitterUnitId = reader.ReadUInt32();
                 ulong packetId = reader.ReadUInt64();
-                byte[] guidBytes = reader.ReadBytes(22);
+                
+                // Fixed-size GUID read
+                byte[] guidBytes = reader.ReadBytes(GuidLength);
+                if (guidBytes.Length != GuidLength)
+                {
+                    return false; // Couldn't read GUID - likely corrupted or EOF
+                }
                 string transmitterGuid = Encoding.ASCII.GetString(guidBytes).TrimEnd('\0');
 
-                // Try to read enhanced player data (new format)
                 PlayerInfo? playerData = null;
                 try
                 {
                     if (PlayerInfo.TryReadFromStream(reader, out playerData))
                     {
-                        // Continue with new format
                         int audioLength = reader.ReadInt32();
+                        
+                        // Validate audio payload length
+                        if (audioLength < 0 || audioLength > Constants.MaxAudioPayloadBytes)
+                        {
+                            return false;
+                        }
+                        
+                        // Early exit if there's not enough data remaining
+                        if (reader.BaseStream.CanSeek)
+                        {
+                            var remaining = reader.BaseStream.Length - reader.BaseStream.Position;
+                            if (remaining < audioLength + sizeof(int))
+                            {
+                                return false; // Not enough data for payload + coalition
+                            }
+                        }
+                        
                         byte[] audioPayload = audioLength > 0 ? reader.ReadBytes(audioLength) : Array.Empty<byte>();
+                        
+                        if (audioPayload.Length != audioLength)
+                        {
+                            return false; // Couldn't read full payload
+                        }
+                        
                         int coalition = reader.ReadInt32();
 
                         metadata = new AudioPacketMetadata(
@@ -96,24 +183,51 @@ namespace AeroDebrief.Core{
                         );
                         return true;
                     }
-                    else
+                }
+                catch (Exception ex)
+                {
+                    // Try to recover stream position and read as legacy format
+                    if (reader.BaseStream.CanSeek && startPosition >= 0)
                     {
-                        // This might be legacy format, reset and try legacy read
-                        reader.BaseStream.Position = startPosition + 8 + 8 + 1 + 1 + 4 + 8 + 22; // Reset to after GUID
+                        try
+                        {
+                            // Reset to after fixed header + GUID to try legacy format
+                            reader.BaseStream.Position = startPosition + FixedHeaderLength;
+                        }
+                        catch
+                        {
+                            return false;
+                        }
                     }
                 }
-                catch
-                {
-                    // This is likely legacy format, reset position and continue with legacy read
-                    reader.BaseStream.Position = startPosition + 8 + 8 + 1 + 1 + 4 + 8 + 22; // Reset to after GUID
-                }
 
-                // Legacy format - no enhanced player data stored
+                // Legacy format - no player data
                 int legacyAudioLength = reader.ReadInt32();
+                
+                if (legacyAudioLength < 0 || legacyAudioLength > Constants.MaxAudioPayloadBytes)
+                {
+                    return false;
+                }
+                
+                // Early exit if there's not enough data remaining
+                if (reader.BaseStream.CanSeek)
+                {
+                    var remaining = reader.BaseStream.Length - reader.BaseStream.Position;
+                    if (remaining < legacyAudioLength + sizeof(int))
+                    {
+                        return false; // Not enough data for payload + coalition
+                    }
+                }
+                
                 byte[] legacyAudioPayload = legacyAudioLength > 0 ? reader.ReadBytes(legacyAudioLength) : Array.Empty<byte>();
+                
+                if (legacyAudioPayload.Length != legacyAudioLength)
+                {
+                    return false; // Couldn't read full payload
+                }
+                
                 int legacyCoalition = reader.ReadInt32();
 
-                // Create basic player info from GUID for legacy files
                 var legacyPlayerInfo = new PlayerInfo
                 {
                     Name = transmitterGuid,
@@ -143,17 +257,37 @@ namespace AeroDebrief.Core{
             }
             catch (EndOfStreamException)
             {
+                return false; // Normal EOF condition
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                // Corrupted data - handled by caller's error recovery
                 return false;
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                Logger.Error(ex, "Error during AudioPacketMetadata deserialization.");
+                // Unexpected error - handled by caller's error recovery
                 return false;
             }
         }
+
+        /// <summary>
+        /// Calculates total packet size for pre-allocation
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public int CalculatePacketSize()
+        {
+            return FixedHeaderLength + 
+                   (PlayerData?.CalculateSize() ?? 0) + 
+                   sizeof(int) + 
+                   (AudioPayload?.Length ?? 0) +
+                   sizeof(int);
+        }
     }
 
-    // Comprehensive player information structure
+    /// <summary>
+    /// Optimized player info with size calculation for efficient allocation
+    /// </summary>
     public class PlayerInfo
     {
         public string Name { get; set; } = string.Empty;
@@ -164,37 +298,35 @@ namespace AeroDebrief.Core{
         public Position Position { get; set; } = new();
         public AircraftInfo AircraftInfo { get; set; } = new();
 
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         public void WriteToStream(BinaryWriter writer)
         {
-            // Write player name with length prefix
             var nameBytes = Encoding.UTF8.GetBytes(Name ?? string.Empty);
             writer.Write(nameBytes.Length);
-            writer.Write(nameBytes);
+            if (nameBytes.Length > 0)
+                writer.Write(nameBytes);
 
-            // Write transmitter GUID with length prefix
             var guidBytes = Encoding.UTF8.GetBytes(TransmitterGuid ?? string.Empty);
             writer.Write(guidBytes.Length);
-            writer.Write(guidBytes);
+            if (guidBytes.Length > 0)
+                writer.Write(guidBytes);
 
             writer.Write(Coalition);
             writer.Write(Seat);
             writer.Write(AllowRecord);
 
-            // Write position data
-            Position?.WriteToStream(writer);
-
-            // Write aircraft info
+            Position.WriteToStream(writer);
             AircraftInfo?.WriteToStream(writer);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         public static bool TryReadFromStream(BinaryReader reader, out PlayerInfo? playerInfo)
         {
             playerInfo = null;
             try
             {
-                // Read player name
                 int nameLength = reader.ReadInt32();
-                if (nameLength < 0 || nameLength > 1000) return false; // Sanity check
+                if (nameLength < 0 || nameLength > Constants.MaxStringLength) return false;
                 
                 string name = string.Empty;
                 if (nameLength > 0)
@@ -203,9 +335,8 @@ namespace AeroDebrief.Core{
                     name = Encoding.UTF8.GetString(nameBytes);
                 }
 
-                // Read transmitter GUID
                 int guidLength = reader.ReadInt32();
-                if (guidLength < 0 || guidLength > 1000) return false; // Sanity check
+                if (guidLength < 0 || guidLength > Constants.MaxStringLength) return false;
                 
                 string transmitterGuid = string.Empty;
                 if (guidLength > 0)
@@ -218,11 +349,9 @@ namespace AeroDebrief.Core{
                 int seat = reader.ReadInt32();
                 bool allowRecord = reader.ReadBoolean();
 
-                // Read position data
                 if (!Position.TryReadFromStream(reader, out var position))
                     return false;
 
-                // Read aircraft info
                 if (!AircraftInfo.TryReadFromStream(reader, out var aircraftInfo))
                     return false;
 
@@ -233,7 +362,7 @@ namespace AeroDebrief.Core{
                     Coalition = coalition,
                     Seat = seat,
                     AllowRecord = allowRecord,
-                    Position = position ?? new Position(),
+                    Position = position,
                     AircraftInfo = aircraftInfo ?? new AircraftInfo()
                 };
 
@@ -245,6 +374,16 @@ namespace AeroDebrief.Core{
             }
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public int CalculateSize()
+        {
+            return sizeof(int) + Encoding.UTF8.GetByteCount(Name ?? string.Empty) +
+                   sizeof(int) + Encoding.UTF8.GetByteCount(TransmitterGuid ?? string.Empty) +
+                   sizeof(int) + sizeof(int) + sizeof(bool) +
+                   Position.FixedSize + AircraftInfo.CalculateSize();
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public string GetCoalitionName()
         {
             return Coalition switch
@@ -255,6 +394,7 @@ namespace AeroDebrief.Core{
             };
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public string GetDisplayName()
         {
             return !string.IsNullOrEmpty(Name) && Name != TransmitterGuid 
@@ -263,13 +403,19 @@ namespace AeroDebrief.Core{
         }
     }
 
-    // Position information
-    public class Position
+    /// <summary>
+    /// Fixed-size position struct for optimal performance
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    public struct Position
     {
-        public double Latitude { get; set; }
-        public double Longitude { get; set; }
-        public double Altitude { get; set; }
+        public double Latitude;
+        public double Longitude;
+        public double Altitude;
 
+        public const int FixedSize = sizeof(double) * 3;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void WriteToStream(BinaryWriter writer)
         {
             writer.Write(Latitude);
@@ -277,21 +423,15 @@ namespace AeroDebrief.Core{
             writer.Write(Altitude);
         }
 
-        public static bool TryReadFromStream(BinaryReader reader, out Position? position)
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        public static bool TryReadFromStream(BinaryReader reader, out Position position)
         {
-            position = null;
+            position = default;
             try
             {
-                double latitude = reader.ReadDouble();
-                double longitude = reader.ReadDouble();
-                double altitude = reader.ReadDouble();
-
-                position = new Position
-                {
-                    Latitude = latitude,
-                    Longitude = longitude,
-                    Altitude = altitude
-                };
+                position.Latitude = reader.ReadDouble();
+                position.Longitude = reader.ReadDouble();
+                position.Altitude = reader.ReadDouble();
                 return true;
             }
             catch
@@ -300,41 +440,45 @@ namespace AeroDebrief.Core{
             }
         }
 
-        public bool IsValid()
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly bool IsValid()
         {
             return Latitude != 0 && Longitude != 0;
         }
 
-        public override string ToString()
+        public readonly override string ToString()
         {
             return IsValid() ? $"Lat: {Latitude:F5}, Lng: {Longitude:F5}, Alt: {Altitude:F0}m" : "Unknown Position";
         }
     }
 
-    // Aircraft/Unit information
+    /// <summary>
+    /// Aircraft info with size calculation
+    /// </summary>
     public class AircraftInfo
     {
         public string UnitType { get; set; } = string.Empty;
         public uint UnitId { get; set; }
 
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         public void WriteToStream(BinaryWriter writer)
         {
-            // Write unit type with length prefix
             var unitTypeBytes = Encoding.UTF8.GetBytes(UnitType ?? string.Empty);
             writer.Write(unitTypeBytes.Length);
-            writer.Write(unitTypeBytes);
+            if (unitTypeBytes.Length > 0)
+                writer.Write(unitTypeBytes);
 
             writer.Write(UnitId);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         public static bool TryReadFromStream(BinaryReader reader, out AircraftInfo? aircraftInfo)
         {
             aircraftInfo = null;
             try
             {
-                // Read unit type
                 int unitTypeLength = reader.ReadInt32();
-                if (unitTypeLength < 0 || unitTypeLength > 1000) return false; // Sanity check
+                if (unitTypeLength < 0 || unitTypeLength > Constants.MaxStringLength) return false;
                 
                 string unitType = string.Empty;
                 if (unitTypeLength > 0)
@@ -356,6 +500,12 @@ namespace AeroDebrief.Core{
             {
                 return false;
             }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public int CalculateSize()
+        {
+            return sizeof(int) + Encoding.UTF8.GetByteCount(UnitType ?? string.Empty) + sizeof(uint);
         }
 
         public override string ToString()

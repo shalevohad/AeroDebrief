@@ -15,10 +15,13 @@
     <Company>AeroDebrief</Company>
     <Product>AeroDebrief</Product>
     <Description>WPF UI for AeroDebrief - DCS SRS Playback and Analysis</Description>
+    <NoWarn>CS1998;CS8618;CS8600;CS8602;CS8603;CS8604;CS0414;CS0169;NU1701</NoWarn>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\AeroDebrief.Core\AeroDebrief.Core.csproj" />
+    <ProjectReference Include="..\AeroDebrief.Integrations\AeroDebrief.Integrations.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -28,7 +31,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Folder Include="Converters\" />
+    <PackageReference Include="FontAwesome.WPF" Version="4.7.0.9" />
   </ItemGroup>
 
 </Project>

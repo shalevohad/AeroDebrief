@@ -321,12 +321,6 @@ namespace AeroDebrief.Core.Helpers
         public static IEnumerable<string> GetAvailableThemeFiles() => UiHelpers.GetAvailableThemeFiles();
 
         /// <summary>
-        /// Gets the current recorder theme file
-        /// </summary>
-        /// <returns>Current recorder theme file name</returns>
-        public static string GetRecorderThemeFile() => UiHelpers.GetRecorderThemeFile();
-
-        /// <summary>
         /// Gets the current player theme file
         /// </summary>
         /// <returns>Current player theme file name</returns>
@@ -338,6 +332,133 @@ namespace AeroDebrief.Core.Helpers
         /// <param name="fileName">Theme file name</param>
         /// <returns>True if theme was applied successfully</returns>
         public static bool ApplyThemeFile(string fileName) => UiHelpers.ApplyThemeFile(fileName);
+
+        #endregion
+
+        #region File Operations
+
+        /// <summary>
+        /// Checks if a file exists and is accessible
+        /// </summary>
+        /// <param name="filePath">Path to the file</param>
+        /// <returns>True if file exists and is accessible</returns>
+        public static bool FileExists(string filePath) => FileHelpers.FileExistsAndAccessible(filePath);
+
+        /// <summary>
+        /// Validates that a file exists and throws a descriptive exception if not
+        /// </summary>
+        /// <param name="filePath">Path to the file</param>
+        /// <param name="fileDescription">Human-readable description of the file type</param>
+        public static void ValidateFileExists(string filePath, string fileDescription = "File") => 
+            FileHelpers.ValidateFileExists(filePath, fileDescription);
+
+        /// <summary>
+        /// Checks if a directory exists and is accessible
+        /// </summary>
+        /// <param name="directoryPath">Path to the directory</param>
+        /// <returns>True if directory exists and is accessible</returns>
+        public static bool DirectoryExists(string directoryPath) => FileHelpers.DirectoryExistsAndAccessible(directoryPath);
+
+        /// <summary>
+        /// Ensures a directory exists, creating it if necessary
+        /// </summary>
+        /// <param name="directoryPath">Path to the directory</param>
+        /// <returns>True if directory exists or was created successfully</returns>
+        public static bool EnsureDirectoryExists(string directoryPath) => FileHelpers.EnsureDirectoryExists(directoryPath);
+
+        /// <summary>
+        /// Gets the directory path for a file, creating it if necessary
+        /// </summary>
+        /// <param name="filePath">Path to the file</param>
+        /// <returns>Directory path, or null if failed</returns>
+        public static string? EnsureDirectoryForFile(string filePath) => FileHelpers.EnsureDirectoryForFile(filePath);
+
+        /// <summary>
+        /// Checks if a file is currently locked by another process
+        /// </summary>
+        /// <param name="filePath">Path to the file</param>
+        /// <returns>True if file is locked</returns>
+        public static bool IsFileLocked(string filePath) => FileHelpers.IsFileLocked(filePath);
+
+        /// <summary>
+        /// Waits for a file to become unlocked, with timeout
+        /// </summary>
+        /// <param name="filePath">Path to the file</param>
+        /// <param name="maxWaitMs">Maximum time to wait in milliseconds</param>
+        /// <param name="checkIntervalMs">Interval between checks in milliseconds</param>
+        /// <returns>True if file became unlocked within timeout</returns>
+        public static bool WaitForFileUnlock(string filePath, int maxWaitMs = 2000, int checkIntervalMs = 200) => 
+            FileHelpers.WaitForFileUnlock(filePath, maxWaitMs, checkIntervalMs);
+
+        /// <summary>
+        /// Safely combines path segments, handling nulls and empty strings
+        /// </summary>
+        /// <param name="paths">Path segments to combine</param>
+        /// <returns>Combined path</returns>
+        public static string CombinePaths(params string[] paths) => FileHelpers.SafeCombinePaths(paths);
+
+        /// <summary>
+        /// Checks if a file has a specific extension (case-insensitive)
+        /// </summary>
+        /// <param name="filePath">Path to the file</param>
+        /// <param name="extension">Extension to check (with or without leading dot)</param>
+        /// <returns>True if file has the specified extension</returns>
+        public static bool HasExtension(string filePath, string extension) => FileHelpers.HasExtension(filePath, extension);
+
+        /// <summary>
+        /// Changes the extension of a file path
+        /// </summary>
+        /// <param name="filePath">Original file path</param>
+        /// <param name="newExtension">New extension (with or without leading dot)</param>
+        /// <returns>File path with new extension</returns>
+        public static string ChangeExtension(string filePath, string newExtension) => 
+            FileHelpers.ChangeExtension(filePath, newExtension);
+
+        /// <summary>
+        /// Gets the size of a file in bytes
+        /// </summary>
+        /// <param name="filePath">Path to the file</param>
+        /// <returns>File size in bytes, or -1 if error</returns>
+        public static long GetFileSize(string filePath) => FileHelpers.GetFileSize(filePath);
+
+        /// <summary>
+        /// Gets formatted file size for a specific file
+        /// </summary>
+        /// <param name="filePath">Path to the file</param>
+        /// <returns>Formatted size string</returns>
+        public static string GetFormattedFileSize(string filePath) => FileHelpers.GetFormattedFileSize(filePath);
+
+        /// <summary>
+        /// Creates a backup copy of a file with .bak extension
+        /// </summary>
+        /// <param name="filePath">Path to the file to backup</param>
+        /// <param name="overwrite">Whether to overwrite existing backup</param>
+        /// <returns>Path to backup file, or null if backup failed</returns>
+        public static string? CreateBackup(string filePath, bool overwrite = true) => 
+            FileHelpers.CreateBackup(filePath, overwrite);
+
+        /// <summary>
+        /// Safely deletes a file, ignoring errors
+        /// </summary>
+        /// <param name="filePath">Path to the file to delete</param>
+        /// <returns>True if file was deleted or doesn't exist</returns>
+        public static bool SafeDeleteFile(string filePath) => FileHelpers.SafeDeleteFile(filePath);
+
+        /// <summary>
+        /// Safely reads all text from a file
+        /// </summary>
+        /// <param name="filePath">Path to the file</param>
+        /// <returns>File contents, or empty string if error</returns>
+        public static string SafeReadAllText(string filePath) => FileHelpers.SafeReadAllText(filePath);
+
+        /// <summary>
+        /// Safely writes text to a file
+        /// </summary>
+        /// <param name="filePath">Path to the file</param>
+        /// <param name="content">Content to write</param>
+        /// <returns>True if write succeeded</returns>
+        public static bool SafeWriteAllText(string filePath, string content) => 
+            FileHelpers.SafeWriteAllText(filePath, content);
 
         #endregion
 
@@ -450,6 +571,59 @@ namespace AeroDebrief.Core.Helpers
             /// Validates a frequency value
             /// </summary>
             public static bool IsValidFrequency(double frequency) => ValidationHelpers.IsValidFrequency(frequency);
+        }
+
+        /// <summary>
+        /// Quick access to File helper operations
+        /// </summary>
+        public static class File
+        {
+            /// <summary>
+            /// Checks if a file exists and is accessible
+            /// </summary>
+            public static bool Exists(string filePath) => FileHelpers.FileExistsAndAccessible(filePath);
+
+            /// <summary>
+            /// Checks if a file is locked by another process
+            /// </summary>
+            public static bool IsLocked(string filePath) => FileHelpers.IsFileLocked(filePath);
+
+            /// <summary>
+            /// Ensures a directory exists
+            /// </summary>
+            public static bool EnsureDirectory(string directoryPath) => FileHelpers.EnsureDirectoryExists(directoryPath);
+
+            /// <summary>
+            /// Gets the size of a file in bytes
+            /// </summary>
+            public static long Size(string filePath) => FileHelpers.GetFileSize(filePath);
+
+            /// <summary>
+            /// Gets formatted file size
+            /// </summary>
+            public static string FormattedSize(string filePath) => FileHelpers.GetFormattedFileSize(filePath);
+
+            /// <summary>
+            /// Creates a backup of a file
+            /// </summary>
+            public static string? Backup(string filePath, bool overwrite = true) => 
+                FileHelpers.CreateBackup(filePath, overwrite);
+
+            /// <summary>
+            /// Safely deletes a file
+            /// </summary>
+            public static bool Delete(string filePath) => FileHelpers.SafeDeleteFile(filePath);
+
+            /// <summary>
+            /// Safely reads all text from a file
+            /// </summary>
+            public static string ReadAllText(string filePath) => FileHelpers.SafeReadAllText(filePath);
+
+            /// <summary>
+            /// Safely writes text to a file
+            /// </summary>
+            public static bool WriteAllText(string filePath, string content) => 
+                FileHelpers.SafeWriteAllText(filePath, content);
         }
 
         #endregion

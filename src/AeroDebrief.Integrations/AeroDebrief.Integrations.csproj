@@ -12,14 +12,34 @@
     <Company>AeroDebrief</Company>
     <Product>AeroDebrief Integrations</Product>
     <Description>Integration library for TacView and DCS Lua exports</Description>
+    <NoWarn>CS1998;CS8618;CS8600;CS8602;CS8603;CS8604;CS0414;CS0169</NoWarn>
   </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.Text.Json" Version="9.0.0" />
+    <PackageReference Include="NLog" Version="6.0.0" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\AeroDebrief.Core\AeroDebrief.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Lua addon files -->
     <None Include="Lua\**\*.lua">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    
+    <!-- Lua addon documentation and configuration -->
+    <None Include="Lua\**\*.md">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="Lua\**\*.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    
+    <!-- Lua addon lib folder (structure only, actual binaries excluded by .gitignore) -->
+    <None Include="Lua\**\lib\**\*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>

@@ -6,305 +6,622 @@ using Ciribob.DCS.SimpleRadio.Standalone.Common.Models.Player;
 namespace AeroDebrief.Core.Audio
 {
     /// <summary>
-    /// Manages audio buffering for smooth playback by pre-processing packets ahead of playback position
+    /// Advanced audio buffer manager with intelligent buffering, seek support, and buffer region tracking
     /// </summary>
     public sealed class AudioBufferManager : IDisposable
     {
         private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
         
         private readonly AudioProcessingEngine _processingEngine;
-        private readonly ConcurrentQueue<ProcessedAudioChunk> _bufferedAudio = new();
-        private readonly object _bufferLock = new();
-        private readonly SemaphoreSlim _bufferSemaphore;
+        private readonly ConcurrentQueue<ProcessedAudioChunk> _processedChunks = new();
+        private readonly object _lock = new();
         
-        private Task? _bufferingTask;
-        private CancellationTokenSource? _bufferingCts;
-        private volatile bool _isBuffering;
-        private volatile int _currentPacketIndex;
-        private List<AudioPacketMetadata>? _allPackets;
+        // Buffering state
+        private Task? _processingTask;
+        private CancellationTokenSource? _cts;
+        private volatile bool _isProcessing;
+        
+        // Packet data
+        private List<AudioPacketMetadata>? _packets;
         private DateTime _recordingStart;
+        private volatile int _currentBufferIndex; // Current packet being buffered
+        private TimeSpan _totalDuration;
         
-        // Configuration
-        private readonly TimeSpan _bufferAheadTime;
-        private readonly int _maxBufferedChunks;
+        // Buffer regions tracking (for UI display)
+        private readonly List<BufferedRegion> _bufferedRegions = new();
         
-        public AudioBufferManager(AudioProcessingEngine processingEngine, TimeSpan bufferAheadTime = default, int maxBufferedChunks = 1000)
+        // Progress tracking
+        private volatile int _totalPackets;
+        public event Action<double>? ProcessingProgressChanged; // DEPRECATED - kept for compatibility
+        public event Action<List<BufferedRegion>>? BufferedRegionsChanged; // NEW - reports buffered regions for UI
+        
+        // Constants
+        private const int MIN_BUFFER_SECONDS = 10; // Minimum 10 seconds of buffer before playback can start
+        private const int CHUNK_BATCH_SIZE = 50; // Process 50 packets at a time (~1 second of audio)
+        
+        public AudioBufferManager(AudioProcessingEngine processingEngine)
         {
             _processingEngine = processingEngine ?? throw new ArgumentNullException(nameof(processingEngine));
-            _bufferAheadTime = bufferAheadTime == default ? TimeSpan.FromSeconds(3) : bufferAheadTime; // Default 3 seconds ahead
-            _maxBufferedChunks = maxBufferedChunks;
-            _bufferSemaphore = new SemaphoreSlim(_maxBufferedChunks, _maxBufferedChunks);
-            
-            Logger.Info($"AudioBufferManager initialized - Buffer ahead: {_bufferAheadTime.TotalSeconds:F1}s, Max chunks: {_maxBufferedChunks}");
+            Logger.Info("AudioBufferManager initialized with intelligent buffering");
         }
         
         /// <summary>
-        /// Starts buffering audio packets from the specified position
+        /// Starts background buffering from a specific playback position (typically current playback time)
+        /// This allows the buffer to "follow" the playback, buffering ahead continuously
         /// </summary>
-        public void StartBuffering(List<AudioPacketMetadata> packets, DateTime recordingStart, int startPacketIndex = 0)
+        public void StartBufferingFrom(List<AudioPacketMetadata> packets, DateTime recordingStart, TimeSpan startPosition)
         {
-            lock (_bufferLock)
+            lock (_lock)
             {
-                if (_isBuffering)
+                if (_isProcessing)
                 {
-                    Logger.Debug("Buffering already started, restarting with new parameters");
-                    StopBuffering();
+                    Logger.Info("Buffering already active, stopping and restarting");
+                    StopProcessing();
                 }
                 
-                _allPackets = packets ?? throw new ArgumentNullException(nameof(packets));
-                _recordingStart = recordingStart;
-                _currentPacketIndex = Math.Max(0, Math.Min(startPacketIndex, packets.Count - 1));
+                _packets = packets ?? throw new ArgumentNullException(nameof(packets));
+                _totalPackets = packets.Count;
                 
-                // Clear existing buffer
-                while (_bufferedAudio.TryDequeue(out _)) { }
+                // Use first packet's timestamp as recording start for consistent timeline
+                if (packets.Count > 0)
+                {
+                    _recordingStart = packets[0].Timestamp;
+                    _totalDuration = packets[^1].Timestamp - packets[0].Timestamp;
+                    Logger.Info($"Recording timeline: {_recordingStart} to {packets[^1].Timestamp} (duration: {_totalDuration})");
+                }
+                else
+                {
+                    _recordingStart = recordingStart;
+                    _totalDuration = TimeSpan.Zero;
+                    Logger.Warn("No packets to buffer");
+                    return;
+                }
                 
-                _isBuffering = true;
-                _bufferingCts = new CancellationTokenSource();
+                // Find starting packet index based on startPosition
+                _currentBufferIndex = FindPacketIndexForPosition(startPosition);
+                Logger.Info($"Starting buffering from position {startPosition} (packet index {_currentBufferIndex})");
                 
-                _bufferingTask = Task.Run(() => BufferingLoop(_bufferingCts.Token));
+                // Clear existing queue and regions
+                ClearBufferQueue();
+                lock (_bufferedRegions)
+                {
+                    _bufferedRegions.Clear();
+                }
                 
-                Logger.Info($"Started buffering from packet index {_currentPacketIndex}/{packets.Count}");
+                _isProcessing = true;
+                _cts = new CancellationTokenSource();
+                
+                _processingTask = Task.Run(() => ContinuousBufferingAsync(_cts.Token), _cts.Token);
+                
+                Logger.Info($"Buffering started from packet {_currentBufferIndex}/{_totalPackets}");
             }
         }
         
         /// <summary>
-        /// Stops the buffering process
+        /// Legacy method - starts processing from beginning
         /// </summary>
-        public void StopBuffering()
+        public void StartProcessing(List<AudioPacketMetadata> packets, DateTime recordingStart)
         {
-            lock (_bufferLock)
+            StartBufferingFrom(packets, recordingStart, TimeSpan.Zero);
+        }
+        
+        /// <summary>
+        /// Stops the buffering task
+        /// </summary>
+        public void StopProcessing()
+        {
+            lock (_lock)
             {
-                if (!_isBuffering) return;
+                if (!_isProcessing) return;
                 
-                _isBuffering = false;
-                _bufferingCts?.Cancel();
+                Logger.Info("Stopping buffering...");
+                _isProcessing = false;
+                _cts?.Cancel();
                 
                 try
                 {
-                    _bufferingTask?.Wait(TimeSpan.FromSeconds(2));
+                    _processingTask?.Wait(TimeSpan.FromSeconds(2));
                 }
-                catch (AggregateException ex) when (ex.InnerExceptions.All(e => e is OperationCanceledException))
+                catch (Exception ex) when (ex is OperationCanceledException or AggregateException)
                 {
-                    // Expected cancellation
-                }
-                catch (Exception ex)
-                {
-                    Logger.Warn(ex, "Error stopping buffering task");
+                    // Expected during cancellation
                 }
                 
-                _bufferingCts?.Dispose();
-                _bufferingCts = null;
-                _bufferingTask = null;
+                _cts?.Dispose();
+                _cts = null;
+                _processingTask = null;
                 
-                Logger.Debug("Buffering stopped");
+                Logger.Info("Buffering stopped");
             }
         }
         
         /// <summary>
-        /// Seeks to a new position and clears/rebuilds the buffer
+        /// Gets the next audio chunk for the specified playback position.
+        /// Returns null if no chunk is available for that position.
         /// </summary>
-        public void SeekTo(int packetIndex)
+        public ProcessedAudioChunk? GetNextChunk(TimeSpan playbackPosition)
         {
-            lock (_bufferLock)
+            if (!_processedChunks.TryPeek(out var chunk))
             {
-                if (!_isBuffering || _allPackets == null) return;
-                
-                var newIndex = Math.Max(0, Math.Min(packetIndex, _allPackets.Count - 1));
-                
-                Logger.Debug($"Seeking buffer to packet index {newIndex} (was {_currentPacketIndex})");
-                
-                // Clear existing buffer
-                while (_bufferedAudio.TryDequeue(out var chunk))
-                {
-                    chunk.Dispose();
-                }
-                
-                // Reset semaphore count
-                var currentCount = _bufferSemaphore.CurrentCount;
-                if (currentCount < _maxBufferedChunks)
-                {
-                    _bufferSemaphore.Release(_maxBufferedChunks - currentCount);
-                }
-                
-                _currentPacketIndex = newIndex;
-                
-                Logger.Debug($"Buffer seek completed to index {_currentPacketIndex}");
-            }
-        }
-        
-        /// <summary>
-        /// Gets the next processed audio chunk if available, otherwise returns null
-        /// </summary>
-        public ProcessedAudioChunk? GetNextAudioChunk(TimeSpan currentPlaybackPosition)
-        {
-            if (!_bufferedAudio.TryPeek(out var nextChunk))
-            {
-                return null; // No buffered audio available
+                return null; // Queue is empty
             }
             
-            // Check if this chunk should be played now
-            var chunkPlayTime = nextChunk.PlaybackTime;
-            var timeDifference = (chunkPlayTime - currentPlaybackPosition).TotalMilliseconds;
+            // Check if this chunk should play now (within 500ms window for tolerance - increased from 200ms to handle gaps)
+            var timeDiff = (chunk.PlaybackTime - playbackPosition).TotalMilliseconds;
             
-            // Allow some tolerance for timing (±50ms)
-            if (timeDifference <= 50)
+            // CRITICAL FIX: Increased tolerance window from 200ms to 500ms
+            // This prevents playback getting stuck when there are gaps between transmissions
+            // SRS transmissions can have natural gaps of 200-500ms which should jump forward, not fill with silence
+            if (timeDiff <= 500 && timeDiff >= -100)
             {
-                if (_bufferedAudio.TryDequeue(out var dequeuedChunk))
+                // Chunk is ready to play (or close enough - jump forward if needed)
+                if (_processedChunks.TryDequeue(out var dequeuedChunk))
                 {
-                    _bufferSemaphore.Release(); // Allow buffering of another chunk
-                    Logger.Trace($"Retrieved buffered audio chunk at {chunkPlayTime} (current: {currentPlaybackPosition})");
+                    if (timeDiff > 50)
+                    {
+                        Logger.Debug($"Jumping forward {timeDiff:F0}ms from {playbackPosition} to chunk at {dequeuedChunk.PlaybackTime}");
+                    }
+                    else
+                    {
+                        Logger.Trace($"Retrieved chunk at {dequeuedChunk.PlaybackTime} for playback at {playbackPosition}");
+                    }
                     return dequeuedChunk;
                 }
             }
+            else if (timeDiff < -100)
+            {
+                // Chunk is too late - skip it
+                if (_processedChunks.TryDequeue(out var lateChunk))
+                {
+                    Logger.Debug($"Skipping late chunk at {lateChunk.PlaybackTime} (late by {-timeDiff:F0}ms, current position: {playbackPosition})");
+                    lateChunk.Dispose();
+                    return GetNextChunk(playbackPosition); // Try next chunk recursively
+                }
+            }
             
+            // Chunk is too early (>500ms) - wait or fill with silence
             return null;
         }
         
         /// <summary>
-        /// Gets the number of buffered audio chunks
+        /// Seeks to a specific position and restarts buffering from there
         /// </summary>
-        public int BufferedChunkCount => _bufferedAudio.Count;
+        public void SeekTo(TimeSpan targetPosition)
+        {
+            lock (_lock)
+            {
+                if (_packets == null)
+                {
+                    Logger.Warn("Cannot seek - no packets loaded");
+                    return;
+                }
+                
+                var targetIndex = FindPacketIndexForPosition(targetPosition);
+                Logger.Info($"Seeking from packet {_currentBufferIndex} to {targetIndex} (position {targetPosition})");
+                
+                // Clear current buffer queue
+                ClearBufferQueue();
+                
+                // Update buffer index to new position
+                _currentBufferIndex = targetIndex;
+                
+                // Cancel current buffering task and restart from new position
+                if (_isProcessing && _cts != null && !_cts.IsCancellationRequested)
+                {
+                    Logger.Debug("Restarting buffering task after seek");
+                    // The buffering loop will pick up the new _currentBufferIndex automatically
+                }
+                
+                Logger.Info($"Seek complete - buffering will resume from packet {_currentBufferIndex}");
+            }
+        }
         
         /// <summary>
-        /// Gets the total buffered time duration
+        /// Legacy method for backward compatibility
         /// </summary>
-        public TimeSpan BufferedDuration
+        public void SeekTo(int packetIndex)
+        {
+            lock (_lock)
+            {
+                if (_packets == null) return;
+                
+                packetIndex = Math.Clamp(packetIndex, 0, _packets.Count - 1);
+                
+                var targetPosition = _packets[packetIndex].Timestamp - _recordingStart;
+                SeekTo(targetPosition);
+            }
+        }
+        
+        /// <summary>
+        /// Checks if minimum buffer threshold is met for playback to start
+        /// </summary>
+        public bool HasMinimumBuffer(TimeSpan currentPosition)
+        {
+            if (!_processedChunks.TryPeek(out var firstChunk))
+                return false; // No buffer at all
+            
+            // Calculate how much is buffered ahead of current position
+            var bufferedDuration = GetBufferedDurationFrom(currentPosition);
+            var hasMinimum = bufferedDuration.TotalSeconds >= MIN_BUFFER_SECONDS;
+            
+            if (!hasMinimum)
+            {
+                Logger.Trace($"Buffer: {bufferedDuration.TotalSeconds:F1}s / {MIN_BUFFER_SECONDS}s minimum");
+            }
+            
+            return hasMinimum;
+        }
+        
+        /// <summary>
+        /// Gets the duration of audio buffered from a specific position
+        /// </summary>
+        public TimeSpan GetBufferedDurationFrom(TimeSpan position)
+        {
+            var chunks = _processedChunks.ToArray();
+            if (chunks.Length == 0)
+                return TimeSpan.Zero;
+            
+            var relevantChunks = chunks.Where(c => c.PlaybackTime >= position).ToList();
+            if (relevantChunks.Count == 0)
+                return TimeSpan.Zero;
+            
+            var lastChunk = relevantChunks[^1];
+            return (lastChunk.PlaybackTime + lastChunk.Duration) - position;
+        }
+        
+        /// <summary>
+        /// Gets list of buffered regions for UI display (greenish overlay on waveform)
+        /// </summary>
+        public List<BufferedRegion> GetBufferedRegions()
+        {
+            lock (_bufferedRegions)
+            {
+                return new List<BufferedRegion>(_bufferedRegions);
+            }
+        }
+        
+        /// <summary>
+        /// Gets the number of processed chunks waiting in the queue
+        /// </summary>
+        public int QueuedChunkCount => _processedChunks.Count;
+        
+        /// <summary>
+        /// Diagnoses queue state when playback is stuck
+        /// </summary>
+        public (TimeSpan? NextChunkTime, string Status) DiagnoseQueue(TimeSpan currentPosition)
+        {
+            if (!_processedChunks.TryPeek(out var nextChunk))
+            {
+                var bufferStatus = _currentBufferIndex < _totalPackets 
+                    ? $"Still buffering (packet {_currentBufferIndex}/{_totalPackets})" 
+                    : "Buffering complete";
+                return (null, $"Queue is EMPTY - {bufferStatus}");
+            }
+            
+            var chunks = _processedChunks.ToArray().Take(5).ToList();
+            var nextTime = nextChunk.PlaybackTime;
+            var timeDiff = (nextTime - currentPosition).TotalMilliseconds;
+            
+            var status = $"Next: {nextTime:mm\\:ss\\.ff} (diff: {timeDiff:F0}ms from {currentPosition:mm\\:ss\\.ff})";
+            
+            if (chunks.Count > 1)
+            {
+                var times = string.Join(", ", chunks.Select(c => c.PlaybackTime.ToString(@"mm\:ss\.ff")));
+                status += $" | Queue: [{times}...]";
+            }
+            
+            status += $" | Buffer idx: {_currentBufferIndex}/{_totalPackets}";
+            
+            return (nextTime, status);
+        }
+        
+        /// <summary>
+        /// Gets whether buffering has processed all packets
+        /// </summary>
+        public bool IsProcessingComplete
         {
             get
             {
-                if (_bufferedAudio.IsEmpty) return TimeSpan.Zero;
-                
-                var chunks = _bufferedAudio.ToArray();
-                if (chunks.Length == 0) return TimeSpan.Zero;
-                
-                var firstChunk = chunks[0];
-                var lastChunk = chunks[^1];
-                return lastChunk.PlaybackTime - firstChunk.PlaybackTime + TimeSpan.FromMilliseconds(20); // Add estimated chunk duration
+                lock (_lock)
+                {
+                    return _packets != null && _currentBufferIndex >= _packets.Count;
+                }
             }
         }
         
-        private async Task BufferingLoop(CancellationToken cancellationToken)
+        /// <summary>
+        /// Gets buffering progress as percentage (0-100)
+        /// NOTE: This is BUFFERING progress, NOT playback progress!
+        /// </summary>
+        public double ProcessingProgress
         {
-            Logger.Debug("Buffering loop started");
+            get
+            {
+                if (_totalPackets == 0) return 0;
+                return (_currentBufferIndex / (double)_totalPackets) * 100.0;
+            }
+        }
+        
+        /// <summary>
+        /// Main buffering loop - continuously processes packets ahead of playback
+        /// </summary>
+        private async Task ContinuousBufferingAsync(CancellationToken cancellationToken)
+        {
+            Logger.Info("Continuous buffering task started");
             
             try
             {
-                while (!cancellationToken.IsCancellationRequested && _isBuffering)
+                while (!cancellationToken.IsCancellationRequested)
                 {
-                    // Wait for buffer space to become available
-                    await _bufferSemaphore.WaitAsync(cancellationToken);
-                    
-                    if (cancellationToken.IsCancellationRequested) break;
-                    
-                    // Check if we need more buffering
-                    if (!ShouldContinueBuffering())
+                    // Check if we've processed all packets
+                    if (_currentBufferIndex >= _totalPackets)
                     {
-                        _bufferSemaphore.Release(); // Release the semaphore we just acquired
-                        await Task.Delay(50, cancellationToken); // Brief pause before checking again
-                        continue;
+                        Logger.Info("All packets buffered - buffering task complete");
+                        break;
                     }
                     
-                    // Get the next packet to process
-                    AudioPacketMetadata? packetToProcess = null;
-                    lock (_bufferLock)
+                    // Process a batch of packets
+                    var batchStart = _currentBufferIndex;
+                    var batchEnd = Math.Min(_currentBufferIndex + CHUNK_BATCH_SIZE, _totalPackets);
+                    var batchCount = batchEnd - batchStart;
+                    
+                    if (batchCount > 0)
                     {
-                        if (_allPackets != null && _currentPacketIndex < _allPackets.Count)
-                        {
-                            packetToProcess = _allPackets[_currentPacketIndex];
-                            _currentPacketIndex++;
-                        }
+                        await ProcessPacketBatchAsync(batchStart, batchEnd, cancellationToken);
                     }
                     
-                    if (packetToProcess == null)
-                    {
-                        _bufferSemaphore.Release();
-                        await Task.Delay(100, cancellationToken); // End of packets, wait longer
-                        continue;
-                    }
-                    
-                    // Process the packet
-                    try
-                    {
-                        var processedAudio = _processingEngine.ProcessPacket(packetToProcess);
-                        
-                        if (processedAudio != null && processedAudio.Length > 0)
-                        {
-                            var pcmData = AudioConverter.FloatToPcm16(processedAudio);
-                            if (pcmData.Length > 0)
-                            {
-                                var playbackTime = packetToProcess.Timestamp - _recordingStart;
-                                var chunk = new ProcessedAudioChunk(pcmData, playbackTime, packetToProcess);
-                                
-                                _bufferedAudio.Enqueue(chunk);
-                                
-                                Logger.Trace($"?? Buffered audio chunk at {playbackTime} (packet {_currentPacketIndex - 1}, Freq={packetToProcess.Frequency:F1} Hz, Mod={(Modulation)packetToProcess.Modulation})");
-                            }
-                            else
-                            {
-                                _bufferSemaphore.Release(); // No audio produced, release semaphore
-                            }
-                        }
-                        else
-                        {
-                            _bufferSemaphore.Release(); // No audio produced, release semaphore
-                            Logger.Trace($"No audio produced for packet at index {_currentPacketIndex - 1}");
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Logger.Error(ex, $"Error processing packet for buffer: {packetToProcess.TransmitterGuid}");
-                        _bufferSemaphore.Release(); // Release on error
-                        await Task.Delay(10, cancellationToken); // Brief pause on error
-                    }
+                    // Small delay to prevent CPU hogging
+                    await Task.Delay(10, cancellationToken);
                 }
+                
+                Logger.Info($"Buffering complete: {_currentBufferIndex}/{_totalPackets} packets processed");
             }
             catch (OperationCanceledException)
             {
-                Logger.Debug("Buffering loop cancelled");
+                Logger.Info("Buffering cancelled");
             }
             catch (Exception ex)
             {
-                Logger.Error(ex, "Unexpected error in buffering loop");
-            }
-            finally
-            {
-                Logger.Debug("Buffering loop ended");
+                Logger.Error(ex, "Buffering task crashed");
             }
         }
         
-        private bool ShouldContinueBuffering()
+        /// <summary>
+        /// Processes a batch of packets efficiently
+        /// </summary>
+        private async Task ProcessPacketBatchAsync(int startIndex, int endIndex, CancellationToken cancellationToken)
         {
-            if (_allPackets == null) return false;
+            if (_packets == null) return;
             
-            // Don't buffer if we've reached the end of packets
-            if (_currentPacketIndex >= _allPackets.Count) return false;
+            var processedCount = 0;
+            var regionStart = TimeSpan.Zero;
+            var regionEnd = TimeSpan.Zero;
             
-            // Don't buffer if we already have enough time buffered ahead
-            if (!_bufferedAudio.IsEmpty)
+            for (int i = startIndex; i < endIndex && !cancellationToken.IsCancellationRequested; i++)
             {
-                var bufferedDuration = BufferedDuration;
-                if (bufferedDuration >= _bufferAheadTime)
+                var packet = _packets[i];
+                
+                try
                 {
-                    return false;
+                    // Skip empty packets
+                    if (packet.AudioPayload == null || packet.AudioPayload.Length == 0)
+                    {
+                        continue;
+                    }
+                    
+                    // Process packet
+                    var processedAudio = _processingEngine.ProcessPacket(packet);
+                    
+                    if (processedAudio != null && processedAudio.Length > 0)
+                    {
+                        // DIAGNOSTIC: Check audio before conversion
+                        var maxAmplitude = processedAudio.Max(Math.Abs);
+                        var nonZeroCount = processedAudio.Count(s => Math.Abs(s) > 0.001f);
+                        Logger.Debug($"?? Buffer: Processed packet - max amplitude={maxAmplitude:F4}, non-zero={nonZeroCount}/{processedAudio.Length}");
+                        
+                        if (maxAmplitude == 0)
+                        {
+                            Logger.Error($"?? CRITICAL: ProcessPacket returned SILENT audio! Packet index={i}, frequency={packet.Frequency}Hz");
+                            continue; // Skip silent audio
+                        }
+                        
+                        var pcmData = AudioConverter.FloatToPcm16(processedAudio);
+                        if (pcmData.Length > 0)
+                        {
+                            var playbackTime = packet.Timestamp - _recordingStart;
+                            var samples = pcmData.Length / 2;
+                            var duration = TimeSpan.FromSeconds(samples / (double)Constants.OUTPUT_SAMPLE_RATE);
+                            
+                            var chunk = new ProcessedAudioChunk(pcmData, playbackTime, packet, duration);
+                            _processedChunks.Enqueue(chunk);
+                            
+                            processedCount++;
+                            
+                            // Track buffered region
+                            if (processedCount == 1)
+                                regionStart = playbackTime;
+                            regionEnd = playbackTime + duration;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error(ex, $"Error processing packet {i}");
+                    // Continue processing other packets
                 }
             }
             
-            return true;
+            // Update buffer index
+            lock (_lock)
+            {
+                _currentBufferIndex = endIndex;
+            }
+            
+            // Update buffered regions if we processed anything
+            if (processedCount > 0)
+            {
+                UpdateBufferedRegions(regionStart, regionEnd);
+            }
+            
+            // Log progress periodically
+            if (endIndex % 500 == 0 || endIndex == _totalPackets)
+            {
+                var progress = (endIndex / (double)_totalPackets) * 100.0;
+                Logger.Debug($"Buffering progress: {endIndex}/{_totalPackets} ({progress:F1}%) - Queue: {_processedChunks.Count} chunks");
+                
+                // Fire legacy progress event
+                try
+                {
+                    ProcessingProgressChanged?.Invoke(progress);
+                }
+                catch (Exception ex)
+                {
+                    Logger.Warn(ex, "Error invoking progress event");
+                }
+            }
+            
+            await Task.CompletedTask;
+        }
+        
+        /// <summary>
+        /// Updates the list of buffered regions and fires UI update event
+        /// </summary>
+        private void UpdateBufferedRegions(TimeSpan start, TimeSpan end)
+        {
+            lock (_bufferedRegions)
+            {
+                // Try to merge with existing regions
+                var merged = false;
+                for (int i = 0; i < _bufferedRegions.Count; i++)
+                {
+                    var region = _bufferedRegions[i];
+                    
+                    // Check if regions overlap or are adjacent (within 1 second)
+                    if (Math.Abs((start - region.End).TotalSeconds) < 1.0 ||
+                        Math.Abs((end - region.Start).TotalSeconds) < 1.0 ||
+                        (start >= region.Start && start <= region.End) ||
+                        (end >= region.Start && end <= region.End))
+                    {
+                        // Merge regions
+                        _bufferedRegions[i] = new BufferedRegion
+                        {
+                            Start = TimeSpan.FromTicks(Math.Min(start.Ticks, region.Start.Ticks)),
+                            End = TimeSpan.FromTicks(Math.Max(end.Ticks, region.End.Ticks))
+                        };
+                        merged = true;
+                        break;
+                    }
+                }
+                
+                if (!merged)
+                {
+                    // Add as new region
+                    _bufferedRegions.Add(new BufferedRegion { Start = start, End = end });
+                }
+                
+                // Sort regions by start time
+                _bufferedRegions.Sort((a, b) => a.Start.CompareTo(b.Start));
+                
+                // Notify UI of updated regions
+                try
+                {
+                    BufferedRegionsChanged?.Invoke(new List<BufferedRegion>(_bufferedRegions));
+                }
+                catch (Exception ex)
+                {
+                    Logger.Warn(ex, "Error invoking buffered regions event");
+                }
+            }
+        }
+        
+        /// <summary>
+        /// Finds the packet index closest to a specific playback position
+        /// </summary>
+        private int FindPacketIndexForPosition(TimeSpan position)
+        {
+            if (_packets == null || _packets.Count == 0)
+                return 0;
+            
+            var targetTime = _recordingStart + position;
+            
+            // Binary search for efficiency
+            int left = 0;
+            int right = _packets.Count - 1;
+            int bestIndex = 0;
+            
+            while (left <= right)
+            {
+                int mid = left + (right - left) / 2;
+                
+                if (_packets[mid].Timestamp <= targetTime)
+                {
+                    bestIndex = mid;
+                    left = mid + 1;
+                }
+                else
+                {
+                    right = mid - 1;
+                }
+            }
+            
+            return Math.Clamp(bestIndex, 0, _packets.Count - 1);
+        }
+        
+        /// <summary>
+        /// Clears all chunks from the buffer queue
+        /// </summary>
+        private void ClearBufferQueue()
+        {
+            var count = 0;
+            while (_processedChunks.TryDequeue(out var chunk))
+            {
+                chunk?.Dispose();
+                count++;
+            }
+            
+            if (count > 0)
+            {
+                Logger.Debug($"Cleared {count} chunks from buffer queue");
+            }
         }
         
         public void Dispose()
         {
-            StopBuffering();
+            StopProcessing();
+            ClearBufferQueue();
             
-            // Clean up any remaining buffered chunks
-            while (_bufferedAudio.TryDequeue(out var chunk))
+            lock (_bufferedRegions)
             {
-                chunk.Dispose();
+                _bufferedRegions.Clear();
             }
             
-            _bufferSemaphore.Dispose();
-            Logger.Debug("AudioBufferManager disposed");
+            Logger.Info("AudioBufferManager disposed");
         }
+    }
+    
+    /// <summary>
+    /// Represents a region of audio that has been buffered
+    /// </summary>
+    public class BufferedRegion
+    {
+        public TimeSpan Start { get; set; }
+        public TimeSpan End { get; set; }
+        
+        public TimeSpan Duration => End - Start;
+        
+        /// <summary>
+        /// Gets normalized start position (0-1) relative to total duration
+        /// </summary>
+        public double GetNormalizedStart(TimeSpan totalDuration) =>
+            totalDuration.TotalSeconds > 0 ? Start.TotalSeconds / totalDuration.TotalSeconds : 0;
+        
+        /// <summary>
+        /// Gets normalized end position (0-1) relative to total duration
+        /// </summary>
+        public double GetNormalizedEnd(TimeSpan totalDuration) =>
+            totalDuration.TotalSeconds > 0 ? End.TotalSeconds / totalDuration.TotalSeconds : 0;
+        
+        public override string ToString() => $"{Start:mm\\:ss\\.ff} - {End:mm\\:ss\\.ff} ({Duration.TotalSeconds:F1}s)";
     }
     
     /// <summary>
@@ -315,18 +632,19 @@ namespace AeroDebrief.Core.Audio
         public byte[] AudioData { get; }
         public TimeSpan PlaybackTime { get; }
         public AudioPacketMetadata SourcePacket { get; }
+        public TimeSpan Duration { get; }
         
-        public ProcessedAudioChunk(byte[] audioData, TimeSpan playbackTime, AudioPacketMetadata sourcePacket)
+        public ProcessedAudioChunk(byte[] audioData, TimeSpan playbackTime, AudioPacketMetadata sourcePacket, TimeSpan duration)
         {
             AudioData = audioData ?? throw new ArgumentNullException(nameof(audioData));
             PlaybackTime = playbackTime;
             SourcePacket = sourcePacket ?? throw new ArgumentNullException(nameof(sourcePacket));
+            Duration = duration;
         }
         
         public void Dispose()
         {
             // Audio data is a byte array, no explicit disposal needed
-            // This is here for future extensibility if we need to dispose managed resources
         }
     }
 }

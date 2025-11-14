@@ -57,6 +57,18 @@ namespace AeroDebrief.UI.Controls
             DependencyProperty.Register(nameof(MiniMapHeight), typeof(double), typeof(WaveformWithMiniMap),
                 new PropertyMetadata(60.0, OnMiniMapHeightChanged));
 
+        public static readonly DependencyProperty BufferStartPositionProperty =
+            DependencyProperty.Register(nameof(BufferStartPosition), typeof(double), typeof(WaveformWithMiniMap),
+                new PropertyMetadata(0.0, OnBufferStartPositionChanged));
+
+        public static readonly DependencyProperty BufferEndPositionProperty =
+            DependencyProperty.Register(nameof(BufferEndPosition), typeof(double), typeof(WaveformWithMiniMap),
+                new PropertyMetadata(0.0, OnBufferEndPositionChanged));
+
+        public static readonly DependencyProperty GenerationProgressProperty =
+            DependencyProperty.Register(nameof(GenerationProgress), typeof(double), typeof(WaveformWithMiniMap),
+                new PropertyMetadata(0.0, OnGenerationProgressChanged));
+
         #endregion
 
         #region Properties
@@ -125,6 +137,24 @@ namespace AeroDebrief.UI.Controls
         {
             get => (double)GetValue(MiniMapHeightProperty);
             set => SetValue(MiniMapHeightProperty, value);
+        }
+
+        public double BufferStartPosition
+        {
+            get => (double)GetValue(BufferStartPositionProperty);
+            set => SetValue(BufferStartPositionProperty, value);
+        }
+
+        public double BufferEndPosition
+        {
+            get => (double)GetValue(BufferEndPositionProperty);
+            set => SetValue(BufferEndPositionProperty, value);
+        }
+
+        public double GenerationProgress
+        {
+            get => (double)GetValue(GenerationProgressProperty);
+            set => SetValue(GenerationProgressProperty, value);
         }
 
         #endregion
@@ -244,6 +274,7 @@ namespace AeroDebrief.UI.Controls
         {
             if (d is WaveformWithMiniMap control)
             {
+                control._waveformViewer.TotalDuration = (TimeSpan)e.NewValue;
                 control._miniMap.TotalDuration = (TimeSpan)e.NewValue;
             }
         }
@@ -288,6 +319,30 @@ namespace AeroDebrief.UI.Controls
             if (d is WaveformWithMiniMap control && control.ShowMiniMap)
             {
                 control._rootGrid.RowDefinitions[2].Height = new GridLength((double)e.NewValue);
+            }
+        }
+
+        private static void OnBufferStartPositionChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+        {
+            if (d is WaveformWithMiniMap control)
+            {
+                control._waveformViewer.BufferStartPosition = (double)e.NewValue;
+            }
+        }
+
+        private static void OnBufferEndPositionChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+        {
+            if (d is WaveformWithMiniMap control)
+            {
+                control._waveformViewer.BufferEndPosition = (double)e.NewValue;
+            }
+        }
+
+        private static void OnGenerationProgressChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+        {
+            if (d is WaveformWithMiniMap control)
+            {
+                control._waveformViewer.GenerationProgress = (double)e.NewValue;
             }
         }
 

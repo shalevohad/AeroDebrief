@@ -48,6 +48,7 @@ namespace AeroDebrief.Core{
 
         private RecorderSettingsStore()
         {
+            // Check for command-line override first
             var args = Environment.GetCommandLineArgs();
             foreach (var arg in args)
                 if (arg.Trim().StartsWith("-recordercfg="))
@@ -57,18 +58,31 @@ namespace AeroDebrief.Core{
                     Logger.Info($"Found -recordercfg loading: {Path + ConfigFileName}");
                 }
 
+            // If no command-line override, use configs folder in application directory
+            if (string.IsNullOrEmpty(Path))
+            {
+                Path = System.IO.Path.Combine(AppContext.BaseDirectory, Constants.CONFIG_FOLDER);
+                if (!Directory.Exists(Path))
+                {
+                    Directory.CreateDirectory(Path);
+                    Logger.Info($"Created configs directory: {Path}");
+                }
+                Path = Path + System.IO.Path.DirectorySeparatorChar;
+            }
+
             try
             {
+                var configPath = Path + ConfigFileName;
                 var count = 0;
-                while (IsFileLocked(new FileInfo(Path + ConfigFileName)) && count < 10)
+                while (IsFileLocked(new FileInfo(configPath)) && count < 10)
                 {
-                    Logger.Warn($"Config file {Path + ConfigFileName} is locked. Waiting...");
+                    Logger.Warn($"Config file {configPath} is locked. Waiting...");
                     Thread.Sleep(200);
                     count++;
                 }
 
-                _configuration = Configuration.LoadFromFile(Path + ConfigFileName);
-                Logger.Info($"Loaded recorder config from {Path + ConfigFileName}");
+                _configuration = Configuration.LoadFromFile(configPath);
+                Logger.Info($"Loaded recorder config from {configPath}");
             }
             catch (FileNotFoundException)
             {

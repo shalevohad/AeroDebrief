@@ -27,8 +27,11 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SharedAudio", "External\SRS
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{8EC462FD-D22E-90A8-E5CE-7E832BA40C5D}"
 	ProjectSection(SolutionItems) = preProject
-		docs\Prompts\RadioPresenceNetworkView_Copilot_Prompt.txt = docs\Prompts\RadioPresenceNetworkView_Copilot_Prompt.txt
+		..\..\..\..\..\Program Files (x86)\Tacview\AddOns\Tacview Core Interface.txt = ..\..\..\..\..\Program Files (x86)\Tacview\AddOns\Tacview Core Interface.txt
+		..\..\..\..\..\Program Files (x86)\Tacview\AddOns\Tacview Main Interface.txt = ..\..\..\..\..\Program Files (x86)\Tacview\AddOns\Tacview Main Interface.txt
 	EndProjectSection
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AeroDebrief.DevTools", "src\AeroDebrief.DevTools\AeroDebrief.DevTools.csproj", "{4D237B73-9327-58A7-FF5D-919CEBDC2100}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -124,6 +127,18 @@ Global
 		{30F29FE6-1CC9-4A20-A389-0439E6F3DE7F}.Release|x64.Build.0 = Release|Any CPU
 		{30F29FE6-1CC9-4A20-A389-0439E6F3DE7F}.Release|x86.ActiveCfg = Release|Any CPU
 		{30F29FE6-1CC9-4A20-A389-0439E6F3DE7F}.Release|x86.Build.0 = Release|Any CPU
+		{4D237B73-9327-58A7-FF5D-919CEBDC2100}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4D237B73-9327-58A7-FF5D-919CEBDC2100}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4D237B73-9327-58A7-FF5D-919CEBDC2100}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{4D237B73-9327-58A7-FF5D-919CEBDC2100}.Debug|x64.Build.0 = Debug|Any CPU
+		{4D237B73-9327-58A7-FF5D-919CEBDC2100}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{4D237B73-9327-58A7-FF5D-919CEBDC2100}.Debug|x86.Build.0 = Debug|Any CPU
+		{4D237B73-9327-58A7-FF5D-919CEBDC2100}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4D237B73-9327-58A7-FF5D-919CEBDC2100}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4D237B73-9327-58A7-FF5D-919CEBDC2100}.Release|x64.ActiveCfg = Release|Any CPU
+		{4D237B73-9327-58A7-FF5D-919CEBDC2100}.Release|x64.Build.0 = Release|Any CPU
+		{4D237B73-9327-58A7-FF5D-919CEBDC2100}.Release|x86.ActiveCfg = Release|Any CPU
+		{4D237B73-9327-58A7-FF5D-919CEBDC2100}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -137,6 +152,7 @@ Global
 		{6BDF01F6-FB49-BDA7-B310-88FBA6F3310A} = {A288BEE0-695A-BEEA-455C-649571D89326}
 		{C530FA2B-9D50-4853-980D-5502BF493C31} = {6BDF01F6-FB49-BDA7-B310-88FBA6F3310A}
 		{30F29FE6-1CC9-4A20-A389-0439E6F3DE7F} = {6BDF01F6-FB49-BDA7-B310-88FBA6F3310A}
+		{4D237B73-9327-58A7-FF5D-919CEBDC2100} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {D25A06F3-8B62-4051-9C15-4A50314F1440}

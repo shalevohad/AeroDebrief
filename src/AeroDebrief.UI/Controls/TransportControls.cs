@@ -4,6 +4,8 @@ using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Media;
 using System.Windows.Shapes;
+using AeroDebrief.UI.Helpers;
+using FontAwesome.WPF;
 
 namespace AeroDebrief.UI.Controls
 {
@@ -163,14 +165,14 @@ namespace AeroDebrief.UI.Controls
             // Create icons bound to the buttons' Foreground so they follow theme colors
             if (_playPauseButton != null)
             {
-                _playIconForPlayButton = CreatePlayIcon(_playPauseButton);
-                _pauseIconForPlayButton = CreatePauseIcon(_playPauseButton);
+                _playIconForPlayButton = IconHelper.CreateFaIcon(FontAwesomeIcon.Play, 16, _playPauseButton.Foreground);
+                _pauseIconForPlayButton = IconHelper.CreateFaIcon(FontAwesomeIcon.Pause, 16, _playPauseButton.Foreground);
                 _playPauseButton.Content = IsPlaying ? _pauseIconForPlayButton : _playIconForPlayButton;
             }
 
             if (_stopButton != null)
             {
-                _stopIconForStopButton = CreateStopIcon(_stopButton);
+                _stopIconForStopButton = IconHelper.CreateFaIcon(FontAwesomeIcon.Stop, 16, _stopButton.Foreground);
                 _stopButton.Content = _stopIconForStopButton;
             }
 
@@ -271,54 +273,6 @@ namespace AeroDebrief.UI.Controls
         private static string FormatTime(TimeSpan time)
         {
             return time.ToString(@"hh\:mm\:ss");
-        }
-
-        private UIElement CreatePlayIcon(Button target)
-        {
-            var path = new Path
-            {
-                Data = Geometry.Parse("M 4 2 L 4 30 L 28 16 Z"),
-                Stretch = Stretch.Uniform,
-                Width = 20,
-                Height = 20,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center
-            };
-            // Bind fill to button Foreground
-            path.SetBinding(Shape.FillProperty, new Binding("Foreground") { Source = target });
-
-            var viewbox = new Viewbox { Child = path, Width = 20, Height = 20 };
-            return viewbox;
-        }
-
-        private UIElement CreatePauseIcon(Button target)
-        {
-            var grid = new Grid { Width = 20, Height = 20 };
-            var rect1 = new Rectangle { Width = 6, Height = 20, RadiusX = 1, RadiusY = 1 };
-            var rect2 = new Rectangle { Width = 6, Height = 20, RadiusX = 1, RadiusY = 1, Margin = new Thickness(10,0,0,0) };
-            // Bind fills
-            rect1.SetBinding(Shape.FillProperty, new Binding("Foreground") { Source = target });
-            rect2.SetBinding(Shape.FillProperty, new Binding("Foreground") { Source = target });
-            grid.Children.Add(rect1);
-            grid.Children.Add(rect2);
-            var viewbox = new Viewbox { Child = grid, Width = 20, Height = 20 };
-            return viewbox;
-        }
-
-        private UIElement CreateStopIcon(Button target)
-        {
-            var rect = new Rectangle
-            {
-                Width = 16,
-                Height = 16,
-                RadiusX = 1,
-                RadiusY = 1,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center
-            };
-            rect.SetBinding(Shape.FillProperty, new Binding("Foreground") { Source = target });
-            var viewbox = new Viewbox { Child = rect, Width = 20, Height = 20 };
-            return viewbox;
         }
 
         private static void OnStateChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)

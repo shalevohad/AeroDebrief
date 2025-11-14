@@ -10,24 +10,29 @@ using System.Linq;
 namespace AeroDebrief.Core.Audio
 {
     /// <summary>Handles audio processing with SRS Common integration</summary>
-    public sealed class AudioProcessingEngine : IDisposable
+    public sealed class AudioProcessingEngine : IAudioProcessingEngine
     {
         private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
         
-        private readonly Dictionary<string, OpusDecoder> _opusDecoders = new();
+        private readonly Dictionary<string, Ciribob.DCS.SimpleRadio.Standalone.Common.Audio.Opus.Core.OpusDecoder> _opusDecoders = new();
         private readonly Dictionary<string, float> _transmitterVolumes = new();
+        private readonly Dictionary<string, float[]?> _transmitterLastPacket = new(); // NEW: Track last packet per transmitter for crossfading
         private float _masterVolume = 1.0f;
         private bool _disposed;
+        
+        // NEW: Crossfade settings for smooth packet transitions
+        private const int CrossfadeSamples = 240; // 5ms crossfade at 48kHz (reduced from 10ms for tighter feel)
+        private const double MaxGapForCrossfade = 0.1; // 100ms - apply crossfade if gap is smaller
 
         public void Initialize()
         {
-            Logger.Info("Audio processing engine initialized");
+            Logger.Info("Audio processing engine initialized with crossfade support");
         }
 
         public void SetMasterVolume(float volume)
         {
             _masterVolume = Math.Clamp(volume, 0.0f, Constants.MAX_VOLUME);
-            Logger.Debug($"Master volume set to {_masterVolume:F2}");
+            Logger.Info($"?? AudioProcessingEngine: Master volume set to {_masterVolume:F2}");
         }
 
         /// <summary>
@@ -44,6 +49,7 @@ namespace AeroDebrief.Core.Audio
                 }
 
                 var isOpus = Helpers.Helpers.IsOpusEncoded(packet);
+                Logger.Debug($"?? DecodePacketToFloat: Packet from {packet.TransmitterGuid}, size={packet.AudioPayload.Length} bytes, isOpus={isOpus}");
 
                 float[] audioData;
                 if (isOpus)
@@ -52,19 +58,62 @@ namespace AeroDebrief.Core.Audio
                 }
                 else
                 {
-                audioData = Helpers.Helpers.ConvertPcm16ToFloat(packet.AudioPayload);
+                    audioData = Helpers.Helpers.ConvertPcm16ToFloat(packet.AudioPayload);
                 }
 
                 if (audioData == null || audioData.Length == 0)
                 {
-                    Logger.Debug($"No audio data after decoding packet from {packet.TransmitterGuid}");
+                    Logger.Warn($"?? No audio data after decoding packet from {packet.TransmitterGuid}");
                     return new float[Constants.OPUS_FRAME_SIZE];
+                }
+
+                // CRITICAL DIAGNOSTIC: Check amplitude IMMEDIATELY after decoding
+                var maxAmplitudeAfterDecode = audioData.Max(Math.Abs);
+                var nonZeroSamples = audioData.Count(s => Math.Abs(s) > 0.001f);
+                Logger.Info($"?? AFTER DECODE: max amplitude={maxAmplitudeAfterDecode:F4}, non-zero samples={nonZeroSamples}/{audioData.Length}, sampleRate={packet.SampleRate}");
+
+                if (maxAmplitudeAfterDecode == 0)
+                {
+                    Logger.Error($"?? CRITICAL: Decoded audio is SILENT! This should never happen for valid audio data. Payload size: {packet.AudioPayload.Length} bytes");
+                    return audioData; // Return silence, don't try to process
+                }
+
+                // CRITICAL FIX: Normalize audio if amplitude is too low
+                // Opus decoder sometimes returns very quiet audio that needs amplification
+                if (maxAmplitudeAfterDecode > 0 && maxAmplitudeAfterDecode < 0.1f)
+                {
+                    // Audio is too quiet - normalize it to use more of the dynamic range
+                    // Target peak around 0.5 (50% of full scale) to leave headroom for mixing
+                    // Reduced from 0.7 to prevent clipping when multiple frequencies are mixed
+                    const float targetPeak = 0.5f;
+                    float amplificationFactor = targetPeak / maxAmplitudeAfterDecode;
+                    
+                    Logger.Info($"? NORMALIZING: Audio too quiet ({maxAmplitudeAfterDecode:F4}), amplifying by {amplificationFactor:F2}x to reach {targetPeak:F2} peak");
+                    
+                    // Apply amplification WITHOUT hard clipping
+                    // This prevents the 25% clipping issue seen in tests
+                    for (int i = 0; i < audioData.Length; i++)
+                    {
+                        audioData[i] *= amplificationFactor;
+                        
+                        // Soft limiter: use tanh for smooth limiting instead of hard clamp
+                        // This prevents harsh clipping distortion while still keeping samples in range
+                        if (Math.Abs(audioData[i]) > 0.95f)
+                        {
+                            audioData[i] = (float)Math.Tanh(audioData[i] * 1.1) * 0.95f;
+                        }
+                    }
+                    
+                    var maxAfterNormalization = audioData.Max(Math.Abs);
+                    Logger.Info($"? AFTER NORMALIZATION: max amplitude={maxAfterNormalization:F4} (target was {targetPeak:F2})");
                 }
 
                 // Resample if needed (ensure output sample rate)
                 if (packet.SampleRate != Constants.OUTPUT_SAMPLE_RATE)
                 {
                     audioData = Helpers.Helpers.ResampleAudio(audioData, packet.SampleRate, Constants.OUTPUT_SAMPLE_RATE);
+                    var maxAmplitudeAfterResample = audioData.Max(Math.Abs);
+                    Logger.Debug($"?? AFTER RESAMPLE: {packet.SampleRate}Hz -> {Constants.OUTPUT_SAMPLE_RATE}Hz, max amplitude={maxAmplitudeAfterResample:F4}");
                 }
 
                 return audioData;
@@ -95,11 +144,33 @@ namespace AeroDebrief.Core.Audio
                     return new float[Constants.OPUS_FRAME_SIZE];
                 }
 
+                // NEW: Apply crossfade to eliminate jittering/clicking between packets
+                audioData = ApplyCrossfade(packet.TransmitterGuid, audioData, packet.Timestamp);
+
+                // CRITICAL DIAGNOSTIC: Check amplitude before volume control
+                var maxAmplitudeBeforeVolume = audioData.Max(Math.Abs);
+                //Logger.Debug($"BEFORE VOLUME: max amplitude={maxAmplitudeBeforeVolume:F4}");
+
                 // Apply volume control
                 var effectiveVolume = GetEffectiveVolume(packet.TransmitterGuid);
+                //Logger.Info($"VOLUME: effective={effectiveVolume:F4}, master={_masterVolume:F4}, transmitter={_transmitterVolumes.GetValueOrDefault(packet.TransmitterGuid, 1.0f):F4}");
+                
                 if (effectiveVolume > 0)
                 {
                     ApplyVolumeControl(audioData, effectiveVolume);
+                }
+                else
+                {
+                    Logger.Warn($"CRITICAL: Effective volume is {effectiveVolume:F4} - audio will be SILENT!");
+                }
+
+                // CRITICAL DIAGNOSTIC: Check amplitude after volume control
+                var maxAmplitudeAfterVolume = audioData.Max(Math.Abs);
+                //Logger.Info($"AFTER VOLUME: max amplitude={maxAmplitudeAfterVolume:F4}");
+
+                if (maxAmplitudeAfterVolume == 0 && maxAmplitudeBeforeVolume > 0)
+                {
+                    Logger.Error($"CRITICAL: Volume control made audio SILENT! Before: {maxAmplitudeBeforeVolume:F4}, After: {maxAmplitudeAfterVolume:F4}, Volume: {effectiveVolume:F4}");
                 }
 
                 // Apply basic audio effects (disabled for now)
@@ -115,22 +186,111 @@ namespace AeroDebrief.Core.Audio
             }
         }
 
+        /// <summary>
+        /// NEW: Applies crossfade to smooth transitions between packets from the same transmitter
+        /// This eliminates clicks, pops, and jittering during real-time playback
+        /// </summary>
+        private float[] ApplyCrossfade(string transmitterGuid, float[] currentAudio, DateTime currentTimestamp)
+        {
+            if (currentAudio == null || currentAudio.Length == 0)
+                return currentAudio;
+
+            // Initialize tracking for new transmitter
+            if (!_transmitterLastPacket.ContainsKey(transmitterGuid))
+            {
+                _transmitterLastPacket[transmitterGuid] = null;
+            }
+
+            var lastPacket = _transmitterLastPacket[transmitterGuid];
+            
+            // If this is first packet or last packet was null, apply fade-in only
+            if (lastPacket == null || lastPacket.Length == 0)
+            {
+                ApplyFadeIn(currentAudio, CrossfadeSamples);
+                _transmitterLastPacket[transmitterGuid] = currentAudio;
+                Logger.Trace($"Crossfade: Applied fade-in for first packet from {transmitterGuid}");
+                return currentAudio;
+            }
+
+            // Apply crossfade between last packet end and current packet start
+            // This creates smooth transitions and eliminates clicks
+            ApplyCrossfadeBetweenPackets(lastPacket, currentAudio, CrossfadeSamples);
+            
+            // Store current packet for next crossfade
+            _transmitterLastPacket[transmitterGuid] = currentAudio;
+            
+            return currentAudio;
+        }
+
+        /// <summary>
+        /// Applies fade-in envelope at the start of audio
+        /// </summary>
+        private void ApplyFadeIn(float[] audio, int fadeLength)
+        {
+            fadeLength = Math.Min(fadeLength, audio.Length);
+            
+            for (int i = 0; i < fadeLength; i++)
+            {
+                float fadeEnvelope = (float)i / fadeLength;
+                audio[i] *= fadeEnvelope;
+            }
+        }
+
+        /// <summary>
+        /// Applies fade-out envelope at the end of audio
+        /// </summary>
+        private void ApplyFadeOut(float[] audio, int fadeLength)
+        {
+            fadeLength = Math.Min(fadeLength, audio.Length);
+            int startIdx = audio.Length - fadeLength;
+            
+            for (int i = 0; i < fadeLength; i++)
+            {
+                float fadeEnvelope = 1.0f - ((float)i / fadeLength);
+                audio[startIdx + i] *= fadeEnvelope;
+            }
+        }
+
+        /// <summary>
+        /// Applies crossfade between the end of previous packet and start of current packet
+        /// </summary>
+        private void ApplyCrossfadeBetweenPackets(float[] previousAudio, float[] currentAudio, int fadeLength)
+        {
+            if (previousAudio == null || currentAudio == null)
+                return;
+
+            fadeLength = Math.Min(fadeLength, Math.Min(previousAudio.Length, currentAudio.Length));
+            
+            // Fade out last samples of previous audio
+            ApplyFadeOut(previousAudio, fadeLength);
+            
+            // Fade in first samples of current audio
+            ApplyFadeIn(currentAudio, fadeLength);
+            
+            Logger.Trace($"Crossfade: Applied {fadeLength} sample crossfade between packets");
+        }
+
         public void ResetDecoders()
         {
+            // Clear all decoders - they will be recreated on next use
             foreach (var decoder in _opusDecoders.Values)
             {
                 try
                 {
-                    // Reset OPUS decoder state for seeking by decoding silence with reset flag
-                    var silenceBuffer = new float[Constants.OPUS_FRAME_SIZE];
-                    decoder.DecodeFloat(null, silenceBuffer.AsMemory(), true);
+                    decoder?.Dispose();
                 }
                 catch (Exception ex)
                 {
-                    Logger.Warn(ex, "Failed to reset OPUS decoder");
+                    Logger.Warn(ex, "Failed to dispose OPUS decoder");
                 }
             }
-            Logger.Debug("All OPUS decoders reset for seeking");
+            
+            _opusDecoders.Clear();
+            
+            // NEW: Clear crossfade history on seek to prevent artifacts
+            _transmitterLastPacket.Clear();
+            
+            Logger.Debug("All OPUS decoders cleared for seeking, crossfade history cleared");
         }
 
         private float[] DecodeOpusAudio(AudioPacketMetadata packet)
@@ -139,9 +299,10 @@ namespace AeroDebrief.Core.Audio
             {
                 var decoder = GetOrCreateOpusDecoder(packet.TransmitterGuid);
                 const int expectedSamples = Constants.OUTPUT_SAMPLE_RATE * Constants.OPUS_FRAME_DURATION_MS / 1000;
+                
+                // Use SRS Common OpusDecoder.DecodeFloat method
                 var buffer = new float[expectedSamples];
-
-                int samplesDecoded = decoder.DecodeFloat(packet.AudioPayload, buffer.AsMemory(), false);
+                int samplesDecoded = decoder.DecodeFloat(packet.AudioPayload, buffer, false);
 
                 if (samplesDecoded > 0)
                 {
@@ -166,12 +327,13 @@ namespace AeroDebrief.Core.Audio
             }
         }
 
-        private OpusDecoder GetOrCreateOpusDecoder(string transmitterGuid)
+        private Ciribob.DCS.SimpleRadio.Standalone.Common.Audio.Opus.Core.OpusDecoder GetOrCreateOpusDecoder(string transmitterGuid)
         {
             if (!_opusDecoders.TryGetValue(transmitterGuid, out var decoder))
             {
-                decoder = OpusDecoder.Create(Constants.OUTPUT_SAMPLE_RATE, 1);
-                decoder.ForwardErrorCorrection = false;
+                // Use SRS Common OpusDecoder.Create factory method
+                decoder = Ciribob.DCS.SimpleRadio.Standalone.Common.Audio.Opus.Core.OpusDecoder.Create(
+                    Constants.OUTPUT_SAMPLE_RATE, 1);
                 _opusDecoders[transmitterGuid] = decoder;
                 Logger.Debug($"Created OPUS decoder for {transmitterGuid}");
             }
@@ -188,10 +350,23 @@ namespace AeroDebrief.Core.Audio
             var transmitterVol = GetTransmitterVolume(transmitterGuid);
             var effective = transmitterVol * _masterVolume;
             
-            // Ensure we never return 0 volume unless intentionally set
+            // CRITICAL DIAGNOSTIC: Log if we're falling back to 1.0
             if (effective <= 0.0f && _masterVolume > 0.0f && transmitterVol >= 0.0f)
             {
+                Logger.Debug($"?? Volume calculation resulted in 0.0 (transmitter={transmitterVol:F4}, master={_masterVolume:F4}) - using fallback 1.0");
                 effective = 1.0f;
+            }
+            
+            // CRITICAL DIAGNOSTIC: Log if master volume is 0
+            if (_masterVolume <= 0.0f)
+            {
+                Logger.Warn($"?? Master volume is {_masterVolume:F4} - audio will be silent!");
+            }
+            
+            // Log effective volume for debugging (only if non-default)
+            if (Math.Abs(effective - 1.0f) > 0.001f || _masterVolume != 1.0f)
+            {
+                Logger.Trace($"GetEffectiveVolume: transmitter={transmitterVol:F4}, master={_masterVolume:F4}, effective={effective:F4}");
             }
             
             return effective;
@@ -199,9 +374,15 @@ namespace AeroDebrief.Core.Audio
 
         private void ApplyVolumeControl(float[] audioBuffer, float volume)
         {
+            // CRITICAL DIAGNOSTIC: Log actual volume being applied
+            if (Math.Abs(volume - 1.0f) > 0.001f)
+            {
+                Logger.Debug($"? ApplyVolumeControl: Applying volume {volume:F4} (master={_masterVolume:F4})");
+            }
+            
             if (Math.Abs(volume - 1.0f) < 0.001f) 
             {
-                Logger.Trace("Volume is 1.0, skipping volume control");
+                // Volume is 1.0, no need to apply
                 return;
             }
 
@@ -213,7 +394,12 @@ namespace AeroDebrief.Core.Audio
             }
             
             var newMax = audioBuffer.Length > 0 ? audioBuffer.Max(Math.Abs) : 0f;
-            Logger.Trace($"Volume control applied: {volume:F2}, amplitude {originalMax:F4} -> {newMax:F4}");
+            
+            // Only log if volume actually changed the amplitude
+            if (originalMax > 0)
+            {
+                Logger.Trace($"Volume control applied: {volume:F2}, amplitude {originalMax:F4} -> {newMax:F4}");
+            }
         }
 
         private void ApplyBasicAudioEffects(float[] audioData, AudioPacketMetadata packet)

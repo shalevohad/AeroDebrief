@@ -30,7 +30,7 @@ namespace AeroDebrief.Core.Models
     /// <summary>
     /// Represents player information for a specific frequency
     /// </summary>
-    public record PlayerFrequencyInfo
+    public class PlayerFrequencyInfo
     {
         public string Name { get; init; } = string.Empty;
         public string TransmitterGuid { get; init; } = string.Empty;
@@ -39,6 +39,18 @@ namespace AeroDebrief.Core.Models
         public int PacketCount { get; init; }
         public DateTime FirstSeen { get; init; }
         public DateTime LastSeen { get; init; }
+
+        /// <summary>
+        /// Indicates if the pilot is selected/enabled for playback (checkbox state)
+        /// When false, the pilot's audio will be filtered out
+        /// </summary>
+        public bool IsSelected { get; set; } = true; // Default to selected
+
+        /// <summary>
+        /// Indicates if this pilot was just discovered during live recording
+        /// Used for visual feedback (glow effect animation)
+        /// </summary>
+        public bool IsNewlyDiscovered { get; set; }
 
         /// <summary>
         /// Gets a formatted display string for UI presentation

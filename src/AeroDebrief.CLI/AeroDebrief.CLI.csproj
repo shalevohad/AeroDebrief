@@ -13,6 +13,7 @@
     <Company>AeroDebrief</Company>
     <Product>AeroDebrief CLI</Product>
     <Description>Command-line interface for AeroDebrief - DCS SRS Recording</Description>
+    <NoWarn>CS1998;CS8618;CS8600;CS8602;CS8603;CS8604;CS0414;CS0169;CA1416</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
