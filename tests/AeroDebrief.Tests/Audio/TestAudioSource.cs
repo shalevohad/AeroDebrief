@@ -19,6 +19,8 @@ namespace AeroDebrief.Tests.Audio
         private readonly Queue<AudioPacketMetadata> _packetQueue;
         private bool _isRunning;
         private int _currentPacketId;
+        private Task? _continuousGenerationTask;
+        private CancellationTokenSource? _generationCts;
 
         public TestAudioSource(double frequency, int sampleRate = 48000)
         {
@@ -47,6 +49,141 @@ namespace AeroDebrief.Tests.Audio
         {
             _packetQueue.Clear();
             _currentPacketId = 0;
+        }
+
+        #endregion
+
+        #region Continuous Real-Time Generation
+
+        /// <summary>
+        /// Starts continuous real-time packet generation for stress testing.
+        /// Generates packets at 50 Hz (20ms intervals) to simulate real radio transmission.
+        /// 
+        /// NEW: Pre-buffers initial packets before returning to eliminate startup underruns.
+        /// </summary>
+        /// <param name="toneFrequency">Frequency of the test tone in Hz (e.g., 440 Hz = A4)</param>
+        /// <param name="amplitude">Amplitude of the signal (0.0 to 1.0, recommend 0.3 for stress tests)</param>
+        /// <param name="samplesPerPacket">Number of samples per packet (default: 960 = 20ms @ 48kHz)</param>
+        /// <param name="preBufferPackets">Number of packets to pre-generate before starting (default: 10 = 200ms buffer)</param>
+        public void StartContinuousGeneration(double toneFrequency, float amplitude = 0.3f, int samplesPerPacket = 960, int preBufferPackets = 10)
+        {
+            if (_isRunning)
+            {
+                throw new InvalidOperationException("Continuous generation is already running. Call StopContinuousGenerationAsync first.");
+            }
+
+            _isRunning = true;
+            _generationCts = new CancellationTokenSource();
+
+            // CRITICAL: Pre-buffer packets BEFORE starting background generation
+            // This ensures UserWorkers have immediate data availability
+            Console.WriteLine($"[TestAudioSource] Pre-buffering {preBufferPackets} packets ({preBufferPackets * 20}ms) before starting generation...");
+            
+            for (int i = 0; i < preBufferPackets; i++)
+            {
+                // Generate tone packet
+                var audioData = GenerateTestTone(toneFrequency, samplesPerPacket, amplitude);
+                var pcmBytes = ConvertFloatToPCM16(audioData);
+                
+                var packet = new AudioPacketMetadata(
+                    Timestamp: DateTime.UtcNow.AddMilliseconds(_currentPacketId * 20),
+                    Frequency: _frequency,
+                    Modulation: 2,
+                    Encryption: 0,
+                    TransmitterUnitId: 0,
+                    PacketId: (ulong)_currentPacketId++,
+                    TransmitterGuid: "TEST-SOURCE",
+                    PlayerData: new PlayerInfo { Name = "TEST-SOURCE", TransmitterGuid = "TEST-SOURCE" },
+                    SampleRate: _sampleRate,
+                    ChannelCount: 1,
+                    Coalition: 0,
+                    AudioPayload: pcmBytes
+                );
+                
+                _packetQueue.Enqueue(packet);
+            }
+            
+            Console.WriteLine($"[TestAudioSource] Pre-buffer complete: {_packetQueue.Count} packets ready");
+
+            // Start background generation task
+            _continuousGenerationTask = Task.Run(async () =>
+            {
+                var interval = TimeSpan.FromMilliseconds(20); // 50 packets/sec = 20ms interval
+                var nextPacketTime = DateTime.UtcNow;
+
+                try
+                {
+                    while (!_generationCts.Token.IsCancellationRequested)
+                    {
+                        // Generate tone packet
+                        var audioData = GenerateTestTone(toneFrequency, samplesPerPacket, amplitude);
+                        var pcmBytes = ConvertFloatToPCM16(audioData);
+                        
+                        var packet = new AudioPacketMetadata(
+                            Timestamp: DateTime.UtcNow.AddMilliseconds(_currentPacketId * 20),
+                            Frequency: _frequency,
+                            Modulation: 2,
+                            Encryption: 0,
+                            TransmitterUnitId: 0,
+                            PacketId: (ulong)_currentPacketId++,
+                            TransmitterGuid: "TEST-SOURCE",
+                            PlayerData: new PlayerInfo { Name = "TEST-SOURCE", TransmitterGuid = "TEST-SOURCE" },
+                            SampleRate: _sampleRate,
+                            ChannelCount: 1,
+                            Coalition: 0,
+                            AudioPayload: pcmBytes
+                        );
+                        
+                        lock (_packetQueue)
+                        {
+                            _packetQueue.Enqueue(packet);
+                            
+                            // Prevent queue from growing too large (keep max 50 packets = 1 second)
+                            while (_packetQueue.Count > 50)
+                            {
+                                _packetQueue.Dequeue();
+                            }
+                        }
+
+                        // Maintain timing
+                        nextPacketTime = nextPacketTime.Add(interval);
+                        var delay = nextPacketTime - DateTime.UtcNow;
+                        if (delay > TimeSpan.Zero)
+                        {
+                            await Task.Delay(delay, _generationCts.Token);
+                        }
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    // Expected during shutdown
+                }
+            }, _generationCts.Token);
+        }
+
+        /// <summary>
+        /// Stops continuous generation
+        /// </summary>
+        public async Task StopContinuousGenerationAsync()
+        {
+            _isRunning = false;
+            _generationCts?.Cancel();
+
+            if (_continuousGenerationTask != null)
+            {
+                try
+                {
+                    await _continuousGenerationTask;
+                }
+                catch (OperationCanceledException)
+                {
+                    // Expected
+                }
+            }
+
+            _generationCts?.Dispose();
+            _generationCts = null;
+            _continuousGenerationTask = null;
         }
 
         #endregion
@@ -287,9 +424,9 @@ namespace AeroDebrief.Tests.Audio
             _isRunning = false;
         }
 
-        public void Dispose()
+        public async void Dispose()
         {
-            Stop();
+            await StopContinuousGenerationAsync();
             _packetQueue.Clear();
         }
     }

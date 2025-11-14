@@ -141,6 +141,31 @@ namespace AeroDebrief.UI.Windows
                     MessageBoxImage.Information);
             }
         }
+        
+        private void ResetAGC_Click(object sender, RoutedEventArgs e)
+        {
+            var result = MessageBox.Show(
+                "Reset Automatic Gain Control settings to default values?\n\n" +
+                $"Target Level: {Core.Constants.AGC_TARGET_DB:F1} dB\n" +
+                $"Max Boost: +{Core.Constants.AGC_MAX_BOOST_DB:F1} dB\n" +
+                $"Max Cut: {Core.Constants.AGC_MAX_CUT_DB:F1} dB",
+                "Reset AGC Settings",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+
+            if (result == MessageBoxResult.Yes)
+            {
+                _viewModel.ResetAGCToDefaults();
+                _hasUnsavedChanges = true;
+                
+                MessageBox.Show(
+                    "AGC settings have been reset to defaults.\n\n" +
+                    "Click 'Apply' or 'OK' to save changes.",
+                    "AGC Reset",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+            }
+        }
 
         protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
         {

@@ -206,6 +206,8 @@ See [GPU-Waveform-Rendering-Implementation.md](docs/GPU-Waveform-Rendering-Imple
 
 * [Technical Architecture](docs/Technical-Architecture.md) - Complete system architecture overview
 * [GPU Waveform Rendering](docs/GPU-Waveform-Rendering-Implementation.md) - GPU acceleration implementation details
+* [Performance Benchmarks Guide](docs/Performance-Benchmarks-Guide.md) - **NEW** - Performance testing and optimization guide
+* [Test Code Audit](docs/TEST_CODE_AUDIT.md) - Test suite quality audit
 * [Analytics Developer Guide](docs/Analytics-Developer-Guide.md) - Extending the analytics system
 * [Analytics TODO](docs/Analytics-TODO.md) - Planned features and enhancements
 * [Cleanup Summary](docs/Cleanup-Summary.md) - Recent project reorganization

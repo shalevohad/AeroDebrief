@@ -377,7 +377,7 @@ namespace AeroDebrief.Tests.Integration
             using var packetSource = new FilePacketSource(_testRecordingFile);
             await packetSource.OpenAsync();
 
-            using var pipeline = new FilePlaybackPipeline(packetSource);
+            using var pipeline = new FilePlaybackPipeline(packetSource, _audioCapture!);
             await pipeline.OpenAsync();
 
             var frequencies = pipeline.GetAvailableFrequencies();
@@ -391,7 +391,7 @@ namespace AeroDebrief.Tests.Integration
             }
 
             var playbackTask = pipeline.PlayAsync();
-            await Task.Delay(1000);
+            await Task.Delay(3000);
             await pipeline.StopAsync();
 
             var allFreqAudio = _audioCapture!.GetCapturedAudioAsFloat();
@@ -413,7 +413,7 @@ namespace AeroDebrief.Tests.Integration
             pipeline.SetFrequencyGate(frequencies[0].Frequency, FrequencyGateMode.Allow);
 
             playbackTask = pipeline.PlayAsync();
-            await Task.Delay(1000);
+            await Task.Delay(3000);
             await pipeline.StopAsync();
 
             var singleFreqAudio = _audioCapture.GetCapturedAudioAsFloat();

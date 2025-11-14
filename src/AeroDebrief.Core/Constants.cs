@@ -54,6 +54,29 @@ namespace AeroDebrief.Core{
         /// </summary>
         public const string RECORDING_FILE_MAGIC = "AERO_REC_V1";
         
+        #region Audio Mixing Constants
+        
+        /// <summary>
+        /// Target RMS level in dB for automatic gain control (AGC) normalization.
+        /// This is the target loudness level that all pilots' audio will be normalized to.
+        /// Value: -20 dB (good speaking level, not too loud, matches SRS Client behavior)
+        /// </summary>
+        public const double AGC_TARGET_DB = -20.0;
+        
+        /// <summary>
+        /// Maximum AGC boost in dB to prevent over-amplification of very quiet audio.
+        /// Value: +20 dB (10x amplification)
+        /// </summary>
+        public const double AGC_MAX_BOOST_DB = 20.0;
+        
+        /// <summary>
+        /// Maximum AGC cut in dB to prevent over-attenuation of very loud audio.
+        /// Value: -10 dB (0.316x attenuation)
+        /// </summary>
+        public const double AGC_MAX_CUT_DB = -10.0;
+        
+        #endregion
+        
         #region Packet Validation Constants
         
         /// <summary>

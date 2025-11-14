@@ -148,10 +148,153 @@
                             <TextBlock Style="{StaticResource SubHeaderTextStyle}" 
                                        Text="Audio Settings"/>
                             
+                            <!-- Automatic Gain Control (AGC) Section -->
+                            <Border Background="{StaticResource SecondaryBackgroundBrush}"
+                                    BorderBrush="{StaticResource AccentBrush}"
+                                    BorderThickness="2"
+                                    CornerRadius="8"
+                                    Padding="16"
+                                    Margin="0,12,0,16">
+                                <StackPanel>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        
+                                        <StackPanel Grid.Column="0">
+                                            <TextBlock Text="??? Automatic Gain Control (AGC)"
+                                                       FontSize="14"
+                                                       FontWeight="SemiBold"
+                                                       Margin="0,0,0,4"/>
+                                            <TextBlock Text="Normalizes pilot audio levels for consistent volume"
+                                                       Style="{StaticResource BodyTextStyle}"
+                                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                                       FontSize="11"
+                                                       TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                        
+                                        <CheckBox Grid.Column="1"
+                                                  Content="Enable AGC"
+                                                  IsChecked="{Binding AGCEnabled, Mode=TwoWay}"
+                                                  Style="{StaticResource ModernCheckBox}"
+                                                  FontWeight="SemiBold"
+                                                  VerticalAlignment="Center"/>
+                                    </Grid>
+                                    
+                                    <!-- AGC Controls (only visible when enabled) -->
+                                    <StackPanel Visibility="{Binding AGCEnabled, Converter={StaticResource BoolToVisConverter}}"
+                                                Margin="0,16,0,0">
+                                        
+                                        <!-- Target Level -->
+                                        <TextBlock Text="Target Level (dB)"
+                                                   Style="{StaticResource BodyTextStyle}"
+                                                   Margin="0,0,0,4"/>
+                                        <TextBlock Text="Desired loudness level for all pilots (-30 to -10 dB)"
+                                                   Style="{StaticResource BodyTextStyle}"
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   FontSize="10"
+                                                   Margin="0,0,0,4"
+                                                   TextWrapping="Wrap"/>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <Slider x:Name="AGCTargetSlider"
+                                                    Minimum="-30"
+                                                    Maximum="-10"
+                                                    Value="{Binding AGCTargetDB, Mode=TwoWay}"
+                                                    TickFrequency="1"
+                                                    IsSnapToTickEnabled="True"
+                                                    Style="{StaticResource ModernSlider}"/>
+                                            <TextBlock Grid.Column="1"
+                                                       Text="{Binding ElementName=AGCTargetSlider, Path=Value, StringFormat={}{0:F1} dB}"
+                                                       Style="{StaticResource MonospaceTextStyle}"
+                                                       Width="70"
+                                                       TextAlignment="Right"
+                                                       Margin="8,0,0,0"
+                                                       VerticalAlignment="Center"/>
+                                        </Grid>
+                                        
+                                        <!-- Max Boost -->
+                                        <TextBlock Text="Maximum Boost (dB)"
+                                                   Style="{StaticResource BodyTextStyle}"
+                                                   Margin="0,12,0,4"/>
+                                        <TextBlock Text="Maximum amplification for quiet pilots (0 to +30 dB)"
+                                                   Style="{StaticResource BodyTextStyle}"
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   FontSize="10"
+                                                   Margin="0,0,0,4"
+                                                   TextWrapping="Wrap"/>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <Slider x:Name="AGCMaxBoostSlider"
+                                                    Minimum="0"
+                                                    Maximum="30"
+                                                    Value="{Binding AGCMaxBoostDB, Mode=TwoWay}"
+                                                    TickFrequency="1"
+                                                    IsSnapToTickEnabled="True"
+                                                    Style="{StaticResource ModernSlider}"/>
+                                            <TextBlock Grid.Column="1"
+                                                       Text="{Binding ElementName=AGCMaxBoostSlider, Path=Value, StringFormat=+{0:F1} dB}"
+                                                       Style="{StaticResource MonospaceTextStyle}"
+                                                       Width="70"
+                                                       TextAlignment="Right"
+                                                       Margin="8,0,0,0"
+                                                       VerticalAlignment="Center"/>
+                                        </Grid>
+                                        
+                                        <!-- Max Cut -->
+                                        <TextBlock Text="Maximum Cut (dB)"
+                                                   Style="{StaticResource BodyTextStyle}"
+                                                   Margin="0,12,0,4"/>
+                                        <TextBlock Text="Maximum attenuation for loud pilots (-20 to 0 dB)"
+                                                   Style="{StaticResource BodyTextStyle}"
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   FontSize="10"
+                                                   Margin="0,0,0,4"
+                                                   TextWrapping="Wrap"/>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <Slider x:Name="AGCMaxCutSlider"
+                                                    Minimum="-20"
+                                                    Maximum="0"
+                                                    Value="{Binding AGCMaxCutDB, Mode=TwoWay}"
+                                                    TickFrequency="1"
+                                                    IsSnapToTickEnabled="True"
+                                                    Style="{StaticResource ModernSlider}"/>
+                                            <TextBlock Grid.Column="1"
+                                                       Text="{Binding ElementName=AGCMaxCutSlider, Path=Value, StringFormat={}{0:F1} dB}"
+                                                       Style="{StaticResource MonospaceTextStyle}"
+                                                       Width="70"
+                                                       TextAlignment="Right"
+                                                       Margin="8,0,0,0"
+                                                       VerticalAlignment="Center"/>
+                                        </Grid>
+                                        
+                                        <!-- Reset AGC Button -->
+                                        <Button Content="Reset AGC to Defaults"
+                                                Click="ResetAGC_Click"
+                                                Style="{StaticResource ModernSecondaryButton}"
+                                                HorizontalAlignment="Left"
+                                                Margin="0,12,0,0"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+                            
+                            <Separator Margin="0,8,0,16" Background="{StaticResource BorderBrush}"/>
+                        
                             <!-- Audio Activity Threshold -->
                             <TextBlock Text="Audio Activity Threshold" 
                                        Style="{StaticResource BodyTextStyle}"
-                                       Margin="0,12,0,4"/>
+                                       Margin="0,0,0,4"/>
                             <TextBlock Text="Minimum audio level to consider as active (0-32767)"
                                        Style="{StaticResource BodyTextStyle}"
                                        Foreground="{StaticResource TextSecondaryBrush}"

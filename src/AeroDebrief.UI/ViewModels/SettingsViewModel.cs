@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.IO;
 using System.Runtime.CompilerServices;
+using AeroDebrief.Core;
 using AeroDebrief.Core.Settings;
 
 namespace AeroDebrief.UI.ViewModels
@@ -16,6 +17,12 @@ namespace AeroDebrief.UI.ViewModels
         private int _audioActivityThreshold;
         private int _audioActivityMinDuration;
         private string _themeFile;
+        
+        // AGC Settings
+        private bool _agcEnabled;
+        private double _agcTargetDB;
+        private double _agcMaxBoostDB;
+        private double _agcMaxCutDB;
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -72,6 +79,42 @@ namespace AeroDebrief.UI.ViewModels
             get => _themeFile;
             set => SetProperty(ref _themeFile, value);
         }
+        
+        /// <summary>
+        /// Enable/disable Automatic Gain Control
+        /// </summary>
+        public bool AGCEnabled
+        {
+            get => _agcEnabled;
+            set => SetProperty(ref _agcEnabled, value);
+        }
+        
+        /// <summary>
+        /// AGC target RMS level in dB (-30 to -10)
+        /// </summary>
+        public double AGCTargetDB
+        {
+            get => _agcTargetDB;
+            set => SetProperty(ref _agcTargetDB, value);
+        }
+        
+        /// <summary>
+        /// AGC maximum boost in dB (0 to +30)
+        /// </summary>
+        public double AGCMaxBoostDB
+        {
+            get => _agcMaxBoostDB;
+            set => SetProperty(ref _agcMaxBoostDB, value);
+        }
+        
+        /// <summary>
+        /// AGC maximum cut in dB (-20 to 0)
+        /// </summary>
+        public double AGCMaxCutDB
+        {
+            get => _agcMaxCutDB;
+            set => SetProperty(ref _agcMaxCutDB, value);
+        }
 
         /// <summary>
         /// Path to configuration file (read-only)
@@ -94,6 +137,12 @@ namespace AeroDebrief.UI.ViewModels
             _audioActivityThreshold = 500;
             _audioActivityMinDuration = 100;
             _themeFile = "light.json";
+            
+            // AGC Defaults
+            _agcEnabled = true;
+            _agcTargetDB = Constants.AGC_TARGET_DB;
+            _agcMaxBoostDB = Constants.AGC_MAX_BOOST_DB;
+            _agcMaxCutDB = Constants.AGC_MAX_CUT_DB;
         }
 
         /// <summary>
@@ -109,6 +158,12 @@ namespace AeroDebrief.UI.ViewModels
             AudioActivityThreshold = store.GetDefaultAudioActivityThreshold();
             AudioActivityMinDuration = store.GetDefaultAudioActivityMinDuration();
             ThemeFile = store.GetPlayerSettingString(PlayerSettingKeys.ThemeFile);
+            
+            // Load AGC settings
+            AGCEnabled = store.GetAGCEnabled();
+            AGCTargetDB = store.GetAGCTargetDB();
+            AGCMaxBoostDB = store.GetAGCMaxBoostDB();
+            AGCMaxCutDB = store.GetAGCMaxCutDB();
         }
 
         /// <summary>
@@ -124,6 +179,9 @@ namespace AeroDebrief.UI.ViewModels
             store.SetPlayerSetting(PlayerSettingKeys.AudioActivityThreshold, AudioActivityThreshold);
             store.SetPlayerSetting(PlayerSettingKeys.AudioActivityMinDuration, AudioActivityMinDuration);
             store.SetPlayerSetting(PlayerSettingKeys.ThemeFile, ThemeFile);
+            
+            // Save AGC settings
+            store.SaveAGCSettings(AGCTargetDB, AGCMaxBoostDB, AGCMaxCutDB, AGCEnabled);
         }
 
         /// <summary>
@@ -137,6 +195,20 @@ namespace AeroDebrief.UI.ViewModels
             AudioActivityThreshold = 500;
             AudioActivityMinDuration = 100;
             ThemeFile = "light.json";
+            
+            // Reset AGC to defaults
+            ResetAGCToDefaults();
+        }
+        
+        /// <summary>
+        /// Reset AGC settings to default values
+        /// </summary>
+        public void ResetAGCToDefaults()
+        {
+            AGCEnabled = true;
+            AGCTargetDB = Constants.AGC_TARGET_DB;
+            AGCMaxBoostDB = Constants.AGC_MAX_BOOST_DB;
+            AGCMaxCutDB = Constants.AGC_MAX_CUT_DB;
         }
 
         protected bool SetProperty<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)

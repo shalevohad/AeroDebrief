@@ -25,6 +25,12 @@ namespace AeroDebrief.Core.Settings
         EnableFrequencyFilterByDefault,
         ThemeFile,
         
+        // Audio Mixing Settings (AGC)
+        AGC_TargetDB,
+        AGC_MaxBoostDB,
+        AGC_MaxCutDB,
+        AGC_Enabled,
+        
         // Window Settings
         WindowWidth,
         WindowHeight,
@@ -55,6 +61,12 @@ namespace AeroDebrief.Core.Settings
             { PlayerSettingKeys.LastRecordingFile.ToString(), "" },
             { PlayerSettingKeys.EnableFrequencyFilterByDefault.ToString(), "false" },
             { PlayerSettingKeys.ThemeFile.ToString(), "light.json" },
+            
+            // Audio Mixing Settings (AGC) - Default values from Constants
+            { PlayerSettingKeys.AGC_TargetDB.ToString(), "-20.0" },      // Target RMS level in dB
+            { PlayerSettingKeys.AGC_MaxBoostDB.ToString(), "20.0" },     // Max boost in dB
+            { PlayerSettingKeys.AGC_MaxCutDB.ToString(), "-10.0" },      // Max cut in dB
+            { PlayerSettingKeys.AGC_Enabled.ToString(), "true" },        // AGC enabled by default
             
             // Window Settings
             { PlayerSettingKeys.WindowWidth.ToString(), "950" },
@@ -217,6 +229,12 @@ namespace AeroDebrief.Core.Settings
             SetPlayerSetting(PlayerSettingKeys.EnableFrequencyFilterByDefault, bool.Parse(defaultPlayerSettings[PlayerSettingKeys.EnableFrequencyFilterByDefault.ToString()]));
             // Theme default
             SetPlayerSetting(PlayerSettingKeys.ThemeFile, defaultPlayerSettings[PlayerSettingKeys.ThemeFile.ToString()]);
+            
+            // Audio Mixing defaults (AGC)
+            SetPlayerSetting(PlayerSettingKeys.AGC_TargetDB, double.Parse(defaultPlayerSettings[PlayerSettingKeys.AGC_TargetDB.ToString()]));
+            SetPlayerSetting(PlayerSettingKeys.AGC_MaxBoostDB, double.Parse(defaultPlayerSettings[PlayerSettingKeys.AGC_MaxBoostDB.ToString()]));
+            SetPlayerSetting(PlayerSettingKeys.AGC_MaxCutDB, double.Parse(defaultPlayerSettings[PlayerSettingKeys.AGC_MaxCutDB.ToString()]));
+            SetPlayerSetting(PlayerSettingKeys.AGC_Enabled, bool.Parse(defaultPlayerSettings[PlayerSettingKeys.AGC_Enabled.ToString()]));
             
             // Window defaults
             SetPlayerSetting(PlayerSettingKeys.WindowWidth, int.Parse(defaultPlayerSettings[PlayerSettingKeys.WindowWidth.ToString()]));
@@ -464,5 +482,40 @@ namespace AeroDebrief.Core.Settings
         /// </summary>
         public bool GetDefaultDebugLogging() => 
             GetPlayerSettingBool(PlayerSettingKeys.EnableDebugLogging);
+        
+        /// <summary>
+        /// Get AGC target RMS level in dB
+        /// </summary>
+        public double GetAGCTargetDB() => 
+            GetPlayerSettingDouble(PlayerSettingKeys.AGC_TargetDB);
+        
+        /// <summary>
+        /// Get AGC maximum boost in dB
+        /// </summary>
+        public double GetAGCMaxBoostDB() => 
+            GetPlayerSettingDouble(PlayerSettingKeys.AGC_MaxBoostDB);
+        
+        /// <summary>
+        /// Get AGC maximum cut in dB
+        /// </summary>
+        public double GetAGCMaxCutDB() => 
+            GetPlayerSettingDouble(PlayerSettingKeys.AGC_MaxCutDB);
+        
+        /// <summary>
+        /// Get whether AGC is enabled
+        /// </summary>
+        public bool GetAGCEnabled() => 
+            GetPlayerSettingBool(PlayerSettingKeys.AGC_Enabled);
+        
+        /// <summary>
+        /// Save AGC settings
+        /// </summary>
+        public void SaveAGCSettings(double targetDB, double maxBoostDB, double maxCutDB, bool enabled)
+        {
+            SetPlayerSetting(PlayerSettingKeys.AGC_TargetDB, targetDB);
+            SetPlayerSetting(PlayerSettingKeys.AGC_MaxBoostDB, maxBoostDB);
+            SetPlayerSetting(PlayerSettingKeys.AGC_MaxCutDB, maxCutDB);
+            SetPlayerSetting(PlayerSettingKeys.AGC_Enabled, enabled);
+        }
     }
 }

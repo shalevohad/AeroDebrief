@@ -54,9 +54,9 @@ namespace AeroDebrief.Core.Audio
         private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
         private static readonly ArrayPool<float> FloatPool = ArrayPool<float>.Shared;
 
-        // 10ms frame size at 48kHz (matches FrequencyWorker output)
-        private const int FrameSizeMs = 10;
-        private const int SamplesPerFrame = Constants.OUTPUT_SAMPLE_RATE * FrameSizeMs / 1000; // 480 samples
+        // 20ms frame size at 48kHz (matches UserWorker output)
+        private const int FrameSizeMs = 20;
+        private const int SamplesPerFrame = Constants.OUTPUT_SAMPLE_RATE * FrameSizeMs / 1000; // 960 samples
 
         // Fade parameters for smooth transitions
         private const int FadeSamples = 64; // 1.33ms at 48kHz
@@ -68,6 +68,11 @@ namespace AeroDebrief.Core.Audio
         
         // NEW: Track UserWorkers for per-pilot mixing
         private readonly ConcurrentDictionary<(double Frequency, string PilotId), UserWorker> _userWorkers;
+        
+        // NEW: Cache frequency groups for fast iteration (avoid LINQ GroupBy per frame)
+        // Use arrays for O(1) access instead of ConcurrentBag enumeration
+        private readonly ConcurrentDictionary<double, (double, string)[]> _frequencyGroupArrays;
+        private readonly ConcurrentDictionary<double, ConcurrentBag<(double, string)>> _frequencyGroupBags;
         
         private readonly IAudioOutputEngine _audioOutput;
         private readonly object _frequencySoloLock = new();
@@ -89,7 +94,7 @@ namespace AeroDebrief.Core.Audio
         public long Underruns => Interlocked.Read(ref _underruns);
         public long SilentFramesDrained => Interlocked.Read(ref _silentFramesDrained);
         public TimeSpan RunTime => _runTime.Elapsed;
-        public int ActiveFrequencies => _frequencyWorkers.Count;
+        public int ActiveFrequencies => _userWorkers.Select(kvp => kvp.Key.Frequency).Distinct().Count();
 
         public MasterMixer(IAudioOutputEngine audioOutput)
         {
@@ -99,13 +104,23 @@ namespace AeroDebrief.Core.Audio
             _pilotGates = new ConcurrentDictionary<(double, string), PilotGateState>();
             _pilotSoloCounts = new ConcurrentDictionary<double, int>();
             _userWorkers = new ConcurrentDictionary<(double, string), UserWorker>(); // NEW
+            _frequencyGroupBags = new ConcurrentDictionary<double, ConcurrentBag<(double, string)>>(); // Staging
+            _frequencyGroupArrays = new ConcurrentDictionary<double, (double, string)[]>(); // Cache for fast iteration
             _cts = new CancellationTokenSource();
             _runTime = Stopwatch.StartNew();
             
             // Start mixing task
             _mixingTask = Task.Run(() => MixingLoopAsync(_cts.Token));
             
-            Logger.Info("MasterMixer initialized with per-pilot filtering support");
+            // Log AGC configuration
+            var settings = Settings.PlayerSettingsStore.Instance;
+            var agcEnabled = settings.GetAGCEnabled();
+            var agcTarget = settings.GetAGCTargetDB();
+            var agcMaxBoost = settings.GetAGCMaxBoostDB();
+            var agcMaxCut = settings.GetAGCMaxCutDB();
+            
+            Logger.Info($"MasterMixer initialized with per-pilot filtering support");
+            Logger.Info($"AGC Configuration: Enabled={agcEnabled}, Target={agcTarget:F1} dB, MaxBoost={agcMaxBoost:F1} dB, MaxCut={agcMaxCut:F1} dB");
         }
 
         #region Frequency Management
@@ -154,6 +169,13 @@ namespace AeroDebrief.Core.Audio
             var key = (frequency, pilotId);
             if (_userWorkers.TryAdd(key, worker))
             {
+                // Update frequency groups cache (thread-safe)
+                var bag = _frequencyGroupBags.GetOrAdd(frequency, _ => new ConcurrentBag<(double, string)>());
+                bag.Add(key);
+                
+                // Rebuild array for fast iteration (O(1) access vs ConcurrentBag enumeration)
+                _frequencyGroupArrays[frequency] = bag.ToArray();
+
                 // Ensure frequency gate exists
                 _frequencyGates.TryAdd(frequency, new FrequencyGateState
                 {
@@ -341,9 +363,24 @@ namespace AeroDebrief.Core.Audio
         /// </summary>
         private async Task MixingLoopAsync(CancellationToken cancellationToken)
         {
-            Logger.Info("Master mixing loop started with per-pilot and frequency filtering");
+            Logger.Info("Master mixing loop started with per-pilot and frequency filtering + AGC");
 
             float[]? rentedMasterBuffer = null;
+            
+            // Cache AGC settings to avoid repeated Settings calls per-frame
+            var settings = Settings.PlayerSettingsStore.Instance;
+            bool agcEnabled = settings.GetAGCEnabled();
+            double agcTargetDb = agcEnabled ? settings.GetAGCTargetDB() : 0;
+            double agcMaxBoostDb = agcEnabled ? settings.GetAGCMaxBoostDB() : 0;
+            double agcMaxCutDb = agcEnabled ? settings.GetAGCMaxCutDB() : 0;
+            
+            // Fallback to constants if settings return invalid values
+            if (agcEnabled)
+            {
+                if (double.IsNaN(agcTargetDb) || agcTargetDb == 0) agcTargetDb = Constants.AGC_TARGET_DB;
+                if (double.IsNaN(agcMaxBoostDb) || agcMaxBoostDb == 0) agcMaxBoostDb = Constants.AGC_MAX_BOOST_DB;
+                if (double.IsNaN(agcMaxCutDb) || agcMaxCutDb == 0) agcMaxCutDb = Constants.AGC_MAX_CUT_DB;
+            }
 
             try
             {
@@ -354,6 +391,8 @@ namespace AeroDebrief.Core.Audio
 
                 while (!cancellationToken.IsCancellationRequested)
                 {
+                    var frameStartTime = DateTime.UtcNow;
+                    
                     // Create span INSIDE the loop, never crossing await
                     var masterBuffer = rentedMasterBuffer.AsSpan(0, SamplesPerFrame);
                     
@@ -362,16 +401,17 @@ namespace AeroDebrief.Core.Audio
 
                     int audibleFrequencies = 0;
                     int drainedFrequencies = 0;
+                    
+                    var mixStartTime = DateTime.UtcNow;
 
                     // NEW ARCHITECTURE: Pull from UserWorkers for per-pilot mixing
                     if (_userWorkers.Count > 0)
                     {
-                        // Group UserWorkers by frequency for per-frequency mixing
-                        var frequencyGroups = _userWorkers.GroupBy(kvp => kvp.Key.Frequency);
-
-                        foreach (var freqGroup in frequencyGroups)
+                        // Use cached frequency arrays instead of enumeration (performance!)
+                        foreach (var kvp in _frequencyGroupArrays)
                         {
-                            var frequency = freqGroup.Key;
+                            var frequency = kvp.Key;
+                            var pilotKeys = kvp.Value;
                             
                             if (!_frequencyGates.TryGetValue(frequency, out var freqGate))
                                 continue;
@@ -380,11 +420,18 @@ namespace AeroDebrief.Core.Audio
 
                             if (!freqShouldBeAudible)
                             {
-                                // Drain all pilot audio for this frequency silently
-                                foreach (var kvp in freqGroup)
+                                // Drain pilot audio silently (limit to prevent blocking)
+                                foreach (var pilotKey in pilotKeys)
                                 {
-                                    var worker = kvp.Value;
-                                    while (worker.OutputReader.TryRead(out var _)) { }
+                                    if (_userWorkers.TryGetValue(pilotKey, out var worker))
+                                    {
+                                        // Limit draining to 10 blocks to prevent long stalls
+                                        int drained = 0;
+                                        while (drained < 10 && worker.OutputReader.TryRead(out var _)) 
+                                        { 
+                                            drained++;
+                                        }
+                                    }
                                 }
                                 drainedFrequencies++;
                                 continue;
@@ -401,11 +448,13 @@ namespace AeroDebrief.Core.Audio
                                 int audiblePilotsOnFreq = 0;
                                 var pilotSoloCount = _pilotSoloCounts.GetOrAdd(frequency, 0);
 
-                                // Pull and mix DecodedAudioBlocks from each pilot's UserWorker
-                                foreach (var kvp in freqGroup)
+                                // Collect audible pilots - pre-size list for efficiency
+                                var audiblePilots = new List<(UserWorker worker, float[] audio, PilotGateState gate, float agcGain)>(8);
+                                
+                                foreach (var pilotKey in pilotKeys)
                                 {
-                                    var pilotKey = kvp.Key;
-                                    var worker = kvp.Value;
+                                    if (!_userWorkers.TryGetValue(pilotKey, out var worker))
+                                        continue;
 
                                     if (!_pilotGates.TryGetValue(pilotKey, out var pilotGate))
                                         continue;
@@ -417,21 +466,68 @@ namespace AeroDebrief.Core.Audio
                                     {
                                         if (pilotShouldBeAudible && block.AudioData != null && block.AudioData.Length > 0)
                                         {
-                                            // Apply pilot-level filtering and mix into frequency buffer
                                             var blockSpan = block.AudioData.AsSpan(0, Math.Min(block.AudioData.Length, SamplesPerFrame));
-                                            MixPilotBlock(freqSpan, blockSpan, pilotGate);
-                                            audiblePilotsOnFreq++;
+                                            
+                                            // Calculate AGC gain for this pilot (only if AGC enabled)
+                                            float agcGain = agcEnabled 
+                                                ? CalculateAGCGainFast(blockSpan, agcTargetDb, agcMaxBoostDb, agcMaxCutDb)
+                                                : 1.0f;
+                                            
+                                            audiblePilots.Add((worker, block.AudioData, pilotGate, agcGain));
                                         }
                                         // Silent draining happens automatically by not mixing
                                     }
                                 }
 
-                                // Apply frequency-level filtering and mix into master
-                                if (audiblePilotsOnFreq > 0)
+                                // Calculate anti-clipping gain based on number of pilots
+                                float antiClippingGain = 1.0f;
+                                int pilotCount = audiblePilots.Count;
+                                
+                                if (pilotCount > 1)
                                 {
-                                    MixFrequencyFrame(masterBuffer, freqSpan, freqGate);
-                                    audibleFrequencies++;
+                                    if (agcEnabled)
+                                    {
+                                        // With AGC: account for average AGC gain
+                                        float totalAgcGain = 0f;
+                                        for (int i = 0; i < pilotCount; i++)
+                                        {
+                                            totalAgcGain += audiblePilots[i].agcGain;
+                                        }
+                                        
+                                        float avgAgcGain = totalAgcGain / pilotCount;
+                                        antiClippingGain = 1.0f / (MathF.Sqrt(pilotCount) * MathF.Max(1.0f, avgAgcGain * 0.7f));
+                                    }
+                                    else
+                                    {
+                                        // Without AGC: simple sqrt scaling
+                                        antiClippingGain = 1.0f / MathF.Sqrt(pilotCount);
+                                    }
                                 }
+
+                                // Mix each pilot's audio with AGC + anti-clipping gain
+                                for (int i = 0; i < pilotCount; i++)
+                                {
+                                    var (worker, audioData, pilotGate, agcGain) = audiblePilots[i];
+                                    var blockSpan = audioData.AsSpan(0, Math.Min(audioData.Length, SamplesPerFrame));
+                                    
+                                    // Combine AGC gain with anti-clipping gain
+                                    float combinedGain = agcGain * antiClippingGain;
+                                    
+                                    MixPilotBlock(freqSpan, blockSpan, pilotGate, combinedGain);
+                                    audiblePilotsOnFreq++;
+                                }
+                                
+                                // Apply safety limiter only if multiple pilots (soft clip at ±0.95)
+                                if (audiblePilotsOnFreq > 1)
+                                {
+                                    ApplySafetyLimiter(freqSpan);
+                                }
+
+                                // Apply frequency-level filtering and mix into master
+                                // Count this frequency as processed even if no pilots had audio
+                                // (prevents false underruns when channels are temporarily empty)
+                                MixFrequencyFrame(masterBuffer, freqSpan, freqGate);
+                                audibleFrequencies++;
                             }
                             finally
                             {
@@ -473,6 +569,22 @@ namespace AeroDebrief.Core.Audio
                         }
                     }
 
+                    // Apply master-level safety limiter if we have many frequencies
+                    if (audibleFrequencies > 1)
+                    {
+                        // Apply anti-clipping gain based on number of frequencies
+                        var masterAntiClipGain = 1.0f / MathF.Sqrt(audibleFrequencies);
+                        
+                        // Apply gain reduction to prevent summing from causing clipping
+                        for (int i = 0; i < masterBuffer.Length; i++)
+                        {
+                            masterBuffer[i] *= masterAntiClipGain;
+                        }
+                        
+                        // Then apply safety limiter as final protection
+                        ApplySafetyLimiter(masterBuffer);
+                    }
+
                     // Convert to bytes BEFORE await (no Span allowed across await)
                     byte[] audioBytes;
                     if (audibleFrequencies > 0 || drainedFrequencies > 0)
@@ -498,11 +610,13 @@ namespace AeroDebrief.Core.Audio
                         await Task.Delay(delay, cancellationToken);
                     }
 
-                    // Log stats periodically
-                    if (FramesMixed % 6000 == 0 && FramesMixed > 0)
+                    // Log stats periodically with performance metrics
+                    if (FramesMixed % 10 == 0 && FramesMixed > 0)
                     {
+                        var frameDuration = (DateTime.UtcNow - frameStartTime).TotalMilliseconds;
+                        var mixDuration = (DateTime.UtcNow - mixStartTime).TotalMilliseconds;
                         var stats = GetStats();
-                        Logger.Info($"Mixer: {stats}");
+                        Logger.Info($"Mixer: {stats}, FrameTime={frameDuration:F2}ms, MixTime={mixDuration:F2}ms");
                     }
                 }
 
@@ -523,6 +637,105 @@ namespace AeroDebrief.Core.Audio
             }
         }
 
+        /// <summary>
+        /// Applies a soft limiter to prevent clipping while preserving dynamics.
+        /// Uses a gentle soft-clip curve at ±0.90 threshold.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        private void ApplySafetyLimiter(Span<float> audio)
+        {
+            const float threshold = 0.90f;  // More aggressive threshold to ensure we stay under 0.99
+            const float knee = 0.05f; // Soft knee for smooth transition
+            
+            for (int i = 0; i < audio.Length; i++)
+            {
+                float sample = audio[i];
+                float absample = MathF.Abs(sample);
+                
+                if (absample > threshold)
+                {
+                    // Soft clip: gradually compress above threshold
+                    float excess = absample - threshold;
+                    float compressed = threshold + (excess / (1.0f + excess / knee));
+                    audio[i] = MathF.CopySign(compressed, sample);
+                }
+            }
+        }
+        /// <summary>
+        /// Calculates automatic gain control (AGC) gain for a pilot's audio block using RMS-based analysis (SRS-style).
+        /// This normalizes quiet and loud pilots to similar perceived loudness levels.
+        /// OPTIMIZED VERSION: Assumes AGC is enabled (checked by caller), uses cached settings
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        private float CalculateAGCGainFast(ReadOnlySpan<float> audioBlock, double targetDb, double maxBoostDb, double maxCutDb)
+        {
+            if (audioBlock.Length == 0)
+                return 1.0f;
+
+            // Calculate RMS (Root Mean Square) power - measures average loudness
+            double sum = 0;
+            for (int i = 0; i < audioBlock.Length; i++)
+            {
+                double sample = audioBlock[i];
+                sum += sample * sample;
+            }
+
+            double rms = Math.Sqrt(sum / audioBlock.Length);
+            
+            // Convert to dB (decibels) - logarithmic scale matching human perception
+            double rmsDb;
+            if (rms == 0 || double.IsNaN(rms))
+            {
+                rmsDb = -96.6; // Silence threshold (16-bit minimum)
+            }
+            else
+            {
+                rmsDb = 20 * Math.Log10(rms);
+            }
+            
+            // Calculate gain needed to reach target
+            double gainDb = targetDb - rmsDb;
+            
+            // Limit gain range to prevent extreme amplification or attenuation
+            gainDb = Math.Clamp(gainDb, maxCutDb, maxBoostDb);
+            
+            // Convert dB back to linear gain
+            float linearGain = (float)Math.Pow(10, gainDb / 20.0);
+            
+            // Clamp final gain to safe range
+            return Math.Clamp(linearGain, 0.1f, 10.0f);
+        }
+        
+        /// <summary>
+        /// Calculates automatic gain control (AGC) gain for a pilot's audio block using RMS-based analysis (SRS-style).
+        /// This normalizes quiet and loud pilots to similar perceived loudness levels.
+        /// LEGACY VERSION: For backwards compatibility, checks settings each call
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        private float CalculateAGCGain(ReadOnlySpan<float> audioBlock)
+        {
+            if (audioBlock.Length == 0)
+                return 1.0f;
+
+            // Check if AGC is enabled in settings
+            var settings = Settings.PlayerSettingsStore.Instance;
+            if (!settings.GetAGCEnabled())
+            {
+                return 1.0f; // AGC disabled, return unity gain
+            }
+
+            // Get AGC parameters from settings (with fallback to constants)
+            var targetDb = settings.GetAGCTargetDB();
+            var maxBoostDb = settings.GetAGCMaxBoostDB();
+            var maxCutDb = settings.GetAGCMaxCutDB();
+            
+            // Fallback to constants if settings return invalid values
+            if (double.IsNaN(targetDb) || targetDb == 0) targetDb = Constants.AGC_TARGET_DB;
+            if (double.IsNaN(maxBoostDb) || maxBoostDb == 0) maxBoostDb = Constants.AGC_MAX_BOOST_DB;
+            if (double.IsNaN(maxCutDb) || maxCutDb == 0) maxCutDb = Constants.AGC_MAX_CUT_DB;
+            
+            return CalculateAGCGainFast(audioBlock, targetDb, maxBoostDb, maxCutDb);
+        }
         #endregion
 
         #region Mixing Helpers
@@ -532,7 +745,7 @@ namespace AeroDebrief.Core.Audio
         /// This enables instant per-pilot mute/solo with smooth crossfades
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-        private void MixPilotBlock(Span<float> frequencyBuffer, ReadOnlySpan<float> pilotAudio, PilotGateState gateState)
+        private void MixPilotBlock(Span<float> frequencyBuffer, ReadOnlySpan<float> pilotAudio, PilotGateState gateState, float perPilotGain = 1.0f)
         {
             if (pilotAudio.Length == 0)
                 return;
@@ -550,10 +763,22 @@ namespace AeroDebrief.Core.Audio
                     return;
                 }
 
-                // Fast path: full volume (use SIMD)
+                // Calculate combined gain (gate gain * per-pilot gain for anti-clipping)
+                float combinedGain = gateState.CurrentGain * perPilotGain;
+
+                // Fast path: full volume with per-pilot gain (use SIMD with scaling)
                 if (gateState.FadeState == FadeState.FullVolume && gateState.CurrentGain == 1.0f)
                 {
-                    MixSIMD(frequencyBuffer, pilotAudio);
+                    if (perPilotGain == 1.0f)
+                    {
+                        // No gain adjustment needed
+                        MixSIMD(frequencyBuffer, pilotAudio);
+                    }
+                    else
+                    {
+                        // Apply per-pilot gain via SIMD
+                        MixSIMDWithGain(frequencyBuffer, pilotAudio, perPilotGain);
+                    }
                     return;
                 }
 
@@ -569,6 +794,7 @@ namespace AeroDebrief.Core.Audio
                             gateState.CurrentGain = 0.0f;
                             gateState.FadeState = FadeState.Silent;
                         }
+                        combinedGain = gateState.CurrentGain * perPilotGain;
                     }
                     else if (gateState.FadeState == FadeState.FadingIn)
                     {
@@ -578,9 +804,10 @@ namespace AeroDebrief.Core.Audio
                             gateState.CurrentGain = 1.0f;
                             gateState.FadeState = FadeState.FullVolume;
                         }
+                        combinedGain = gateState.CurrentGain * perPilotGain;
                     }
 
-                    frequencyBuffer[i] += pilotAudio[i] * gateState.CurrentGain;
+                    frequencyBuffer[i] += pilotAudio[i] * combinedGain;
                     gateState.LastAppliedGain = gateState.CurrentGain;
                 }
             }
@@ -662,6 +889,29 @@ namespace AeroDebrief.Core.Audio
             for (var i = source.Length - remainder; i < source.Length; ++i)
             {
                 target[i] += source[i];
+            }
+        }
+
+        /// <summary>
+        /// SIMD-optimized mixing with gain multiplication (for per-pilot gain compensation)
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        private void MixSIMDWithGain(Span<float> target, ReadOnlySpan<float> source, float gain)
+        {
+            var vectorSize = Vector<float>.Count;
+            var remainder = source.Length % vectorSize;
+            var gainVector = new Vector<float>(gain);
+
+            for (var i = 0; i < source.Length - remainder; i += vectorSize)
+            {
+                var v_source = Vector.LoadUnsafe(ref MemoryMarshal.GetReference(source), (nuint)i);
+                var v_current = Vector.LoadUnsafe(ref MemoryMarshal.GetReference(target), (nuint)i);
+                (v_current + (v_source * gainVector)).CopyTo(target.Slice(i, vectorSize));
+            }
+
+            for (var i = source.Length - remainder; i < source.Length; ++i)
+            {
+                target[i] += source[i] * gain;
             }
         }
 
@@ -774,9 +1024,9 @@ namespace AeroDebrief.Core.Audio
                 SilentFramesDrained = SilentFramesDrained,
                 RunTime = RunTime,
                 ActiveFrequencies = ActiveFrequencies,
-                SoloFrequencies = _frequencyGates.Count(kvp => kvp.Value.Mode == FrequencyGateMode.Solo),
-                MutedFrequencies = _frequencyGates.Count(kvp => kvp.Value.Mode == FrequencyGateMode.Mute),
-                BlockedFrequencies = _frequencyGates.Count(kvp => kvp.Value.Mode == FrequencyGateMode.Block),
+                SoloFrequencies = _pilotGates.Count(kvp => kvp.Value.Mode == PilotGateMode.Solo),
+                MutedFrequencies = _pilotGates.Count(kvp => kvp.Value.Mode == PilotGateMode.Mute),
+                BlockedFrequencies = _pilotGates.Count(kvp => kvp.Value.Mode == PilotGateMode.Block),
                 SoloPilots = _pilotGates.Count(kvp => kvp.Value.Mode == PilotGateMode.Solo),
                 MutedPilots = _pilotGates.Count(kvp => kvp.Value.Mode == PilotGateMode.Mute),
                 BlockedPilots = _pilotGates.Count(kvp => kvp.Value.Mode == PilotGateMode.Block),

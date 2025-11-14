@@ -17,7 +17,8 @@ namespace AeroDebrief.Tests.IO
         public static async Task<string> GenerateAsync(
             int targetSizeMB = 100,
             int packetIntervalMs = 40,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            IProgress<int>? progress = null)
         {
             var tempFile = Path.Combine(Path.GetTempPath(), $"synthetic_{Guid.NewGuid()}.adb");
             
@@ -31,17 +32,57 @@ namespace AeroDebrief.Tests.IO
             writer.Write(DateTime.UtcNow.Ticks);
 
             // Calculate packets needed for target size
-            // Packet structure breakdown:
-            // - Fixed header: ~48 bytes (AudioPacketMetadata.FixedHeaderLength)
-            // - PlayerInfo: ~150-200 bytes (names, GUID, position, aircraft)
-            // - Audio payload: 960-1920 bytes (variable)
-            // - Other: ~10 bytes (audio length, coalition)
-            // Average total: ~1300 bytes per packet
-            const int avgPacketSize = 1300; // More accurate estimate based on actual packet structure
+            // 
+            // PACKET STRUCTURE BREAKDOWN (with ±3.5% audio variance):
+            // ???????????????????????????????????????????????????????????
+            // ? Component                    ? Size (bytes)             ?
+            // ???????????????????????????????????????????????????????????
+            // ? Fixed Header                 ? 48                       ?
+            // ?   - Timestamp (Int64)        ?   8                      ?
+            // ?   - Frequency (Double)       ?   8                      ?
+            // ?   - Modulation (Byte)        ?   1                      ?
+            // ?   - Encryption (Byte)        ?   1                      ?
+            // ?   - TransmitterUnitId (UInt) ?   4                      ?
+            // ?   - PacketId (UInt64)        ?   8                      ?
+            // ?   - TransmitterGuid (ASCII)  ?   22                     ?
+            // ???????????????????????????????????????????????????????????
+            // ? PlayerInfo                   ? ~150                     ?
+            // ?   - Name length + string     ?   ~30-50                 ?
+            // ?   - GUID length + string     ?   ~30                    ?
+            // ?   - Coalition (Int32)        ?   4                      ?
+            // ?   - Seat (Int32)             ?   4                      ?
+            // ?   - AllowRecord (Boolean)    ?   1                      ?
+            // ???????????????????????????????????????????????????????????
+            // ? Position (struct)            ? 24                       ?
+            // ?   - Latitude (Double)        ?   8                      ?
+            // ?   - Longitude (Double)       ?   8                      ?
+            // ?   - Altitude (Double)        ?   8                      ?
+            // ???????????????????????????????????????????????????????????
+            // ? AircraftInfo                 ? ~50                      ?
+            // ?   - UnitType length + string ?   ~40-45                 ?
+            // ?   - UnitId (UInt32)          ?   4                      ?
+            // ???????????????????????????????????????????????????????????
+            // ? Audio Payload                ? 1390-1490 (avg: 1440)    ?
+            // ?   - Length prefix (Int32)    ?   4                      ?
+            // ?   - Audio data               ?   1440 ± 50              ?
+            // ???????????????????????????????????????????????????????????
+            // ? Coalition (Int32)            ? 4                        ?
+            // ???????????????????????????????????????????????????????????
+            //
+            // TOTAL SIZE PER PACKET:
+            //   Minimum: 48 + 150 + 24 + 50 + 4 + 1390 + 4 = ~1670 bytes
+            //   Average: 48 + 150 + 24 + 50 + 4 + 1440 + 4 = ~1720 bytes
+            //   Maximum: 48 + 150 + 24 + 50 + 4 + 1490 + 4 = ~1770 bytes
+            //
+            // FILE SIZE CALCULATION:
+            //   100MB target ÷ 1720 bytes/packet = ~58,140 packets
+            //   With ±3.5% variance: 95MB - 105MB (±5% final size)
+            
+            const int avgPacketSize = 1720; // Accurate estimate based on actual packet structure
             long targetBytes = targetSizeMB * 1024L * 1024L;
             int estimatedPackets = (int)(targetBytes / avgPacketSize);
 
-            await GeneratePacketsAsync(writer, estimatedPackets, packetIntervalMs, cancellationToken);
+            await GeneratePacketsAsync(writer, estimatedPackets, packetIntervalMs, cancellationToken, progress);
             
             return tempFile;
         }
@@ -52,7 +93,8 @@ namespace AeroDebrief.Tests.IO
         public static async Task<string> GenerateWithPacketCountAsync(
             int packetCount,
             int packetIntervalMs = 40,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            IProgress<int>? progress = null)
         {
             var tempFile = Path.Combine(Path.GetTempPath(), $"synthetic_{Guid.NewGuid()}.adb");
             
@@ -65,7 +107,7 @@ namespace AeroDebrief.Tests.IO
             writer.Write(5002);
             writer.Write(DateTime.UtcNow.Ticks);
 
-            await GeneratePacketsAsync(writer, packetCount, packetIntervalMs, cancellationToken);
+            await GeneratePacketsAsync(writer, packetCount, packetIntervalMs, cancellationToken, progress);
             
             return tempFile;
         }
@@ -74,7 +116,8 @@ namespace AeroDebrief.Tests.IO
             BinaryWriter writer,
             int packetCount,
             int packetIntervalMs,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            IProgress<int>? progress = null)
         {
             var startTime = DateTime.UtcNow;
             var frequencies = new[] { 251_000_000.0, 243_000_000.0, 305_000_000.0 }; // VHF AM frequencies
@@ -87,9 +130,10 @@ namespace AeroDebrief.Tests.IO
                 var playerName = players[i % players.Length];
                 var guid = $"player-{i % players.Length:D4}";
 
-                // Generate synthetic audio packet with more consistent size
-                // Use average of 1440 bytes (between 960 and 1920) for more predictable file sizes
-                var audioLength = 1440 + _random.Next(-200, 200); // 1240-1640 bytes, centered around 1440
+                // Generate synthetic audio packet with reduced variance for predictable file sizes
+                // Reduced from ±200 (±14%) to ±50 (±3.5%) for better consistency
+                // This ensures generated files are within ±5% of target size
+                var audioLength = 1440 + _random.Next(-50, 50); // 1390-1490 bytes, centered around 1440
                 var audioData = GenerateSyntheticAudio(audioLength);
 
                 var playerInfo = new PlayerInfo
@@ -129,10 +173,16 @@ namespace AeroDebrief.Tests.IO
 
                 metadata.TryWriteMetadata(writer);
 
-                // Yield periodically
-                if (i % 100 == 0)
+                // Report progress and yield periodically
+                if (i % 1000 == 0)
+                {
+                    progress?.Report(i);
                     await Task.Yield();
+                }
             }
+            
+            // Report completion
+            progress?.Report(packetCount);
         }
 
         private static byte[] GenerateSyntheticAudio(int length)

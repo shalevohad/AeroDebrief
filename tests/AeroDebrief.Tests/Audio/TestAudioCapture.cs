@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Channels;
 using System.Threading.Tasks;
 using AeroDebrief.Core.Audio;
@@ -21,6 +22,25 @@ namespace AeroDebrief.Tests.Audio
 
         public IReadOnlyList<byte[]> CapturedChunks => _capturedChunks;
         public int TotalSamplesCaptured { get; private set; }
+        
+        /// <summary>
+        /// Gets the number of frames captured
+        /// </summary>
+        public int FrameCount => _capturedChunks.Count;
+
+        /// <summary>
+        /// Gets the total number of bytes captured
+        /// </summary>
+        public long TotalBytes
+        {
+            get
+            {
+                lock (_capturedChunks)
+                {
+                    return _capturedChunks.Sum(f => (long)f.Length);
+                }
+            }
+        }
 
         public TestAudioCapture()
         {
@@ -64,6 +84,16 @@ namespace AeroDebrief.Tests.Audio
                 _capturedChunks.Clear();
                 TotalSamplesCaptured = 0;
             }
+        }
+
+        public void SetSpatialAudioProvider(ISpatialAudioProvider? provider)
+        {
+            // Test implementation - spatial audio not needed for stress tests
+        }
+
+        public void AdjustBufferForSpeed(double speed)
+        {
+            // Test implementation - buffer adjustment not needed for stress tests
         }
 
         public Task WriteAudioAsync(byte[] audioData)

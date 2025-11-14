@@ -481,18 +481,26 @@ namespace AeroDebrief.Tests.Performance
         [Trait("Category", "Stress")]
         public async Task Stress_LargeFileProcessing()
         {
-            // Arrange - Process ~100MB file across 50 frequencies
+            // Arrange - Process ~100MB file across multiple frequencies
             // This simulates a realistic high-load scenario with many concurrent channels
-            // Approximate calculation: 100MB / 2KB per packet ? 50,000 packets
             const int targetSizeMB = 100;
-            const int frequencyCount = 50;
             
-            Logger.Info($"?? Starting Large File Stress Test - Generating {targetSizeMB}MB test file with {frequencyCount} frequencies...");
+            Logger.Info($"?? Starting Large File Stress Test - Generating {targetSizeMB}MB test file...");
             
-            // Generate large file directly with target size
+            // Progress reporting for large file generation
+            var generationProgress = new Progress<int>(packetsGenerated =>
+            {
+                if (packetsGenerated % 10000 == 0 || packetsGenerated == 0)
+                {
+                    Logger.Debug($"   Generated {packetsGenerated:N0} packets...");
+                }
+            });
+            
+            // Generate large file directly with target size and progress reporting
             var testFile = await SyntheticRecordingGenerator.GenerateAsync(
                 targetSizeMB: targetSizeMB,
-                packetIntervalMs: Constants.OPUS_FRAME_DURATION_MS
+                packetIntervalMs: Constants.OPUS_FRAME_DURATION_MS,
+                progress: generationProgress
             );
             _tempFiles.Add(testFile);
             
@@ -501,6 +509,12 @@ namespace AeroDebrief.Tests.Performance
             
             Logger.Info($"   Generated file: {fileSizeMB:N2} MB");
             
+            // Force GC before processing to get accurate memory baseline
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+            var memoryBefore = GC.GetTotalMemory(true) / 1024.0 / 1024.0;
+            
             // Act - Full pipeline with multi-frequency processing
             var stopwatch = Stopwatch.StartNew();
             
@@ -508,10 +522,21 @@ namespace AeroDebrief.Tests.Performance
             await packetSource.OpenAsync();
             
             var frequencies = FileAnalyzer.GetAllFrequencyModulations(testFile);
+            
+            // Light GC after frequency analysis
+            GC.Collect(1, GCCollectionMode.Optimized);
+            
             var duration = FileAnalyzer.CalculateTotalDuration(testFile);
+            
+            // Light GC after duration calculation
+            GC.Collect(1, GCCollectionMode.Optimized);
+            
             var activity = FileAnalyzer.AnalyzeAudioActivity(testFile);
             
             stopwatch.Stop();
+            
+            var memoryAfter = GC.GetTotalMemory(false) / 1024.0 / 1024.0;
+            var memoryUsed = memoryAfter - memoryBefore;
             
             var packetCount = packetSource.TotalPackets;
             var avgPacketsPerFreq = frequencies.Count > 0 ? packetCount / frequencies.Count : 0;
@@ -527,21 +552,27 @@ namespace AeroDebrief.Tests.Performance
             Logger.Info($"   Processing time: {stopwatch.Elapsed.TotalSeconds:F2}s");
             Logger.Info($"   Overall rate: {packetCount / stopwatch.Elapsed.TotalSeconds:N0} packets/sec");
             Logger.Info($"   Data rate: {fileSize / stopwatch.Elapsed.TotalSeconds / 1024.0 / 1024.0:N2} MB/s");
+            Logger.Info($"   Memory used: {memoryUsed:N2} MB");
             Logger.Info($"   Concurrency factor: {frequencies.Count} simultaneous channels");
             
             packetSource.TotalPackets.Should().BeGreaterThan(0);
             frequencies.Should().NotBeEmpty("should have detected frequencies in stress test");
             
-            // File size should be approximately target (allow 20% variance due to compression)
-            fileSizeMB.Should().BeGreaterThan(targetSizeMB * 0.8, 
-                $"generated file too small (target: {targetSizeMB}MB)");
-            fileSizeMB.Should().BeLessThan(targetSizeMB * 1.5, 
-                $"generated file too large (target: {targetSizeMB}MB)");
+            // File size should be approximately target (allow ±10% variance with improved generator)
+            // With ±3.5% audio variance, files should be within ±5%, but allow ±10% for safety
+            fileSizeMB.Should().BeGreaterThan(targetSizeMB * 0.9, 
+                $"generated file too small (target: {targetSizeMB}MB, actual: {fileSizeMB:N2}MB)");
+            fileSizeMB.Should().BeLessThan(targetSizeMB * 1.1, 
+                $"generated file too large (target: {targetSizeMB}MB, actual: {fileSizeMB:N2}MB)");
             
             // Should complete large multi-frequency file in reasonable time
             // Target: Process 100MB in under 60 seconds (>1.5 MB/s)
             stopwatch.Elapsed.TotalSeconds.Should().BeLessThan(60, 
-                $"large file processing with {frequencies.Count} frequencies taking too long");
+                $"large file processing with {frequencies.Count} frequencies taking too long ({stopwatch.Elapsed.TotalSeconds:F2}s)");
+            
+            // Memory usage should be reasonable for 100MB file
+            memoryUsed.Should().BeLessThan(MAX_MEMORY_USAGE_MB,
+                $"memory usage excessive: {memoryUsed:N2}MB (threshold: {MAX_MEMORY_USAGE_MB}MB)");
         }
 
         #endregion
