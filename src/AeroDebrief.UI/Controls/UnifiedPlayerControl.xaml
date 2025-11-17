@@ -1,17 +1,17 @@
 ﻿<UserControl x:Class="AeroDebrief.UI.Controls.UnifiedPlayerControl"
-         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
-         xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
-         xmlns:local="clr-namespace:AeroDebrief.UI.Controls"
-         xmlns:player="clr-namespace:AeroDebrief.UI.Controls.Player"
-         xmlns:tacview="clr-namespace:AeroDebrief.UI.Controls.Tacview"
-         xmlns:charts="clr-namespace:AeroDebrief.UI.Controls.Charts"
-         xmlns:vm="clr-namespace:AeroDebrief.UI.ViewModels"
-         mc:Ignorable="d" 
-         d:DesignHeight="800" d:DesignWidth="1200"
-         Background="{StaticResource PrimaryBackgroundBrush}"
-         d:DataContext="{d:DesignInstance Type=vm:UnifiedPlayerViewModel, IsDesignTimeCreatable=True}">
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             xmlns:local="clr-namespace:AeroDebrief.UI.Controls"
+             xmlns:player="clr-namespace:AeroDebrief.UI.Controls.Player"
+             xmlns:tacview="clr-namespace:AeroDebrief.UI.Controls.Tacview"
+             xmlns:charts="clr-namespace:AeroDebrief.UI.Controls.Charts"
+             xmlns:vm="clr-namespace:AeroDebrief.UI.ViewModels"
+             mc:Ignorable="d" 
+             d:DesignHeight="800" d:DesignWidth="1200"
+             Background="{StaticResource PrimaryBackgroundBrush}"
+             d:DataContext="{d:DesignInstance Type=vm:UnifiedPlayerViewModel, IsDesignTimeCreatable=True}">
 
     <Grid Margin="16">
         <Grid.RowDefinitions>
@@ -20,9 +20,7 @@
             <RowDefinition Height="Auto"/>
             <!-- Tacview Status - no MinHeight so it collapses completely -->
             <RowDefinition/>
-            <!-- Main content -->
-            <RowDefinition Height="Auto"/>
-            <!-- Unified Graph (collapsible) -->
+            <!-- Main content with UnifiedGraph -->
         </Grid.RowDefinitions>
 
         <!-- PLAYER HEADER - Top header with file/source controls -->
@@ -90,28 +88,95 @@
                                       StopRequested="OnStopRequested"
                                       Margin="0,0,8,0"/>
 
-            <!-- WAVEFORM DISPLAY (legacy) -->
-            <player:WaveformDisplayPanel Grid.Column="1"
-                                    x:Name="WaveformPanel"
-                                    WaveformData="{Binding WaveformData}"
-                                    FrequencyWaveforms="{Binding FrequencyWaveforms}"
-                                    PlayheadPosition="{Binding PlayheadPositionNormalized}"
-                                    ZoomStartTime="{Binding ZoomStartTime, Mode=TwoWay}"
-                                    ZoomEndTime="{Binding ZoomEndTime, Mode=TwoWay}"
-                                    TotalDuration="{Binding TotalDuration}"
-                                    IsLoading="{Binding IsLoadingWaveform}"
-                                    LoadingProgress="{Binding WaveformGenerationProgress}"
-                                    EngineType="{Binding WaveformEngineText}"
-                                    IsUsingGpu="{Binding IsUsingGpu}"
-                                    BufferStartPosition="{Binding BufferStartPosition}"
-                                    BufferEndPosition="{Binding BufferEndPosition}"
-                                    ShowEngineStatus="True"
-                                    ShowZoomControls="True"
-                                    ShowMinimap="True"
-                                    MinimapHeight="80"
-                                    SeekRequested="OnSeekRequested"
-                                    ZoomChanged="OnZoomChanged"
-                                    WaveformSizeChanged="OnWaveformSizeChanged"/>
+            <!-- WAVEFORM DISPLAY - UnifiedGraphControl (Phase 12: Migrated from legacy) -->
+            <Grid Grid.Column="1">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/> <!-- Header with zoom controls -->
+                    <RowDefinition Height="*"/>    <!-- UnifiedGraphControl -->
+                </Grid.RowDefinitions>
+                
+                <!-- Header with Zoom Controls -->
+                <Grid Grid.Row="0" Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    
+                    <TextBlock Grid.Column="0" 
+                               Style="{StaticResource SubHeaderTextStyle}" 
+                               Text="Amplitude Graph"
+                               VerticalAlignment="Center"/>
+                    
+                    <!-- LiveCharts2 Badge -->
+                    <Border Grid.Column="1"
+                            Background="{StaticResource SuccessBrush}"
+                            CornerRadius="10"
+                            Padding="8,3"
+                            Margin="0,0,12,0"
+                            VerticalAlignment="Center"
+                            ToolTip="LiveCharts2-based rendering&#x0a;Hardware-accelerated, high-performance visualization">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="🔊" 
+                                       FontSize="10"
+                                       VerticalAlignment="Center"
+                                       Margin="0,0,4,0"/>
+                            <TextBlock Text="SYNC" 
+                                       FontSize="10" 
+                                       FontWeight="Bold"
+                                       Foreground="White"
+                                       VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Border>
+                    
+                    <!-- Zoom Control Buttons -->
+                    <StackPanel Grid.Column="2" 
+                                Orientation="Horizontal"
+                                HorizontalAlignment="Right">
+                        <TextBlock Text="Zoom:" 
+                                   FontSize="11"
+                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   VerticalAlignment="Center"
+                                   Margin="0,0,8,0"/>
+                        
+                        <Button x:Name="ZoomInButton"
+                                Content="+" 
+                                Click="ZoomIn_Click"
+                                Style="{StaticResource ModernSecondaryButton}"
+                                FontSize="14"
+                                FontWeight="Bold"
+                                Padding="10,4"
+                                Margin="0,0,4,0"
+                                ToolTip="Zoom In (2x)"/>
+                        
+                        <Button x:Name="ZoomOutButton"
+                                Content="-" 
+                                Click="ZoomOut_Click"
+                                Style="{StaticResource ModernSecondaryButton}"
+                                FontSize="14"
+                                FontWeight="Bold"
+                                Padding="10,4"
+                                Margin="0,0,4,0"
+                                ToolTip="Zoom Out (0.5x)"/>
+                        
+                        <Button x:Name="ZoomResetButton"
+                                Content="⟲" 
+                                Click="ZoomReset_Click"
+                                Style="{StaticResource ModernSecondaryButton}"
+                                FontFamily="Segoe UI Symbol"
+                                FontSize="14"
+                                Padding="8,4"
+                                ToolTip="Reset Zoom (Show Full Range)"/>
+                    </StackPanel>
+                </Grid>
+
+                <!-- Phase 12: UnifiedGraphControl replaces legacy WaveformDisplayPanel -->
+                <charts:UnifiedGraphControl x:Name="UnifiedGraph"
+                                           Grid.Row="1"
+                                           DataContext="{Binding GraphViewModel}"
+                                           MinHeight="200"
+                                           Margin="0"/>
+            </Grid>
 
             <!-- GRID SPLITTER -->
             <GridSplitter Grid.Column="2" 
@@ -130,84 +195,8 @@
                                    MixerBooleanChanged="OnMixerBooleanChanged"/>
         </Grid>
 
-        <!-- LIVECHARTS UNIFIED GRAPH (Phase 1) -->
-        <Border Grid.Row="3" 
-                x:Name="UnifiedGraphContainer"
-                Style="{StaticResource ModernCard}"
-                Margin="0,16,0,0"
-                Visibility="Collapsed">
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="250"/>
-                </Grid.RowDefinitions>
-                
-                <!-- Header with toggle -->
-                <Grid Grid.Row="0" Margin="0,0,0,8">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    
-                    <StackPanel Grid.Column="0" Orientation="Horizontal">
-                        <TextBlock Text="Unified Amplitude Graph" 
-                                  FontSize="14" 
-                                  FontWeight="SemiBold"
-                                  Foreground="{StaticResource TextPrimaryBrush}"
-                                  VerticalAlignment="Center"/>
-                        <Border Background="{StaticResource AccentBrush}"
-                               CornerRadius="4"
-                               Padding="6,2"
-                               Margin="8,0,0,0">
-                            <TextBlock Text="BETA" 
-                                      FontSize="10" 
-                                      FontWeight="Bold"
-                                      Foreground="White"/>
-                        </Border>
-                    </StackPanel>
-                    
-                    <StackPanel Grid.Column="1" Orientation="Horizontal">
-                        <!-- Phase 7 Step 4: Audio sync indicator -->
-                        <Border Background="{StaticResource SuccessBrush}"
-                               CornerRadius="4"
-                               Padding="6,2"
-                               Margin="0,0,8,0"
-                               ToolTip="Audio synchronization enabled&#x0a;Chart visibility controls audio mute/solo">
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="🔊" 
-                                          FontSize="10"
-                                          VerticalAlignment="Center"
-                                          Margin="0,0,4,0"/>
-                                <TextBlock Text="SYNC" 
-                                          FontSize="10" 
-                                          FontWeight="Bold"
-                                          Foreground="White"
-                                          VerticalAlignment="Center"/>
-                            </StackPanel>
-                        </Border>
-                        
-                        <TextBlock Text="LiveCharts2" 
-                                  FontSize="11" 
-                                  Foreground="{StaticResource TextSecondaryBrush}"
-                                  VerticalAlignment="Center"
-                                  Margin="0,0,8,0"/>
-                        <ToggleButton x:Name="GraphToggle"
-                                     IsChecked="True"
-                                     Style="{StaticResource ModernToggleSwitch}"
-                                     ToolTip="Show/Hide unified graph"/>
-                    </StackPanel>
-                </Grid>
-                
-                <!-- Chart Content -->
-                <charts:UnifiedGraphControl x:Name="UnifiedGraph" 
-                                           Grid.Row="1"
-                                           DataContext="{Binding GraphViewModel}"
-                                           Visibility="{Binding IsChecked, ElementName=GraphToggle, Converter={StaticResource BoolToVisibilityConverter}}"/>
-            </Grid>
-        </Border>
-
         <!-- FILE SOURCE PANEL OVERLAY -->
-        <player:FileSourcePanelOverlay Grid.Row="0" Grid.RowSpan="4"
+        <player:FileSourcePanelOverlay Grid.Row="0" Grid.RowSpan="3"
                                   x:Name="FileOverlay"
                                   IsOpen="{Binding IsFileSourcePanelOpen, Mode=TwoWay}"
                                   PanelWidth="400"
@@ -217,7 +206,7 @@
                                   PanelClosed="OnFileSourcePanelClosed"/>
 
         <!-- SERVER SOURCE PANEL OVERLAY -->
-        <player:FileSourcePanelOverlay Grid.Row="0" Grid.RowSpan="4"
+        <player:FileSourcePanelOverlay Grid.Row="0" Grid.RowSpan="3"
                                   x:Name="ServerOverlay"
                                   IsOpen="{Binding IsServerSourcePanelOpen, Mode=TwoWay}"
                                   PanelWidth="400"

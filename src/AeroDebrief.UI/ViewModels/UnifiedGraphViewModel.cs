@@ -217,7 +217,20 @@ namespace AeroDebrief.UI.ViewModels
         /// <summary>
         /// Phase 5: Duration of current viewport.
         /// </summary>
-        public TimeSpan ViewportDuration => ViewportEnd - ViewportStart;
+        public TimeSpan ViewportDuration
+        {
+            get => ViewportEnd - ViewportStart;
+            set
+            {
+                // Update ViewportEnd to reflect the new duration while keeping ViewportStart fixed
+                var newEnd = ViewportStart + value;
+                if (newEnd != ViewportEnd)
+                {
+                    ViewportEnd = newEnd;
+                    // ViewportEnd setter will handle property change notifications
+                }
+            }
+        }
 
         /// <summary>
         /// Phase 5: Raised when viewport changes (zoom or pan).

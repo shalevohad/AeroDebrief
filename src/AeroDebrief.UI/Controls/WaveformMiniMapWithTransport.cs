@@ -7,6 +7,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
 using AeroDebrief.UI.Helpers;
+using AeroDebrief.UI.Models;
 using FontAwesome.WPF;
 
 namespace AeroDebrief.UI.Controls

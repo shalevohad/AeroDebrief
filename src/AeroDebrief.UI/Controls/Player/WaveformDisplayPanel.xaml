@@ -4,6 +4,7 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:local="clr-namespace:AeroDebrief.UI.Controls"
+             xmlns:charts="clr-namespace:AeroDebrief.UI.Controls.Charts"
              xmlns:fa="http://schemas.fontawesome.io/icons/"
              mc:Ignorable="d" 
              d:DesignHeight="450" d:DesignWidth="800">
@@ -15,8 +16,7 @@
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/> <!-- Header with zoom controls -->
-            <RowDefinition Height="*"/>    <!-- Waveform viewer -->
-            <RowDefinition Height="Auto"/> <!-- Minimap -->
+            <RowDefinition Height="*"/>    <!-- UnifiedGraphControl -->
         </Grid.RowDefinitions>
         
         <!-- Header with Zoom Controls -->
@@ -100,37 +100,11 @@
             </StackPanel>
         </Grid>
 
-        <!-- Waveform Display -->
-        <local:WaveformWithMiniMap x:Name="WaveformDisplay"
-                                 Grid.Row="1"
-                                 WaveformData="{Binding WaveformData, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                 FrequencyWaveforms="{Binding FrequencyWaveforms, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                 PlayheadPosition="{Binding PlayheadPosition, RelativeSource={RelativeSource AncestorType=UserControl}, Mode=OneWay}"
-                                 BufferStartPosition="{Binding BufferStartPosition, RelativeSource={RelativeSource AncestorType=UserControl}, Mode=OneWay}"
-                                 BufferEndPosition="{Binding BufferEndPosition, RelativeSource={RelativeSource AncestorType=UserControl}, Mode=OneWay}"
-                                 TotalDuration="{Binding TotalDuration, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                 IsLoading="{Binding IsLoading, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                 LoadingMessage="{Binding LoadingMessage, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                 GenerationProgress="{Binding LoadingProgress, RelativeSource={RelativeSource AncestorType=UserControl}, Mode=OneWay}"
-                                 IsInteractive="True"
-                                 ShowMiniMap="False"
-                                 SeekRequested="WaveformDisplay_SeekRequested"
-                                 ZoomRegionSelected="WaveformDisplay_ZoomRegionSelected"
-                                 Margin="0"/>
-        
-        <!-- Minimap (without transport buttons) -->
-        <local:WaveformMiniMap x:Name="MiniMapDisplay"
-                              Grid.Row="2"
-                              WaveformData="{Binding WaveformData, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                              FrequencyWaveforms="{Binding FrequencyWaveforms, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                              PlayheadPosition="{Binding PlayheadPosition, RelativeSource={RelativeSource AncestorType=UserControl}, Mode=OneWay}"
-                              ZoomStartTime="{Binding ZoomStartTime, RelativeSource={RelativeSource AncestorType=UserControl}, Mode=TwoWay}"
-                              ZoomEndTime="{Binding ZoomEndTime, RelativeSource={RelativeSource AncestorType=UserControl}, Mode=TwoWay}"
-                              TotalDuration="{Binding TotalDuration, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                              MinimapClicked="MiniMap_MinimapClicked"
-                              MinimapDragged="MiniMap_MinimapDragged"
-                              Height="{Binding MinimapHeight, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                              Visibility="{Binding ShowMinimap, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource BoolToVisConverter}}"
-                              Margin="0,12,0,0"/>
+        <!-- Phase 12: UnifiedGraphControl replaces legacy controls -->
+        <charts:UnifiedGraphControl x:Name="UnifiedGraph"
+                                   Grid.Row="1"
+                                   DataContext="{Binding UnifiedGraphViewModel, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                   MinHeight="200"
+                                   Margin="0"/>
     </Grid>
 </UserControl>

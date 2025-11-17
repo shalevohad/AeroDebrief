@@ -5,6 +5,7 @@ using AeroDebrief.Core.Audio;
 using AeroDebrief.Core.IO;
 using AeroDebrief.Core.Playback;
 using AeroDebrief.UI.ViewModels;
+using AeroDebrief.UI.Models;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -306,10 +307,10 @@ namespace AeroDebrief.UI.Services
         /// Gets per-frequency waveform data with colors for multi-colored visualization
         /// Uses the colors assigned to each frequency in the FrequencyViewModel
         /// </summary>
-        public Dictionary<double, Controls.FrequencyWaveformData> GetFrequencyWaveformData()
+        public Dictionary<double, FrequencyWaveformData> GetFrequencyWaveformData()
         {
             var logger = NLog.LogManager.GetCurrentClassLogger();
-            var result = new Dictionary<double, Controls.FrequencyWaveformData>();
+            var result = new Dictionary<double, FrequencyWaveformData>();
             
             if (_waveformGenerator == null || _selectedFrequencies.Count == 0)
             {
@@ -329,7 +330,7 @@ namespace AeroDebrief.UI.Services
                 {
                     logger.Info($"   - GPU Layer: {layer.DisplayName} @ {layer.FrequencyHz:F1} Hz (LayerId: {layer.LayerId})");
                     
-                    result[layer.FrequencyHz] = new Controls.FrequencyWaveformData
+                    result[layer.FrequencyHz] = new FrequencyWaveformData
                     {
                         Frequency = layer.FrequencyHz,
                         WaveformData = layer.CachedWaveformData ?? Array.Empty<float>(),
@@ -363,7 +364,7 @@ namespace AeroDebrief.UI.Services
                     var freqInfo = GetAvailableFrequencies().FirstOrDefault(f => Math.Abs(f.Frequency - frequency) < 0.1);
                     var displayName = freqInfo?.DisplayName ?? $"{frequency / 1_000_000.0:F3} MHz";
                     
-                    result[frequency] = new Controls.FrequencyWaveformData
+                    result[frequency] = new FrequencyWaveformData
                     {
                         Frequency = frequency,
                         WaveformData = channelWaveform,
@@ -387,14 +388,14 @@ namespace AeroDebrief.UI.Services
         /// <summary>
         /// Gets per-frequency waveform data with GPU composition if available (Phase 3.1)
         /// </summary>
-        public async Task<Dictionary<double, Controls.FrequencyWaveformData>> GetFrequencyWaveformDataAsync(
+        public async Task<Dictionary<double, FrequencyWaveformData>> GetFrequencyWaveformDataAsync(
             int outputWidth,
             int outputHeight,
             double zoomStart,
             double zoomEnd)
         {
             var logger = NLog.LogManager.GetCurrentClassLogger();
-            var result = new Dictionary<double, Controls.FrequencyWaveformData>();
+            var result = new Dictionary<double, FrequencyWaveformData>();
             
             if (_waveformGenerator == null || _selectedFrequencies.Count == 0)
             {
@@ -419,7 +420,7 @@ namespace AeroDebrief.UI.Services
                             zoomEnd);
                         
                         // Return special marker to indicate GPU composite is ready
-                        result[double.NegativeInfinity] = new Controls.FrequencyWaveformData
+                        result[double.NegativeInfinity] = new FrequencyWaveformData
                         {
                             Frequency = double.NegativeInfinity,
                             GpuCompositeTexture = compositeTexture,
@@ -450,7 +451,7 @@ namespace AeroDebrief.UI.Services
                     var freqInfo = GetAvailableFrequencies().FirstOrDefault(f => Math.Abs(f.Frequency - frequency) < 0.1);
                     var displayName = freqInfo?.DisplayName ?? $"{frequency / 1_000_000.0:F3} MHz";
                     
-                    result[frequency] = new Controls.FrequencyWaveformData
+                    result[frequency] = new FrequencyWaveformData
                     {
                         Frequency = frequency,
                         WaveformData = channelWaveform,

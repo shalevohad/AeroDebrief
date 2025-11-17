@@ -14,8 +14,6 @@
     <Grid>
         <!-- Main Chart -->
         <lvc:CartesianChart Series="{Binding Series}"
-                           XAxes="{Binding XAxes}"
-                           YAxes="{Binding YAxes}"
                            TooltipPosition="Hidden"
                            Background="Transparent"/>
         

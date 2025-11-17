@@ -4,6 +4,7 @@ using AeroDebrief.Core.Analysis;
 using AeroDebrief.Core.Audio;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Models.Player;
 using AeroDebrief.UI.Controls;
+using AeroDebrief.UI.Models;
 
 namespace AeroDebrief.UI.ViewModels
 {
@@ -20,7 +21,7 @@ namespace AeroDebrief.UI.ViewModels
         private double _progress;
         private double _playheadPosition;
         private float[]? _waveformData;
-        private Dictionary<double, Controls.FrequencyWaveformData>? _frequencyWaveforms;
+        private Dictionary<double, FrequencyWaveformData>? _frequencyWaveforms;
         private SpectrumData? _spectrumData;
         private int _selectedFrequencyCount;
         private bool _showOnlySelectedFrequencies = true;
@@ -113,7 +114,7 @@ namespace AeroDebrief.UI.ViewModels
             set => SetProperty(ref _waveformData, value);
         }
 
-        public Dictionary<double, Controls.FrequencyWaveformData>? FrequencyWaveforms
+        public Dictionary<double, FrequencyWaveformData>? FrequencyWaveforms
         {
             get => _frequencyWaveforms;
             set => SetProperty(ref _frequencyWaveforms, value);

@@ -52,9 +52,6 @@ namespace AeroDebrief.UI.ViewModels
         // Core components (legacy, may be removed)
         private FrequencyAnalysisService? _analysisService;
         
-        // GPU-layered waveform tracking (moved to WaveformManager)
-        private readonly Dictionary<double, Guid> _frequencyLayerIds = new();
-        
         // NEW: Zoom state tracking for GPU compositor (Phase 3.1)
         private double _zoomStartTime = 0.0;
         private double _zoomEndTime = 1.0;
@@ -81,11 +78,7 @@ namespace AeroDebrief.UI.ViewModels
         private ObservableCollection<FrequencyGroupViewModel> _frequencies = new();
         private ObservableCollection<MixerChannelViewModel> _mixerChannels = new();
 
-        // Waveform data
-        private float[] _waveformData = Array.Empty<float>();
-        private System.Collections.Generic.Dictionary<double, Controls.FrequencyWaveformData>? _frequencyWaveforms;
-        private double _waveformGenerationProgress = 0.0;
-        private bool _isLoadingWaveform = false;
+        // Legacy waveform data removed - UnifiedGraphControl handles visualization
         private DateTime _lastPlayheadUpdate = DateTime.MinValue;
 
         // Phase 3.1: Performance monitoring
@@ -196,42 +189,6 @@ namespace AeroDebrief.UI.ViewModels
         {
             get => _mixerChannels;
             set => SetProperty(ref _mixerChannels, value);
-        }
-
-        public float[] WaveformData
-        {
-            get => _waveformData;
-            set => SetProperty(ref _waveformData, value);
-        }
-
-        public System.Collections.Generic.Dictionary<double, Controls.FrequencyWaveformData>? FrequencyWaveforms
-        {
-            get => _frequencyWaveforms;
-            set => SetProperty(ref _frequencyWaveforms, value);
-        }
-
-        public bool IsLoadingWaveform
-        {
-            get => _isLoadingWaveform;
-            set => SetProperty(ref _isLoadingWaveform, value);
-        }
-
-        public double WaveformGenerationProgress
-        {
-            get => _waveformGenerationProgress;
-            set => SetProperty(ref _waveformGenerationProgress, value);
-        }
-
-        public double BufferStartPosition
-        {
-            get => _bufferStartPosition;
-            set => SetProperty(ref _bufferStartPosition, value);
-        }
-
-        public double BufferEndPosition
-        {
-            get => _bufferEndPosition;
-            set => SetProperty(ref _bufferEndPosition, value);
         }
 
         public string WaveformEngineIcon
@@ -351,10 +308,7 @@ namespace AeroDebrief.UI.ViewModels
             get => _zoomStartTime;
             set
             {
-                if (SetProperty(ref _zoomStartTime, value))
-                {
-                    _ = UpdateWaveformDisplayAsync(); // Phase 3.1: Trigger GPU compositor update
-                }
+                SetProperty(ref _zoomStartTime, value);
             }
         }
 
@@ -363,10 +317,7 @@ namespace AeroDebrief.UI.ViewModels
             get => _zoomEndTime;
             set
             {
-                if (SetProperty(ref _zoomEndTime, value))
-                {
-                    _ = UpdateWaveformDisplayAsync(); // Phase 3.1: Trigger GPU compositor update
-                }
+                SetProperty(ref _zoomEndTime, value);
             }
         }
 
@@ -468,12 +419,6 @@ namespace AeroDebrief.UI.ViewModels
             // Frequency events
             _frequencyManager.SelectionChanged += OnFrequencySelectionChanged;
             _frequencyManager.FrequenciesLoaded += OnFrequenciesLoaded;
-
-            // Waveform events
-            _waveformManager.ProgressChanged += OnWaveformProgress;
-            _waveformManager.WaveformGenerated += OnWaveformGenerated;
-            _waveformManager.LayerAdded += OnLayerAdded;
-            _waveformManager.LayerRemoved += OnLayerRemoved;
 
             // Mixer events
             _mixerController.ChannelAdded += OnMixerChannelAdded;
@@ -591,8 +536,6 @@ namespace AeroDebrief.UI.ViewModels
             // Clear UI state
             Frequencies.Clear();
             MixerChannels.Clear();
-            WaveformData = Array.Empty<float>();
-            FrequencyWaveforms = null;
         }
 
         private void OnSessionError(object? sender, SessionErrorEventArgs e)
@@ -621,36 +564,25 @@ namespace AeroDebrief.UI.ViewModels
                 _mixerController.SetupChannel(e.Frequency, displayName);
                 _sessionManager.Pipeline?.SetFrequencyGate(e.Frequency, FrequencyGateMode.Allow);
                 
-                // Phase 7 Step 4: Sync to graph - show series
+                // Phase 12: Sync to UnifiedGraph - show series
                 var freqId = $"{e.Frequency:F0}";
                 _graphViewModel.SetFrequencyVisible(freqId, true);
-                Logger.Debug($"? Graph series shown for {e.Frequency:F1} Hz");
-                
-                // Add GPU layer if available
-                _ = AddFrequencyLayerAsync(e.Frequency, displayName);
+                Logger.Debug($"? Phase 12: Graph series shown for {e.Frequency:F1} Hz");
             }
             else
             {
-                // Remove mixer channel and GPU layer
+                // Remove mixer channel
                 _mixerController.RemoveChannel(e.Frequency);
                 _sessionManager.Pipeline?.SetFrequencyGate(e.Frequency, FrequencyGateMode.Block);
                 
-                // Phase 7 Step 4: Sync to graph - hide series
+                // Phase 12: Sync to UnifiedGraph - hide series
                 var freqId = $"{e.Frequency:F0}";
                 _graphViewModel.SetFrequencyVisible(freqId, false);
-                Logger.Debug($"? Graph series hidden for {e.Frequency:F1} Hz");
-                
-                if (_waveformManager.IsUsingLayeredRendering)
-                {
-                    _waveformManager.RemoveLayer(e.Frequency);
-                }
+                Logger.Debug($"? Phase 12: Graph series hidden for {e.Frequency:F1} Hz");
             }
             
-            // Regenerate waveform if not using GPU layers
-            if (!_waveformManager.IsUsingLayeredRendering)
-            {
-                _ = GenerateWaveformAsync();
-            }
+            // Phase 12: Legacy GPU layers and waveform regeneration removed
+            // The UnifiedGraphControl handles all visualization internally
         }
 
         private void OnFrequenciesLoaded(object? sender, FrequenciesLoadedEventArgs e)
@@ -678,123 +610,6 @@ namespace AeroDebrief.UI.ViewModels
             {
                 Logger.Debug("Tacview integration not available yet (will be initialized after file load)");
             }
-        }
-
-        #endregion
-
-        #region Waveform Manager Event Handlers
-
-        private void OnWaveformProgress(object? sender, WaveformProgressChangedEventArgs e)
-        {
-            WaveformGenerationProgress = e.Progress;
-            StatusMessage = $"Generating waveform... {e.Progress:F0}%";
-        }
-
-        private void OnWaveformGenerated(object? sender, WaveformGeneratedEventArgs e)
-        {
-            Logger.Info($"Waveform generated: {e.FrequencyCount} frequencies");
-            
-            WaveformData = e.WaveformData.CombinedWaveform;
-            StatusMessage = $"{e.FrequencyCount} frequencies displayed";
-            
-            // Update UI with waveform data
-            OnPropertyChanged(nameof(WaveformData));
-            OnPropertyChanged(nameof(FrequencyWaveforms));
-            
-            // GPU availability/state may have changed during generation
-            OnPropertyChanged(nameof(IsUsingGpu));
-        }
-
-        private void OnLayerAdded(object? sender, LayerAddedEventArgs e)
-        {
-            Logger.Debug($"GPU layer added: {e.DisplayName} (LayerId: {e.LayerId})");
-            
-            // Track layer ID
-            _frequencyLayerIds[e.Frequency] = e.LayerId;
-            
-            Logger.Info($"? GPU layer added for {e.DisplayName}");
-            
-            // Check if all expected layers are now ready
-            var expectedLayerCount = _frequencyManager.SelectedFrequencies.Count;
-            var actualLayerCount = _frequencyLayerIds.Count;
-            
-            Logger.Debug($"GPU layers: {actualLayerCount}/{expectedLayerCount} ready");
-            
-            // If all layers are ready, update the display
-            if (actualLayerCount == expectedLayerCount)
-            {
-                Logger.Info($"? All {expectedLayerCount} GPU layers ready - updating display");
-                _ = RefreshGpuLayerDisplay();
-            }
-            
-            // Notify UI that GPU state/visibility may have changed
-            OnPropertyChanged(nameof(IsUsingGpu));
-        }
-        
-        /// <summary>
-        /// Refreshes the GPU layer display after all layers are generated
-        /// </summary>
-        private async Task RefreshGpuLayerDisplay()
-        {
-            try
-            {
-                Logger.Info($"?? Refreshing GPU layer display");
-                
-                // Get all GPU layers with metadata
-                var layers = _waveformManager.GetAllLayers();
-                Logger.Info($"?? Retrieved {layers.Count} GPU layers from WaveformManager");
-                
-                var freqWaveforms = new System.Collections.Generic.Dictionary<double, Controls.FrequencyWaveformData>();
-                
-                foreach (var layer in layers.Where(l => l.IsVisible))
-                {
-                    var freqViewModel = Frequencies
-                        .SelectMany(g => g.Frequencies)
-                        .FirstOrDefault(f => Math.Abs(f.Frequency - layer.FrequencyHz) < 0.1);
-
-                    if (freqViewModel != null)
-                    {
-                        freqWaveforms[layer.FrequencyHz] = new Controls.FrequencyWaveformData
-                        {
-                            Frequency = layer.FrequencyHz,
-                            WaveformData = layer.CachedWaveformData ?? Array.Empty<float>(),
-                            Color = freqViewModel.WaveformColor,
-                            DisplayName = layer.DisplayName,
-                            LayerId = layer.LayerId,
-                            IsVisible = layer.IsVisible
-                        };
-                        
-                        Logger.Debug($"   ? Added GPU layer: {layer.DisplayName} (LayerId: {layer.LayerId}, Visible: {layer.IsVisible})");
-                    }
-                }
-                
-                FrequencyWaveforms = freqWaveforms;
-                OnPropertyChanged(nameof(FrequencyWaveforms));
-                
-                IsLoadingWaveform = false;
-                StatusMessage = $"{freqWaveforms.Count} GPU layers displayed";
-                
-                Logger.Info($"? GPU layer display refreshed: {freqWaveforms.Count} layers visible");
-            }
-            catch (Exception ex)
-            {
-                Logger.Error(ex, "Failed to refresh GPU layer display");
-                StatusMessage = "Failed to display GPU layers";
-                IsLoadingWaveform = false;
-            }
-        }
-
-        private void OnLayerRemoved(object? sender, LayerRemovedEventArgs e)
-        {
-            Logger.Debug($"GPU layer removed: {e.Frequency:F1} Hz (LayerId: {e.LayerId})");
-            
-            _frequencyLayerIds.Remove(e.Frequency);
-            
-            // Update waveform display
-            _ = UpdateWaveformDisplayAsync();
-            
-            // Notify UI that GPU state/visibility may have changed
-            OnPropertyChanged(nameof(IsUsingGpu));
         }
 
         #endregion
@@ -910,8 +725,8 @@ namespace AeroDebrief.UI.ViewModels
                 CurrentPosition = targetTime;
                 ProgressPercent = normalizedPosition.Value * 100.0;
                 
-                BufferStartPosition = 0.0;
-                BufferEndPosition = 0.0;
+                _bufferStartPosition = 0.0;
+                _bufferEndPosition = 0.0;
                 
 #if DEBUG
                 Logger.Debug($"Seeked to: {targetTime}");
@@ -1017,7 +832,6 @@ namespace AeroDebrief.UI.ViewModels
             {
                 CurrentMode = PlayerMode.Recording;
                 CurrentSourceName = $"SRS Server: {ServerSource.ServerIp}:{ServerSource.ServerPort}";
-                StatusMessage = "Connected to SRS server";
                 Logger.Info($"Connected to server: {ServerSource.ServerIp}:{ServerSource.ServerPort}");
             }
             else
@@ -1058,7 +872,7 @@ namespace AeroDebrief.UI.ViewModels
                 StatusMessage = "Loading file...";
                 ProgressPercent = 0;
                 
-                Logger.Info($"======== LOADING FILE (Service Architecture): {filePath} ========$");
+                Logger.Info($"======== LOADING FILE (Service Architecture): {filePath} ========{"======== LOADING FILE (Service Architecture): "}{filePath} ========");
                 
                 // Create progress reporter for status updates - update every 5% of file load
                 int lastProgress = 0;
@@ -1125,9 +939,108 @@ namespace AeroDebrief.UI.ViewModels
             _waveformManager.ClearLayers();
             _mixerController.ClearChannels();
             
-            _frequencyLayerIds.Clear();
+            // Clear UI state
+            Frequencies.Clear();
+            MixerChannels.Clear();
+        }
 
-            Logger.Info("File unloaded");
+        #endregion
+
+        #region Public Methods for UI Integration
+
+        /// <summary>
+        /// Handles frequency selection changes from UI controls.
+        /// Routes to FrequencyManager which will trigger the internal event handler.
+        /// </summary>
+        public void HandleFrequencySelectionChanged(double frequency, bool isSelected)
+        {
+            if (isSelected)
+            {
+                _frequencyManager.SelectFrequency(frequency);
+            }
+            else
+            {
+                _frequencyManager.DeselectFrequency(frequency);
+            }
+        }
+
+        /// <summary>
+        /// Updates channel gain (volume) for a specific frequency.
+        /// Called from UI controls when mixer sliders are adjusted.
+        /// </summary>
+        public void UpdateChannelGain(double frequency, float gain)
+        {
+            _mixerController.SetChannelGain(frequency, gain);
+        }
+
+        /// <summary>
+        /// Updates channel pan for a specific frequency.
+        /// Called from UI controls when pan sliders are adjusted.
+        /// </summary>
+        public void UpdateChannelPan(double frequency, float pan)
+        {
+            _mixerController.SetChannelPan(frequency, pan);
+        }
+
+        /// <summary>
+        /// Updates channel mute state for a specific frequency.
+        /// Called from UI controls when mute buttons are toggled.
+        /// </summary>
+        public void UpdateChannelMute(double frequency, bool muted)
+        {
+            _mixerController.SetChannelMuted(frequency, muted);
+            
+            // Sync with graph visualization
+            var freqId = $"{frequency:F0}";
+            if (muted)
+            {
+                _graphViewModel.SetFrequencyVisible(freqId, false);
+            }
+            else
+            {
+                _graphViewModel.SetFrequencyVisible(freqId, true);
+            }
+        }
+
+        /// <summary>
+        /// Updates channel solo state for a specific frequency.
+        /// Called from UI controls when solo buttons are toggled.
+        /// </summary>
+        public void UpdateChannelSolo(double frequency, bool solo)
+        {
+            _mixerController.SetChannelSolo(frequency, solo);
+        }
+
+        /// <summary>
+        /// Updates pilot selection (for per-pilot filtering).
+        /// Called from UI controls when pilot checkboxes are toggled.
+        /// </summary>
+        public void UpdatePilotSelection(string pilotGuid, bool isSelected)
+        {
+            Logger.Debug($"Pilot selection changed: {pilotGuid} = {isSelected}");
+            // TODO: Implement per-pilot filtering when feature is ready
+        }
+
+        #endregion
+
+        #region Cleanup
+
+        public void Dispose()
+        {
+            Logger.Info("UnifiedPlayerViewModel disposing");
+
+            ExecuteStop();
+
+            // Dispose services in reverse order
+            _tacviewService?.Dispose();
+            _mixerController?.Dispose();
+            _waveformManager?.Dispose();
+            _sessionManager?.Dispose();
+            _frequencyManager?.Dispose();
+            
+            _analysisService?.Dispose();
+            
+            Logger.Info("? UnifiedPlayerViewModel disposed");
         }
 
         #endregion
@@ -1148,8 +1061,8 @@ namespace AeroDebrief.UI.ViewModels
             {
                 PlaybackState = PlaybackState.Stopped;
                 StatusMessage = "Stopped";
-                BufferStartPosition = 0.0;
-                BufferEndPosition = 0.0;
+                _bufferStartPosition = 0.0;
+                _bufferEndPosition = 0.0;
             };
 
             _sessionManager.Pipeline.PlaybackPaused += () =>
@@ -1252,14 +1165,6 @@ namespace AeroDebrief.UI.ViewModels
                     StatusMessage = "Initializing waveform generator...";
                 });
                 
-                // Initialize waveform generator after frequency loading - runs on background
-                // (moved to fix race condition with mixer initialization)
-                //_analysisService = new FrequencyAnalysisService();
-                //_waveformManager.Initialize(_analysisService);
-                
-                // Initialize mixer controller
-                //_mixerController.Initialize();
-
                 // Notify UI that GPU availability may have changed
                 OnPropertyChanged(nameof(IsUsingGpu));
 
@@ -1294,12 +1199,32 @@ namespace AeroDebrief.UI.ViewModels
                     }
                     
                     ProgressPercent = 80;
-                    StatusMessage = "Generating initial waveform...";
+                    StatusMessage = "Loading graph data...";
                 });
                 
-                // Generate initial waveform (empty until frequencies selected) - runs on background
-                await GenerateWaveformAsync();
+                // Phase 12: Load data into UnifiedGraphViewModel for the new graph
+                Logger.Info("Phase 12: Loading amplitude data into GraphViewModel...");
+                await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+                {
+                    StatusMessage = "Loading graph data...";
+                    ProgressPercent = 85;
+                });
                 
+                // Get recording time range from session
+                var recordingStart = DateTime.Now; // TODO: Get actual recording start time from session
+                var recordingEnd = recordingStart.Add(TotalDuration);
+                
+                try
+                {
+                    await _graphViewModel.LoadDataAsync(recordingStart, recordingEnd);
+                    Logger.Info($"? Phase 12: GraphViewModel loaded with data from {recordingStart:HH:mm:ss} to {recordingEnd:HH:mm:ss}");
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error(ex, "Phase 12: Failed to load graph data - graph will be empty");
+                    // Continue anyway - graph will be empty but app still functional
+                }
+
                 // Final update on UI thread
                 await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
                 {
@@ -1307,7 +1232,7 @@ namespace AeroDebrief.UI.ViewModels
                     ProgressPercent = 100;
                     StatusMessage = $"File loaded with {_frequencyManager.Frequencies.Count} frequencies. Select frequencies to visualize.";
                 });
-                
+
                 Logger.Info($"? File loaded successfully with {_frequencyManager.Frequencies.Count} frequency groups");
             }
             catch (Exception ex)
@@ -1320,454 +1245,6 @@ namespace AeroDebrief.UI.ViewModels
                     IsBuffering = false;
                 });
             }
-        }
-
-        private async Task AddFrequencyLayerAsync(double frequency, string displayName)
-        {
-            if (!_waveformManager.IsUsingLayeredRendering)
-                return;
-
-            if (_sessionManager.PacketSource == null)
-                return;
-
-            try
-            {
-                // Get frequency color
-                var freqViewModel = Frequencies
-                    .SelectMany(g => g.Frequencies)
-                    .FirstOrDefault(f => Math.Abs(f.Frequency - frequency) < 0.1);
-
-                var color = freqViewModel?.WaveformColor ?? GetNextFrequencyColor();
-
-                // Add GPU layer
-                await _waveformManager.AddLayerAsync(
-                    frequency,
-                    displayName,
-                    color,
-                    _sessionManager.PacketSource,
-                    null);
-
-                Logger.Info($"? GPU layer added for {displayName}");
-            }
-            catch (Exception ex)
-            {
-                Logger.Error(ex, $"Failed to add GPU layer for {displayName}");
-            }
-        }
-
-        public async Task GenerateWaveformAsync()
-        {
-            if (!_sessionManager.IsSessionLoaded)
-                return;
-
-            // Check if any frequencies are selected
-            if (_frequencyManager.SelectedFrequencies.Count == 0)
-            {
-                WaveformData = new float[_waveformManager.MaxDataPoints];
-                FrequencyWaveforms = null;
-                StatusMessage = "No frequencies selected";
-                ProgressPercent = 0;
-                Logger.Debug("No frequencies selected - waveform cleared");
-                return;
-            }
-
-            try
-            {
-                StatusMessage = $"Generating waveform for {_frequencyManager.SelectedFrequencies.Count} frequencies...";
-                IsLoadingWaveform = true;
-                WaveformGenerationProgress = 0;
-                
-                // Create progress reporter with throttling to reduce UI updates
-                int lastReportedProgress = 0;
-                var progress = new Progress<double>(percent =>
-                {
-                    // Only update UI every 5% to reduce dispatcher overhead
-                    int roundedPercent = (int)Math.Round(percent / 5) * 5;
-                    if (roundedPercent != lastReportedProgress)
-                    {
-                        lastReportedProgress = roundedPercent;
-                        
-                        // Use Background priority so UI thread doesn't get blocked
-                        System.Windows.Application.Current?.Dispatcher.InvokeAsync(() =>
-                        {
-                            WaveformGenerationProgress = percent;
-                            StatusMessage = $"Generating waveform... {percent:F0}%";
-                        }, System.Windows.Threading.DispatcherPriority.Background);
-                    }
-                });
-
-                Logger.Info($"Starting waveform generation for {_frequencyManager.SelectedFrequencies.Count} frequencies...");
-
-                // Delegate to waveform manager - runs on background thread via Task.Run
-                var waveformData = await _waveformManager.GenerateWaveformAsync(
-                    _sessionManager.PacketSource!,
-                    _frequencyManager.SelectedFrequencies.ToHashSet(),
-                    progress);
-                
-                await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
-                {
-                    WaveformData = waveformData.CombinedWaveform;
-                    WaveformGenerationProgress = 100;
-                });
-
-                // CRITICAL FIX: If using GPU layers, they're still being generated in the background
-                // We need to wait a moment for them to be ready before trying to display them
-                if (_waveformManager.IsUsingLayeredRendering)
-                {
-                    Logger.Info($"? GPU layered rendering active - layers will be added asynchronously");
-                    
-                    await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
-                    {
-                        // Clear the waveform data temporarily to show loading state
-                        FrequencyWaveforms = null;
-                        StatusMessage = $"GPU layers generating... (0/{_frequencyManager.SelectedFrequencies.Count})";
-                    });
-                    
-                    // The layers will be populated via the OnLayerAdded event handler
-                    // which calls UpdateWaveformDisplayAsync()
-                    IsLoadingWaveform = false;
-                    return;
-                }
-
-                // CPU rendering path (fallback)
-                Logger.Info($"??? Using CPU rendering for waveform display");
-                var freqWaveforms = new System.Collections.Generic.Dictionary<double, Controls.FrequencyWaveformData>();
-                
-                // Fallback to CPU rendering - runs on background thread
-                foreach (var frequency in _frequencyManager.SelectedFrequencies.OrderBy(f => f))
-                {
-                    var channelWaveform = _waveformManager.GetChannelWaveform(frequency);
-                    if (channelWaveform != null && channelWaveform.Length > 0)
-                    {
-                        var freqViewModel = Frequencies
-                            .SelectMany(g => g.Frequencies)
-                            .FirstOrDefault(f => Math.Abs(f.Frequency - frequency) < 0.1);
-
-                        if (freqViewModel != null)
-                        {
-                            freqWaveforms[frequency] = new Controls.FrequencyWaveformData
-                            {
-                                Frequency = frequency,
-                                WaveformData = channelWaveform,
-                                Color = freqViewModel.WaveformColor,
-                                DisplayName = freqViewModel.DisplayName
-                            };
-                            
-                            Logger.Debug($"   ? Added CPU waveform: {freqViewModel.DisplayName}");
-                        }
-                    }
-                }
-
-                // Update UI on completion
-                await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
-                {
-                    FrequencyWaveforms = freqWaveforms;
-                    OnPropertyChanged(nameof(WaveformData));
-                    OnPropertyChanged(nameof(FrequencyWaveforms));
-                    IsLoadingWaveform = false;
-                    WaveformGenerationProgress = 100;
-                    StatusMessage = $"? {freqWaveforms.Count} frequency waveforms displayed";
-                });
-                
-                Logger.Info($"? Waveform generated: {freqWaveforms.Count} frequency waveforms");
-            }
-            catch (Exception ex)
-            {
-                Logger.Error(ex, "Waveform generation failed");
-                await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
-                {
-                    StatusMessage = $"Error: Waveform generation failed - {ex.Message}";
-                    IsLoadingWaveform = false;
-                    ProgressPercent = 0;
-                });
-            }
-        }
-
-        /// <summary>
-        /// Public accessor for updating waveform display (called from UnifiedPlayerControl)
-        /// </summary>
-        public async Task UpdateWaveformAsync(int waveformWidth, int waveformHeight)
-        {
-            if (!_sessionManager.IsSessionLoaded)
-                return;
-
-            try
-            {
-                // Phase 3: Individual GPU layer rendering (no compositor needed)
-                // Each layer is rendered separately by WaveformViewer for instant visibility toggling
-                if (_waveformManager.IsUsingLayeredRendering)
-                {
-                    Logger.Debug($"? Using individual GPU layer rendering for {_frequencyManager.SelectedFrequencies.Count} layers");
-                    
-                    // Get all GPU layers with metadata
-                    var layers = _waveformManager.GetAllLayers();
-                    var freqWaveforms = new Dictionary<double, Controls.FrequencyWaveformData>();
-                    
-                    foreach (var layer in layers.Where(l => l.IsVisible))
-                    {
-                        var freqViewModel = Frequencies
-                            .SelectMany(g => g.Frequencies)
-                            .FirstOrDefault(f => Math.Abs(f.Frequency - layer.FrequencyHz) < 0.1);
-
-                        if (freqViewModel != null)
-                        {
-                            freqWaveforms[layer.FrequencyHz] = new Controls.FrequencyWaveformData
-                            {
-                                Frequency = layer.FrequencyHz,
-                                WaveformData = layer.CachedWaveformData ?? Array.Empty<float>(),
-                                Color = freqViewModel.WaveformColor,
-                                DisplayName = layer.DisplayName,
-                                LayerId = layer.LayerId,
-                                IsVisible = layer.IsVisible
-                            };
-                        }
-                    }
-                    
-                    FrequencyWaveforms = freqWaveforms;
-                    RenderMode = "GPU (Layered)";
-                    UpdateFPS();
-                    
-                    Logger.Debug($"? Individual GPU layers passed to UI: {freqWaveforms.Count} visible");
-                    return;
-                }
-
-                // Fallback: CPU rendering
-                await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
-                {
-                    var cpuWaveformData = GetCpuFrequencyWaveforms();
-                    FrequencyWaveforms = cpuWaveformData;
-                    RenderMode = "CPU";
-                });
-            }
-            catch (Exception ex)
-            {
-                Logger.Error(ex, "Failed to update waveform display");
-            }
-        }
-
-        /// <summary>
-        /// Updates FPS counter for performance monitoring
-        /// </summary>
-        private void UpdateFPS()
-        {
-            _frameCount++;
-            if (_fpsTimer.ElapsedMilliseconds >= 1000)
-            {
-                CurrentFPS = _frameCount;
-                _frameCount = 0;
-                _fpsTimer.Restart();
-            }
-        }
-
-        /// <summary>
-        /// Gets per-frequency waveforms for CPU rendering (Phase 2 fallback)
-        /// </summary>
-        private Dictionary<double, Controls.FrequencyWaveformData> GetCpuFrequencyWaveforms()
-        {
-            var freqWaveforms = new Dictionary<double, Controls.FrequencyWaveformData>();
-            
-            foreach (var frequency in _frequencyManager.SelectedFrequencies.OrderBy(f => f))
-            {
-                var channelWaveform = _waveformManager.GetChannelWaveform(frequency);
-                if (channelWaveform != null && channelWaveform.Length > 0)
-                {
-                    var freqViewModel = Frequencies
-                        .SelectMany(g => g.Frequencies)
-                        .FirstOrDefault(f => Math.Abs(f.Frequency - frequency) < 0.1);
-
-                    if (freqViewModel != null)
-                    {
-                        freqWaveforms[frequency] = new Controls.FrequencyWaveformData
-                        {
-                            Frequency = frequency,
-                            WaveformData = channelWaveform,
-                            Color = freqViewModel.WaveformColor,
-                            DisplayName = freqViewModel.DisplayName
-                        };
-                    }
-                }
-            }
-
-            return freqWaveforms;
-        }
-
-        private System.Windows.Media.Color GetNextFrequencyColor()
-        {
-            var colors = new[]
-            {
-                System.Windows.Media.Color.FromRgb(231, 76, 60),
-                System.Windows.Media.Color.FromRgb(52, 152, 219),
-                System.Windows.Media.Color.FromRgb(46, 204, 113),
-                System.Windows.Media.Color.FromRgb(155, 89, 182),
-                System.Windows.Media.Color.FromRgb(241, 196, 15),
-                System.Windows.Media.Color.FromRgb(230, 126, 34),
-                System.Windows.Media.Color.FromRgb(26, 188, 156),
-                System.Windows.Media.Color.FromRgb(255, 87, 34),
-                System.Windows.Media.Color.FromRgb(156, 39, 176),
-                System.Windows.Media.Color.FromRgb(0, 188, 212),
-            };
-
-            var color = colors[_colorIndex % colors.Length];
-            _colorIndex++;
-            return color;
-        }
-
-        #endregion
-
-        #region GPU Compositor Integration (Phase 3.1)
-
-        /// <summary>
-        /// Updates waveform display with individual GPU layer rendering (Phase 3)
-        /// </summary>
-        private async Task UpdateWaveformDisplayAsync()
-        {
-            if (!_sessionManager.IsSessionLoaded)
-                return;
-
-            try
-            {
-                // Phase 3: Individual GPU layer rendering
-                if (_waveformManager.IsUsingLayeredRendering)
-                {
-                    Logger.Debug($"? Updating individual GPU layer display for {_frequencyManager.SelectedFrequencies.Count} layers");
-                    
-                    // Get all GPU layers with metadata
-                    var layers = _waveformManager.GetAllLayers();
-                    var freqWaveforms = new Dictionary<double, Controls.FrequencyWaveformData>();
-                    
-                    foreach (var layer in layers.Where(l => l.IsVisible))
-                    {
-                        var freqViewModel = Frequencies
-                            .SelectMany(g => g.Frequencies)
-                            .FirstOrDefault(f => Math.Abs(f.Frequency - layer.FrequencyHz) < 0.1);
-
-                        if (freqViewModel != null)
-                        {
-                            freqWaveforms[layer.FrequencyHz] = new Controls.FrequencyWaveformData
-                            {
-                                Frequency = layer.FrequencyHz,
-                                WaveformData = layer.CachedWaveformData ?? Array.Empty<float>(),
-                                Color = freqViewModel.WaveformColor,
-                                DisplayName = layer.DisplayName,
-                                LayerId = layer.LayerId,
-                                IsVisible = layer.IsVisible
-                            };
-                        }
-                    }
-                    
-                    FrequencyWaveforms = freqWaveforms;
-                    
-                    Logger.Debug($"? Individual GPU layers updated: {freqWaveforms.Count} visible");
-                    return;
-                }
-
-                // Fallback: CPU rendering
-                await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
-                {
-                    var cpuWaveformData = GetCpuFrequencyWaveforms();
-                    FrequencyWaveforms = cpuWaveformData;
-                });
-            }
-            catch (Exception ex)
-            {
-                Logger.Error(ex, "Failed to update waveform display");
-            }
-        }
-
-        #endregion
-
-        #region Mixer Control Methods (Legacy UI Support)
-
-        /// <summary>
-        /// Updates channel gain for mixer control
-        /// </summary>
-        public void UpdateChannelGain(double frequency, float gain)
-        {
-            _mixerController.SetChannelGain(frequency, gain);
-        }
-
-        /// <summary>
-        /// Updates channel pan for mixer control
-        /// </summary>
-        public void UpdateChannelPan(double frequency, float pan)
-        {
-            _mixerController.SetChannelPan(frequency, pan);
-        }
-
-        /// <summary>
-        /// Updates channel mute state for mixer control
-        /// </summary>
-        public void UpdateChannelMute(double frequency, bool muted)
-        {
-            _mixerController.SetChannelMuted(frequency, muted);
-        }
-
-        /// <summary>
-        /// Updates channel solo state for mixer control
-        /// </summary>
-        public void UpdateChannelSolo(double frequency, bool solo)
-        {
-            _mixerController.SetChannelSolo(frequency, solo);
-        }
-
-        /// <summary>
-        /// Handles frequency selection changes from UI
-        /// </summary>
-        public async void OnFrequencySelectionChanged(FrequencyViewModel frequency, bool isSelected)
-        {
-            if (frequency == null) return;
-
-            try
-            {
-                Logger.Info($"Frequency selection changed: {frequency.DisplayName} = {isSelected}");
-                
-                if (isSelected)
-                {
-                    _frequencyManager.SelectFrequency(frequency.Frequency);
-                }
-                else
-                {
-                    _frequencyManager.DeselectFrequency(frequency.Frequency);
-                }
-            }
-            catch (Exception ex)
-            {
-                Logger.Error(ex, $"Failed to handle frequency selection change for {frequency.DisplayName}");
-            }
-        }
-
-        /// <summary>
-        /// Updates pilot selection (stub for legacy UI compatibility)
-        /// </summary>
-        public void UpdatePilotSelection(string pilotName, bool isSelected)
-        {
-            // Stub for legacy UI compatibility
-            // Pilot-specific filtering not yet implemented
-            Logger.Debug($"Pilot selection changed: {pilotName} = {isSelected}");
-        }
-
-        #endregion
-
-        #region Cleanup
-
-        public void Dispose()
-        {
-            Logger.Info("UnifiedPlayerViewModel disposing");
-
-            ExecuteStop();
-
-            // Dispose services in reverse order
-            _tacviewService?.Dispose();
-            _mixerController?.Dispose();
-            _waveformManager?.Dispose();
-            _sessionManager?.Dispose();
-            _frequencyManager?.Dispose();
-            
-            _analysisService?.Dispose();
-            
-            _frequencyLayerIds.Clear();
-
-            Logger.Info("? UnifiedPlayerViewModel disposed");
         }
 
         #endregion
