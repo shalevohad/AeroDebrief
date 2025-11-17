@@ -12,6 +12,31 @@ namespace AeroDebrief.UI.Helpers
     /// </summary>
     
     /// <summary>
+    /// Converts a boolean value to Visibility
+    /// (true -> Visible, false -> Collapsed)
+    /// </summary>
+    public class BoolToVisibilityConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            if (value is bool boolValue)
+            {
+                return boolValue ? Visibility.Visible : Visibility.Collapsed;
+            }
+            return Visibility.Collapsed;
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            if (value is Visibility visibility)
+            {
+                return visibility == Visibility.Visible;
+            }
+            return false;
+        }
+    }
+
+    /// <summary>
     /// Converts a boolean value to Visibility, inverting the logic
     /// (true -> Collapsed, false -> Visible)
     /// </summary>
@@ -56,31 +81,6 @@ namespace AeroDebrief.UI.Helpers
             if (value is bool boolValue)
             {
                 return !boolValue;
-            }
-            return false;
-        }
-    }
-
-    /// <summary>
-    /// Converts a boolean value to Visibility
-    /// (true -> Visible, false -> Collapsed)
-    /// </summary>
-    public class BoolToVisibilityConverter : IValueConverter
-    {
-        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
-        {
-            if (value is bool boolValue)
-            {
-                return boolValue ? Visibility.Visible : Visibility.Collapsed;
-            }
-            return Visibility.Collapsed;
-        }
-
-        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
-        {
-            if (value is Visibility visibility)
-            {
-                return visibility == Visibility.Visible;
             }
             return false;
         }

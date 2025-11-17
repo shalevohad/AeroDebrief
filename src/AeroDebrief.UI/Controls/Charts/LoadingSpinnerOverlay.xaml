@@ -1,0 +1,301 @@
+<UserControl x:Class="AeroDebrief.UI.Controls.Charts.LoadingSpinnerOverlay"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             mc:Ignorable="d" 
+             d:DesignHeight="450" d:DesignWidth="800"
+             Opacity="0"
+             AutomationProperties.Name="Loading Overlay"
+             AutomationProperties.HelpText="Displays loading progress for data tiles. Press Escape to cancel.">
+    
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
+    </UserControl.Resources>
+    
+    <!-- Phase 9 Step 4: Enhanced with fade in/out animations and GPU acceleration -->
+    <!-- Phase 9 Step 5: Added accessibility support with AutomationProperties -->
+    
+    <UserControl.Style>
+        <Style TargetType="UserControl">
+            <Style.Triggers>
+                <!-- Fade In when loading starts -->
+                <DataTrigger Binding="{Binding IsLoadingTiles}" Value="True">
+                    <DataTrigger.EnterActions>
+                        <BeginStoryboard>
+                            <Storyboard>
+                                <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                               From="0" To="1" 
+                                               Duration="0:0:0.3">
+                                    <DoubleAnimation.EasingFunction>
+                                        <CubicEase EasingMode="EaseOut"/>
+                                    </DoubleAnimation.EasingFunction>
+                                </DoubleAnimation>
+                            </Storyboard>
+                        </BeginStoryboard>
+                    </DataTrigger.EnterActions>
+                    <!-- Fade Out when loading completes -->
+                    <DataTrigger.ExitActions>
+                        <BeginStoryboard>
+                            <Storyboard>
+                                <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                               From="1" To="0" 
+                                               Duration="0:0:0.2">
+                                    <DoubleAnimation.EasingFunction>
+                                        <CubicEase EasingMode="EaseIn"/>
+                                    </DoubleAnimation.EasingFunction>
+                                </DoubleAnimation>
+                            </Storyboard>
+                        </BeginStoryboard>
+                    </DataTrigger.ExitActions>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+    </UserControl.Style>
+    
+    <Grid x:Name="LoadingOverlayRoot"
+          Background="#80000000"
+          Visibility="{Binding IsLoadingTiles, Converter={StaticResource BooleanToVisibilityConverter}}"
+          RenderOptions.BitmapScalingMode="HighQuality">
+        
+        <!-- GPU Acceleration: Use BitmapCache for better performance -->
+        <Grid.CacheMode>
+            <BitmapCache RenderAtScale="1" SnapsToDevicePixels="True"/>
+        </Grid.CacheMode>
+        
+        <!-- Loading Panel - Centered -->
+        <Border Background="#2D2D30"
+                BorderBrush="#007ACC"
+                BorderThickness="2"
+                CornerRadius="8"
+                Padding="30"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                MaxWidth="400">
+            
+            <!-- Shadow Effect for depth -->
+            <Border.Effect>
+                <DropShadowEffect Color="Black" 
+                                Direction="270" 
+                                ShadowDepth="4" 
+                                BlurRadius="16" 
+                                Opacity="0.5"/>
+            </Border.Effect>
+            
+            <!-- Slide up animation on appear -->
+            <Border.RenderTransform>
+                <TranslateTransform Y="0"/>
+            </Border.RenderTransform>
+            
+            <Border.Triggers>
+                <EventTrigger RoutedEvent="Loaded">
+                    <BeginStoryboard>
+                        <Storyboard>
+                            <DoubleAnimation Storyboard.TargetProperty="(Border.RenderTransform).(TranslateTransform.Y)"
+                                           From="20" To="0" 
+                                           Duration="0:0:0.3">
+                                <DoubleAnimation.EasingFunction>
+                                    <CubicEase EasingMode="EaseOut"/>
+                                </DoubleAnimation.EasingFunction>
+                            </DoubleAnimation>
+                        </Storyboard>
+                    </BeginStoryboard>
+                </EventTrigger>
+            </Border.Triggers>
+            
+            <StackPanel Orientation="Vertical">
+                
+                <!-- Loading Animation with Pulse Effect -->
+                <Grid Height="60" Margin="0,0,0,16">
+                    
+                    <!-- Animated rotating arc (custom spinner) -->
+                    <Viewbox Width="50" Height="50">
+                        <Grid>
+                            <Grid.RenderTransform>
+                                <RotateTransform Angle="0" CenterX="25" CenterY="25"/>
+                            </Grid.RenderTransform>
+                            
+                            <!-- Rotation Animation -->
+                            <Grid.Triggers>
+                                <EventTrigger RoutedEvent="Loaded">
+                                    <BeginStoryboard>
+                                        <Storyboard RepeatBehavior="Forever">
+                                            <DoubleAnimation Storyboard.TargetProperty="(Grid.RenderTransform).(RotateTransform.Angle)"
+                                                           From="0" To="360" 
+                                                           Duration="0:0:1.5"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </EventTrigger>
+                            </Grid.Triggers>
+                            
+                            <!-- Arc shape -->
+                            <Path Stroke="#007ACC" 
+                                  StrokeThickness="4" 
+                                  StrokeStartLineCap="Round" 
+                                  StrokeEndLineCap="Round"
+                                  Data="M 25,5 A 20,20 0 1,1 25,45">
+                                <Path.RenderTransform>
+                                    <ScaleTransform ScaleX="1" ScaleY="1" CenterX="25" CenterY="25"/>
+                                </Path.RenderTransform>
+                                
+                                <!-- Subtle pulse effect -->
+                                <Path.Triggers>
+                                    <EventTrigger RoutedEvent="Loaded">
+                                        <BeginStoryboard>
+                                            <Storyboard RepeatBehavior="Forever">
+                                                <DoubleAnimation Storyboard.TargetProperty="(Path.RenderTransform).(ScaleTransform.ScaleX)"
+                                                               From="1" To="1.1" 
+                                                               Duration="0:0:0.8"
+                                                               AutoReverse="True">
+                                                    <DoubleAnimation.EasingFunction>
+                                                        <SineEase EasingMode="EaseInOut"/>
+                                                    </DoubleAnimation.EasingFunction>
+                                                </DoubleAnimation>
+                                                <DoubleAnimation Storyboard.TargetProperty="(Path.RenderTransform).(ScaleTransform.ScaleY)"
+                                                               From="1" To="1.1" 
+                                                               Duration="0:0:0.8"
+                                                               AutoReverse="True">
+                                                    <DoubleAnimation.EasingFunction>
+                                                        <SineEase EasingMode="EaseInOut"/>
+                                                    </DoubleAnimation.EasingFunction>
+                                                </DoubleAnimation>
+                                            </Storyboard>
+                                        </BeginStoryboard>
+                                    </EventTrigger>
+                                </Path.Triggers>
+                            </Path>
+                        </Grid>
+                    </Viewbox>
+                </Grid>
+                
+                <!-- Status Text with subtle animation -->
+                <TextBlock Text="{Binding LoadingStatusText}"
+                           FontSize="14"
+                           FontWeight="Medium"
+                           Foreground="#E0E0E0"
+                           TextAlignment="Center"
+                           TextWrapping="Wrap"
+                           Margin="0,8,0,0"
+                           Opacity="1"
+                           AutomationProperties.IsOffscreenBehavior="FromClip"
+                           AutomationProperties.LiveSetting="Polite"
+                           AutomationProperties.Name="Loading status">
+                    <!-- Fade in text -->
+                    <TextBlock.Triggers>
+                        <EventTrigger RoutedEvent="Loaded">
+                            <BeginStoryboard>
+                                <Storyboard>
+                                    <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                   From="0" To="1" 
+                                                   Duration="0:0:0.5"/>
+                                </Storyboard>
+                            </BeginStoryboard>
+                        </EventTrigger>
+                    </TextBlock.Triggers>
+                </TextBlock>
+                
+                <!-- Progress Details (Optional) -->
+                <TextBlock x:Name="ProgressDetails"
+                           FontSize="12"
+                           Foreground="#A0A0A0"
+                           TextAlignment="Center"
+                           Margin="0,4,0,0"
+                           Visibility="Collapsed">
+                    <Run Text="Loading tiles for viewport: "/>
+                    <Run Text="{Binding ViewportDuration, StringFormat='{}{0:mm}:{0:ss}'}" FontWeight="SemiBold"/>
+                </TextBlock>
+                
+                <!-- Cancel Button with hover effect -->
+                <Button Content="Cancel Loading"
+                        Command="{Binding CancelLoadingCommand}"
+                        Padding="16,8"
+                        Margin="0,16,0,0"
+                        HorizontalAlignment="Center"
+                        Background="#3C3C3C"
+                        Foreground="#E0E0E0"
+                        BorderBrush="#555555"
+                        BorderThickness="1"
+                        Cursor="Hand"
+                        RenderTransformOrigin="0.5,0.5"
+                        TabIndex="1"
+                        AutomationProperties.Name="Cancel loading"
+                        AutomationProperties.HelpText="Stops the current tile loading operation. You can also press Escape to cancel."
+                        AutomationProperties.AcceleratorKey="Escape">
+                    
+                    <!-- Transform for hover scale -->
+                    <Button.RenderTransform>
+                        <ScaleTransform ScaleX="1" ScaleY="1"/>
+                    </Button.RenderTransform>
+                    
+                    <Button.Style>
+                        <Style TargetType="Button">
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="Button">
+                                        <Border Background="{TemplateBinding Background}"
+                                                BorderBrush="{TemplateBinding BorderBrush}"
+                                                BorderThickness="{TemplateBinding BorderThickness}"
+                                                CornerRadius="4"
+                                                Padding="{TemplateBinding Padding}">
+                                            <ContentPresenter HorizontalAlignment="Center"
+                                                            VerticalAlignment="Center"/>
+                                        </Border>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                            <Style.Triggers>
+                                <!-- Hover effect with scale -->
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="Background" Value="#505050"/>
+                                    <Setter Property="BorderBrush" Value="#007ACC"/>
+                                    <Trigger.EnterActions>
+                                        <BeginStoryboard>
+                                            <Storyboard>
+                                                <DoubleAnimation Storyboard.TargetProperty="(Button.RenderTransform).(ScaleTransform.ScaleX)"
+                                                               To="1.05" Duration="0:0:0.15">
+                                                    <DoubleAnimation.EasingFunction>
+                                                        <QuadraticEase EasingMode="EaseOut"/>
+                                                    </DoubleAnimation.EasingFunction>
+                                                </DoubleAnimation>
+                                                <DoubleAnimation Storyboard.TargetProperty="(Button.RenderTransform).(ScaleTransform.ScaleY)"
+                                                               To="1.05" Duration="0:0:0.15">
+                                                    <DoubleAnimation.EasingFunction>
+                                                        <QuadraticEase EasingMode="EaseOut"/>
+                                                    </DoubleAnimation.EasingFunction>
+                                                </DoubleAnimation>
+                                            </Storyboard>
+                                        </BeginStoryboard>
+                                    </Trigger.EnterActions>
+                                    <Trigger.ExitActions>
+                                        <BeginStoryboard>
+                                            <Storyboard>
+                                                <DoubleAnimation Storyboard.TargetProperty="(Button.RenderTransform).(ScaleTransform.ScaleX)"
+                                                               To="1" Duration="0:0:0.15">
+                                                    <DoubleAnimation.EasingFunction>
+                                                        <QuadraticEase EasingMode="EaseIn"/>
+                                                    </DoubleAnimation.EasingFunction>
+                                                </DoubleAnimation>
+                                                <DoubleAnimation Storyboard.TargetProperty="(Button.RenderTransform).(ScaleTransform.ScaleY)"
+                                                               To="1" Duration="0:0:0.15">
+                                                    <DoubleAnimation.EasingFunction>
+                                                        <QuadraticEase EasingMode="EaseIn"/>
+                                                    </DoubleAnimation.EasingFunction>
+                                                </DoubleAnimation>
+                                            </Storyboard>
+                                        </BeginStoryboard>
+                                    </Trigger.ExitActions>
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter Property="Background" Value="#606060"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
+                
+            </StackPanel>
+            
+        </Border>
+        
+    </Grid>
+</UserControl>

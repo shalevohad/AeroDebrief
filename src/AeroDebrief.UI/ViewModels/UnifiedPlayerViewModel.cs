@@ -42,6 +42,9 @@ namespace AeroDebrief.UI.ViewModels
         private readonly PlaybackSessionManager _sessionManager;
         private readonly MixerController _mixerController;
         
+        // Phase 7 Step 4: Unified graph view model for chart integration
+        private readonly UnifiedGraphViewModel _graphViewModel;
+        
         // Tacview integration (optional)
         private TacviewIntegrationViewModel? _tacviewIntegration;
         private Integrations.Tacview.TacviewIntegrationService? _tacviewService;
@@ -254,9 +257,35 @@ namespace AeroDebrief.UI.ViewModels
         }
 
         /// <summary>
+        /// Phase 6: Gets the current PlaybackController for integration with chart playhead.
+        /// Returns null if no session is loaded.
+        /// </summary>
+        public Core.Playback.PlaybackController? PlaybackController
+        {
+            get
+            {
+                try
+                {
+                    return _sessionManager?.Pipeline?.PlaybackController;
+                }
+                catch (InvalidOperationException)
+                {
+                    // Pipeline not opened yet
+                    return null;
+                }
+            }
+        }
+
+        /// <summary>
         /// Exposes whether the waveform manager is using GPU so the UI can bind to it.
         /// </summary>
         public bool IsUsingGpu => _waveformManager?.IsUsingGpu ?? false;
+
+        /// <summary>
+        /// Phase 7 Step 4: Unified graph view model for chart integration with audio sync.
+        /// Provides LiveCharts2 amplitude visualization with automatic mute/solo synchronization.
+        /// </summary>
+        public UnifiedGraphViewModel GraphViewModel => _graphViewModel;
 
         public System.Windows.Media.Brush WaveformEngineColor
         {
@@ -387,6 +416,14 @@ namespace AeroDebrief.UI.ViewModels
             _waveformManager = new WaveformManager();
             _sessionManager = new PlaybackSessionManager();
             _mixerController = new MixerController();
+
+            // Phase 7 Step 4: Initialize graph view model with MixerController for audio sync
+            _graphViewModel = new UnifiedGraphViewModel(
+                new Services.Graphs.AmplitudeSeriesProvider(),
+                null, // No tile cache for now
+                _mixerController); // Pass mixer for bidirectional sync
+
+            Logger.Info("? GraphViewModel initialized with audio synchronization");
 
             // Note: Tacview integration will be initialized when a file is loaded
             // (requires PlaybackController which is created during file load)
@@ -584,6 +621,11 @@ namespace AeroDebrief.UI.ViewModels
                 _mixerController.SetupChannel(e.Frequency, displayName);
                 _sessionManager.Pipeline?.SetFrequencyGate(e.Frequency, FrequencyGateMode.Allow);
                 
+                // Phase 7 Step 4: Sync to graph - show series
+                var freqId = $"{e.Frequency:F0}";
+                _graphViewModel.SetFrequencyVisible(freqId, true);
+                Logger.Debug($"? Graph series shown for {e.Frequency:F1} Hz");
+                
                 // Add GPU layer if available
                 _ = AddFrequencyLayerAsync(e.Frequency, displayName);
             }
@@ -592,6 +634,11 @@ namespace AeroDebrief.UI.ViewModels
                 // Remove mixer channel and GPU layer
                 _mixerController.RemoveChannel(e.Frequency);
                 _sessionManager.Pipeline?.SetFrequencyGate(e.Frequency, FrequencyGateMode.Block);
+                
+                // Phase 7 Step 4: Sync to graph - hide series
+                var freqId = $"{e.Frequency:F0}";
+                _graphViewModel.SetFrequencyVisible(freqId, false);
+                Logger.Debug($"? Graph series hidden for {e.Frequency:F1} Hz");
                 
                 if (_waveformManager.IsUsingLayeredRendering)
                 {
@@ -1452,7 +1499,7 @@ namespace AeroDebrief.UI.ViewModels
                 {
                     Logger.Debug($"? Using individual GPU layer rendering for {_frequencyManager.SelectedFrequencies.Count} layers");
                     
-                    // Get all GPU layers and pass to UI
+                    // Get all GPU layers with metadata
                     var layers = _waveformManager.GetAllLayers();
                     var freqWaveforms = new Dictionary<double, Controls.FrequencyWaveformData>();
                     

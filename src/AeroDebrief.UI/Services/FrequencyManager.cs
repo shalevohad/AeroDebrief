@@ -8,6 +8,7 @@ using AeroDebrief.Core.IO;
 using AeroDebrief.Core.Models;
 using AeroDebrief.Core.Playback;
 using AeroDebrief.UI.ViewModels;
+using AeroDebrief.UI.Charts;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Models.Player;
 using NLog;
 
@@ -16,6 +17,7 @@ namespace AeroDebrief.UI.Services
     /// <summary>
     /// Service responsible for managing frequency data and selection state.
     /// Implements Separation of Concerns by handling ONLY frequency-related operations.
+    /// Phase 4 Update: Uses ChartColors for deterministic color assignment.
     /// </summary>
     public sealed class FrequencyManager : IDisposable
     {
@@ -23,7 +25,6 @@ namespace AeroDebrief.UI.Services
 
         private readonly ObservableCollection<FrequencyGroupViewModel> _frequencies = new();
         private readonly HashSet<double> _selectedFrequencies = new();
-        private int _colorIndex = 0;
         private bool _disposed;
 
         /// <summary>
@@ -67,7 +68,6 @@ namespace AeroDebrief.UI.Services
 
                 _frequencies.Clear();
                 _selectedFrequencies.Clear();
-                _colorIndex = 0;
 
                 var frequencyInfos = pipeline.GetAvailableFrequencies();
                 Logger.Info($"Found {frequencyInfos.Count} frequencies in file");
@@ -239,7 +239,6 @@ namespace AeroDebrief.UI.Services
             Logger.Debug("Clearing all frequencies");
             _frequencies.Clear();
             _selectedFrequencies.Clear();
-            _colorIndex = 0;
         }
 
         #region Private Helper Methods
@@ -257,7 +256,19 @@ namespace AeroDebrief.UI.Services
                 Players = fi.Players
             };
 
-            var wpfColor = GetNextFrequencyColor();
+            // Phase 4: Use ChartColors for deterministic color assignment
+            var frequencyId = GetFrequencyId(fi.Frequency, fi.Modulation);
+            var skColor = ChartColors.GetColorForFrequency(frequencyId);
+            
+            // Convert SKColor to WPF Color
+            var wpfColor = System.Windows.Media.Color.FromArgb(
+                skColor.Alpha,
+                skColor.Red,
+                skColor.Green,
+                skColor.Blue
+            );
+
+            Logger.Debug($"Assigned color to {frequencyId}: RGB({skColor.Red},{skColor.Green},{skColor.Blue})");
 
             return new FrequencyViewModel
             {
@@ -269,6 +280,16 @@ namespace AeroDebrief.UI.Services
                 WaveformColor = wpfColor,
                 SourceData = sourceData
             };
+        }
+
+        /// <summary>
+        /// Generates a consistent frequency ID for color assignment.
+        /// Format: "FrequencyMHz-Modulation" (e.g., "251.0-AM")
+        /// </summary>
+        private string GetFrequencyId(double frequencyHz, string modulation)
+        {
+            var frequencyMHz = frequencyHz / 1_000_000.0;
+            return $"{frequencyMHz:F1}-{modulation}";
         }
 
         private string GetCoalitionNameFromPlayers(List<AeroDebrief.Core.Models.PlayerFrequencyInfo> players)
@@ -295,27 +316,6 @@ namespace AeroDebrief.UI.Services
                 "spectator" => 3,
                 _ => 4
             };
-        }
-
-        private System.Windows.Media.Color GetNextFrequencyColor()
-        {
-            var colors = new[]
-            {
-                System.Windows.Media.Color.FromRgb(231, 76, 60),   // Red
-                System.Windows.Media.Color.FromRgb(52, 152, 219),  // Blue
-                System.Windows.Media.Color.FromRgb(46, 204, 113),  // Green
-                System.Windows.Media.Color.FromRgb(155, 89, 182),  // Purple
-                System.Windows.Media.Color.FromRgb(241, 196, 15),  // Yellow
-                System.Windows.Media.Color.FromRgb(230, 126, 34),  // Orange
-                System.Windows.Media.Color.FromRgb(26, 188, 156),  // Teal
-                System.Windows.Media.Color.FromRgb(255, 87, 34),   // Deep Orange
-                System.Windows.Media.Color.FromRgb(156, 39, 176),  // Deep Purple
-                System.Windows.Media.Color.FromRgb(0, 188, 212),   // Cyan
-            };
-
-            var color = colors[_colorIndex % colors.Length];
-            _colorIndex++;
-            return color;
         }
 
         #endregion

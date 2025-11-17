@@ -6,6 +6,7 @@
          xmlns:local="clr-namespace:AeroDebrief.UI.Controls"
          xmlns:player="clr-namespace:AeroDebrief.UI.Controls.Player"
          xmlns:tacview="clr-namespace:AeroDebrief.UI.Controls.Tacview"
+         xmlns:charts="clr-namespace:AeroDebrief.UI.Controls.Charts"
          xmlns:vm="clr-namespace:AeroDebrief.UI.ViewModels"
          mc:Ignorable="d" 
          d:DesignHeight="800" d:DesignWidth="1200"
@@ -20,6 +21,8 @@
             <!-- Tacview Status - no MinHeight so it collapses completely -->
             <RowDefinition/>
             <!-- Main content -->
+            <RowDefinition Height="Auto"/>
+            <!-- Unified Graph (collapsible) -->
         </Grid.RowDefinitions>
 
         <!-- PLAYER HEADER - Top header with file/source controls -->
@@ -87,7 +90,7 @@
                                       StopRequested="OnStopRequested"
                                       Margin="0,0,8,0"/>
 
-            <!-- WAVEFORM DISPLAY -->
+            <!-- WAVEFORM DISPLAY (legacy) -->
             <player:WaveformDisplayPanel Grid.Column="1"
                                     x:Name="WaveformPanel"
                                     WaveformData="{Binding WaveformData}"
@@ -127,8 +130,84 @@
                                    MixerBooleanChanged="OnMixerBooleanChanged"/>
         </Grid>
 
+        <!-- LIVECHARTS UNIFIED GRAPH (Phase 1) -->
+        <Border Grid.Row="3" 
+                x:Name="UnifiedGraphContainer"
+                Style="{StaticResource ModernCard}"
+                Margin="0,16,0,0"
+                Visibility="Collapsed">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="250"/>
+                </Grid.RowDefinitions>
+                
+                <!-- Header with toggle -->
+                <Grid Grid.Row="0" Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    
+                    <StackPanel Grid.Column="0" Orientation="Horizontal">
+                        <TextBlock Text="Unified Amplitude Graph" 
+                                  FontSize="14" 
+                                  FontWeight="SemiBold"
+                                  Foreground="{StaticResource TextPrimaryBrush}"
+                                  VerticalAlignment="Center"/>
+                        <Border Background="{StaticResource AccentBrush}"
+                               CornerRadius="4"
+                               Padding="6,2"
+                               Margin="8,0,0,0">
+                            <TextBlock Text="BETA" 
+                                      FontSize="10" 
+                                      FontWeight="Bold"
+                                      Foreground="White"/>
+                        </Border>
+                    </StackPanel>
+                    
+                    <StackPanel Grid.Column="1" Orientation="Horizontal">
+                        <!-- Phase 7 Step 4: Audio sync indicator -->
+                        <Border Background="{StaticResource SuccessBrush}"
+                               CornerRadius="4"
+                               Padding="6,2"
+                               Margin="0,0,8,0"
+                               ToolTip="Audio synchronization enabled&#x0a;Chart visibility controls audio mute/solo">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="🔊" 
+                                          FontSize="10"
+                                          VerticalAlignment="Center"
+                                          Margin="0,0,4,0"/>
+                                <TextBlock Text="SYNC" 
+                                          FontSize="10" 
+                                          FontWeight="Bold"
+                                          Foreground="White"
+                                          VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Border>
+                        
+                        <TextBlock Text="LiveCharts2" 
+                                  FontSize="11" 
+                                  Foreground="{StaticResource TextSecondaryBrush}"
+                                  VerticalAlignment="Center"
+                                  Margin="0,0,8,0"/>
+                        <ToggleButton x:Name="GraphToggle"
+                                     IsChecked="True"
+                                     Style="{StaticResource ModernToggleSwitch}"
+                                     ToolTip="Show/Hide unified graph"/>
+                    </StackPanel>
+                </Grid>
+                
+                <!-- Chart Content -->
+                <charts:UnifiedGraphControl x:Name="UnifiedGraph" 
+                                           Grid.Row="1"
+                                           DataContext="{Binding GraphViewModel}"
+                                           Visibility="{Binding IsChecked, ElementName=GraphToggle, Converter={StaticResource BoolToVisibilityConverter}}"/>
+            </Grid>
+        </Border>
+
         <!-- FILE SOURCE PANEL OVERLAY -->
-        <player:FileSourcePanelOverlay Grid.Row="0" Grid.RowSpan="3"
+        <player:FileSourcePanelOverlay Grid.Row="0" Grid.RowSpan="4"
                                   x:Name="FileOverlay"
                                   IsOpen="{Binding IsFileSourcePanelOpen, Mode=TwoWay}"
                                   PanelWidth="400"
@@ -138,7 +217,7 @@
                                   PanelClosed="OnFileSourcePanelClosed"/>
 
         <!-- SERVER SOURCE PANEL OVERLAY -->
-        <player:FileSourcePanelOverlay Grid.Row="0" Grid.RowSpan="3"
+        <player:FileSourcePanelOverlay Grid.Row="0" Grid.RowSpan="4"
                                   x:Name="ServerOverlay"
                                   IsOpen="{Binding IsServerSourcePanelOpen, Mode=TwoWay}"
                                   PanelWidth="400"

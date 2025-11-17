@@ -29,6 +29,7 @@ namespace AeroDebrief.Core.Models
 
     /// <summary>
     /// Represents player information for a specific frequency
+    /// Phase 4 Update: Includes marker geometry identifier for visualization
     /// </summary>
     public class PlayerFrequencyInfo
     {
@@ -53,6 +54,12 @@ namespace AeroDebrief.Core.Models
         public bool IsNewlyDiscovered { get; set; }
 
         /// <summary>
+        /// Phase 4: Unique identifier for this pilot (used for marker assignment)
+        /// Typically: TransmitterGuid or Name if guid not available
+        /// </summary>
+        public string PilotId => !string.IsNullOrEmpty(TransmitterGuid) ? TransmitterGuid : Name;
+
+        /// <summary>
         /// Gets a formatted display string for UI presentation
         /// </summary>
         public string GetDisplayText()
@@ -65,6 +72,17 @@ namespace AeroDebrief.Core.Models
             var coalition = !string.IsNullOrEmpty(Coalition) ? $" ({Coalition})" : "";
             
             return $"{name}{aircraft}{coalition} - {PacketCount} packets";
+        }
+
+        /// <summary>
+        /// Gets a display name with marker indicator for legends and tooltips
+        /// Phase 4: Can be enhanced to include visual marker representation
+        /// </summary>
+        public string GetDisplayTextWithMarker()
+        {
+            // Future: This could include a visual marker representation
+            // For now, returns standard display text
+            return GetDisplayText();
         }
     }
 }

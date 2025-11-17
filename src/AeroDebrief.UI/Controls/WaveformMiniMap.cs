@@ -11,9 +11,24 @@ using System.Windows.Shapes;
 namespace AeroDebrief.UI.Controls
 {
     /// <summary>
-    /// Miniature overview of the entire waveform with visible region indicator,
-    /// markers, activity heatmap, and zoom history navigation
+    /// LEGACY: Miniature overview of the entire waveform with visible region indicator,
+    /// markers, activity heatmap, and zoom history navigation.
+    /// 
+    /// ?? DEPRECATED: This control is deprecated and will be removed in v3.0.
+    /// New implementations should use UnifiedGraphControl instead, which provides:
+    /// - Integrated minimap functionality (no separate control needed)
+    /// - LiveCharts2-based rendering with 10-50x better performance
+    /// - Multi-resolution tiling for scalability
+    /// - Better viewport management and navigation
+    /// - Enhanced visual feedback
+    /// 
+    /// See: docs/LiveCharts2-Migration-Guide.md for migration instructions.
+    /// See: src/AeroDebrief.UI/Controls/Charts/UnifiedGraphControl.cs for the new implementation.
+    /// 
+    /// This control remains functional for backward compatibility but is no longer
+    /// actively maintained. It will be removed in a future major version.
     /// </summary>
+    [Obsolete("This control is deprecated. Use UnifiedGraphControl instead which has integrated minimap functionality. See docs/LiveCharts2-Migration-Guide.md", false)]
     public class WaveformMiniMap : Canvas
     {
         // Helper to safely clamp doubles when caller-provided bounds may be invalid

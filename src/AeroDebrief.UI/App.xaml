@@ -6,7 +6,9 @@ xmlns:converters="clr-namespace:AeroDebrief.UI.Converters">
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="Styles/ModernStyles.xaml"/>
+                <ResourceDictionary Source="/AeroDebrief.UI;component/Styles/ModernStyles.xaml"/>
+                <ResourceDictionary Source="/AeroDebrief.UI;component/Styles/Animations.xaml"/>
+                <ResourceDictionary Source="/AeroDebrief.UI;component/Styles/HighContrastStyles.xaml"/>
             </ResourceDictionary.MergedDictionaries>
             
             <!-- Emoji Font Family for Icon Support -->

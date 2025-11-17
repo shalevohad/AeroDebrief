@@ -1,0 +1,235 @@
+<UserControl x:Class="AeroDebrief.UI.Controls.Charts.PerformanceStatsOverlay"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             mc:Ignorable="d" 
+             d:DesignHeight="120" d:DesignWidth="200"
+             Opacity="0"
+             AutomationProperties.Name="Performance Statistics Overlay"
+             AutomationProperties.HelpText="Shows real-time performance metrics including memory usage, cache statistics, and frame rate. Press F3 to toggle display."
+             AutomationProperties.AcceleratorKey="F3">
+    
+    <!-- Phase 9 Step 4: Enhanced with fade in/out animations and value change effects -->
+    
+    <UserControl.Style>
+        <Style TargetType="UserControl">
+            <Style.Triggers>
+                <!-- Fade In when showing -->
+                <DataTrigger Binding="{Binding ShowPerformanceStats}" Value="True">
+                    <DataTrigger.EnterActions>
+                        <BeginStoryboard>
+                            <Storyboard>
+                                <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                               From="0" To="1" 
+                                               Duration="0:0:0.2">
+                                    <DoubleAnimation.EasingFunction>
+                                        <CubicEase EasingMode="EaseOut"/>
+                                    </DoubleAnimation.EasingFunction>
+                                </DoubleAnimation>
+                            </Storyboard>
+                        </BeginStoryboard>
+                    </DataTrigger.EnterActions>
+                    <!-- Fade Out when hiding -->
+                    <DataTrigger.ExitActions>
+                        <BeginStoryboard>
+                            <Storyboard>
+                                <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                               From="1" To="0" 
+                                               Duration="0:0:0.2">
+                                    <DoubleAnimation.EasingFunction>
+                                        <CubicEase EasingMode="EaseIn"/>
+                                    </DoubleAnimation.EasingFunction>
+                                </DoubleAnimation>
+                            </Storyboard>
+                        </BeginStoryboard>
+                    </DataTrigger.ExitActions>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+    </UserControl.Style>
+    
+    <Border Background="#CC000000" 
+            CornerRadius="5"
+            Padding="12"
+            HorizontalAlignment="Right"
+            VerticalAlignment="Top"
+            Margin="10"
+            RenderOptions.BitmapScalingMode="HighQuality">
+        
+        <Border.Effect>
+            <DropShadowEffect Color="Black" 
+                            Direction="270" 
+                            ShadowDepth="2" 
+                            BlurRadius="6" 
+                            Opacity="0.4"/>
+        </Border.Effect>
+        
+        <!-- GPU Acceleration -->
+        <Border.CacheMode>
+            <BitmapCache RenderAtScale="1" SnapsToDevicePixels="True"/>
+        </Border.CacheMode>
+        
+        <StackPanel>
+            <!-- Header -->
+            <TextBlock Text="? Performance Stats" 
+                      FontWeight="Bold"
+                      FontSize="12"
+                      Foreground="#4EC9B0"
+                      Margin="0,0,0,8"/>
+            
+            <!-- Memory Usage with color indicator -->
+            <Grid Margin="0,0,0,3">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                
+                <TextBlock Grid.Column="0"
+                          Text="Memory:"
+                          FontSize="11"
+                          Foreground="#B0FFFFFF"
+                          Margin="0,0,8,0"/>
+                
+                <TextBlock x:Name="MemoryValue"
+                          Grid.Column="1"
+                          FontSize="11"
+                          Foreground="#4EC9B0"
+                          FontFamily="Consolas"
+                          HorizontalAlignment="Right"
+                          AutomationProperties.Name="Memory usage"
+                          AutomationProperties.LiveSetting="Polite">
+                    <Run Text="{Binding MemoryUsageMB, StringFormat=F1, Mode=OneWay}"/>
+                    <Run Text=" MB" Foreground="#80FFFFFF"/>
+                </TextBlock>
+            </Grid>
+            
+            <!-- Cache Hit Rate with percentage bar -->
+            <Grid Margin="0,0,0,3">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                
+                <TextBlock Grid.Column="0"
+                          Text="Cache Hit:"
+                          FontSize="11"
+                          Foreground="#B0FFFFFF"
+                          Margin="0,0,8,0"/>
+                
+                <TextBlock x:Name="CacheHitValue"
+                          Grid.Column="1"
+                          FontSize="11"
+                          Foreground="#4EC9B0"
+                          FontFamily="Consolas"
+                          HorizontalAlignment="Right"
+                          AutomationProperties.Name="Cache hit rate"
+                          AutomationProperties.LiveSetting="Polite">
+                    <Run Text="{Binding CacheHitRate, StringFormat=P0, Mode=OneWay}"/>
+                </TextBlock>
+            </Grid>
+            
+            <!-- Loaded Tiles -->
+            <Grid Margin="0,0,0,3">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                
+                <TextBlock Grid.Column="0"
+                          Text="Tiles:"
+                          FontSize="11"
+                          Foreground="#B0FFFFFF"
+                          Margin="0,0,8,0"/>
+                
+                <TextBlock x:Name="TileCountValue"
+                          Grid.Column="1"
+                          Text="{Binding LoadedTileCount, Mode=OneWay}"
+                          FontSize="11"
+                          Foreground="White"
+                          FontFamily="Consolas"
+                          HorizontalAlignment="Right"
+                          AutomationProperties.Name="Loaded tile count"
+                          AutomationProperties.LiveSetting="Polite"/>
+            </Grid>
+            
+            <!-- FPS Counter with color coding -->
+            <Grid Margin="0,0,0,3">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                
+                <TextBlock Grid.Column="0"
+                          Text="FPS:"
+                          FontSize="11"
+                          Foreground="#B0FFFFFF"
+                          Margin="0,0,8,0"/>
+                
+                <TextBlock x:Name="FPSValue"
+                          Grid.Column="1"
+                          FontSize="11"
+                          Foreground="#4EC9B0"
+                          FontFamily="Consolas"
+                          HorizontalAlignment="Right"
+                          AutomationProperties.Name="Frame rate"
+                          AutomationProperties.LiveSetting="Polite">
+                    <Run Text="{Binding CurrentFPS, StringFormat=F0, Mode=OneWay}"/>
+                </TextBlock>
+            </Grid>
+            
+            <!-- Last Load Time -->
+            <Grid Margin="0,0,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                
+                <TextBlock Grid.Column="0"
+                          Text="Last Load:"
+                          FontSize="11"
+                          Foreground="#B0FFFFFF"
+                          Margin="0,0,8,0"/>
+                
+                <TextBlock x:Name="LoadTimeValue"
+                          Grid.Column="1"
+                          FontSize="11"
+                          Foreground="White"
+                          FontFamily="Consolas"
+                          HorizontalAlignment="Right"
+                          AutomationProperties.Name="Last load time"
+                          AutomationProperties.LiveSetting="Polite">
+                    <Run Text="{Binding LastLoadTimeMs, StringFormat=F0, Mode=OneWay}"/>
+                    <Run Text=" ms" Foreground="#80FFFFFF"/>
+                </TextBlock>
+            </Grid>
+            
+            <!-- Visual separator -->
+            <Border Height="1" 
+                    Background="#40FFFFFF" 
+                    Margin="0,6,0,6"/>
+            
+            <!-- Footer with shortcut hint -->
+            <StackPanel Orientation="Horizontal" 
+                       HorizontalAlignment="Center">
+                <TextBlock Text="Press " 
+                          FontSize="9"
+                          Foreground="#80FFFFFF"/>
+                <Border Background="#30FFFFFF" 
+                       Padding="3,1" 
+                       CornerRadius="2"
+                       Margin="2,0">
+                    <TextBlock Text="F3" 
+                              FontSize="9"
+                              FontWeight="Bold"
+                              Foreground="White"/>
+                </Border>
+                <TextBlock Text=" to hide" 
+                          FontSize="9"
+                          Foreground="#80FFFFFF"
+                          Margin="2,0,0,0"/>
+            </StackPanel>
+        </StackPanel>
+    </Border>
+</UserControl>

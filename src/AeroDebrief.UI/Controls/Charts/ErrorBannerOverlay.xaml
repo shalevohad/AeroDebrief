@@ -1,0 +1,331 @@
+<UserControl x:Class="AeroDebrief.UI.Controls.Charts.ErrorBannerOverlay"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             mc:Ignorable="d" 
+             d:DesignHeight="60" d:DesignWidth="800"
+             AutomationProperties.Name="Error Notification"
+             AutomationProperties.HelpText="Displays error messages with recovery options. Press Escape to dismiss.">
+    
+    <UserControl.Resources>
+        <!-- Error icon geometries -->
+        <Geometry x:Key="InfoIconGeometry">M12,2A10,10 0 0,1 22,12A10,10 0 0,1 12,22A10,10 0 0,1 2,12A10,10 0 0,1 12,2M12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20A8,8 0 0,0 20,12A8,8 0 0,0 12,4M11,16.5L6.5,12L7.91,10.59L11,13.67L16.59,8.09L18,9.5L11,16.5Z</Geometry>
+        <Geometry x:Key="WarningIconGeometry">M12,2L1,21H23M12,6L19.53,19H4.47M11,10V14H13V10M11,16V18H13V16</Geometry>
+        <Geometry x:Key="ErrorIconGeometry">M12,2C17.53,2 22,6.47 22,12C22,17.53 17.53,22 12,22C6.47,22 2,17.53 2,12C2,6.47 6.47,2 12,2M15.59,7L12,10.59L8.41,7L7,8.41L10.59,12L7,15.59L8.41,17L12,13.41L15.59,17L17,15.59L13.41,12L17,8.41L15.59,7Z</Geometry>
+        
+        <!-- Phase 9 Step 4: Icon pulse animation -->
+        <Storyboard x:Key="IconPulseAnimation" RepeatBehavior="3x">
+            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)"
+                           From="1" To="1.15" 
+                           Duration="0:0:0.4"
+                           AutoReverse="True">
+                <DoubleAnimation.EasingFunction>
+                    <SineEase EasingMode="EaseInOut"/>
+                </DoubleAnimation.EasingFunction>
+            </DoubleAnimation>
+            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)"
+                           From="1" To="1.15" 
+                           Duration="0:0:0.4"
+                           AutoReverse="True">
+                <DoubleAnimation.EasingFunction>
+                    <SineEase EasingMode="EaseInOut"/>
+                </DoubleAnimation.EasingFunction>
+            </DoubleAnimation>
+        </Storyboard>
+        
+        <!-- Slide-in animation -->
+        <Storyboard x:Key="SlideInAnimation">
+            <DoubleAnimation Storyboard.TargetName="ErrorBanner"
+                           Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)"
+                           From="-80" To="0" 
+                           Duration="0:0:0.3">
+                <DoubleAnimation.EasingFunction>
+                    <CubicEase EasingMode="EaseOut"/>
+                </DoubleAnimation.EasingFunction>
+            </DoubleAnimation>
+            <DoubleAnimation Storyboard.TargetName="ErrorBanner"
+                           Storyboard.TargetProperty="Opacity"
+                           From="0" To="1" 
+                           Duration="0:0:0.3"/>
+        </Storyboard>
+        
+        <!-- Slide-out animation -->
+        <Storyboard x:Key="SlideOutAnimation">
+            <DoubleAnimation Storyboard.TargetName="ErrorBanner"
+                           Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)"
+                           From="0" To="-80" 
+                           Duration="0:0:0.2">
+                <DoubleAnimation.EasingFunction>
+                    <CubicEase EasingMode="EaseIn"/>
+                </DoubleAnimation.EasingFunction>
+            </DoubleAnimation>
+            <DoubleAnimation Storyboard.TargetName="ErrorBanner"
+                           Storyboard.TargetProperty="Opacity"
+                           From="1" To="0" 
+                           Duration="0:0:0.2"/>
+        </Storyboard>
+    </UserControl.Resources>
+    
+    <UserControl.Triggers>
+        <EventTrigger RoutedEvent="Loaded">
+            <BeginStoryboard Storyboard="{StaticResource SlideInAnimation}"/>
+        </EventTrigger>
+    </UserControl.Triggers>
+    
+    <Border x:Name="ErrorBanner"
+            Background="{Binding BackgroundBrush}"
+            BorderBrush="{Binding BorderBrush}"
+            BorderThickness="0,0,0,2"
+            Padding="15,10"
+            CornerRadius="0,0,5,5"
+            VerticalAlignment="Top"
+            HorizontalAlignment="Stretch"
+            Margin="10,0,10,0"
+            RenderTransformOrigin="0.5,0"
+            Opacity="0"
+            AutomationProperties.LiveSetting="Assertive"
+            AutomationProperties.Name="Error notification">
+        
+        <Border.RenderTransform>
+            <TranslateTransform Y="-80"/>
+        </Border.RenderTransform>
+        
+        <Border.Effect>
+            <DropShadowEffect Color="Black" 
+                            Direction="270" 
+                            ShadowDepth="2" 
+                            BlurRadius="8" 
+                            Opacity="0.3"/>
+        </Border.Effect>
+        
+        <!-- GPU Acceleration -->
+        <Border.CacheMode>
+            <BitmapCache RenderAtScale="1" SnapsToDevicePixels="True"/>
+        </Border.CacheMode>
+        
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/> <!-- Icon -->
+                <ColumnDefinition Width="*"/>    <!-- Message -->
+                <ColumnDefinition Width="Auto"/> <!-- Actions -->
+            </Grid.ColumnDefinitions>
+            
+            <!-- Error Icon with pulse animation -->
+            <Viewbox x:Name="ErrorIcon"
+                     Grid.Column="0" 
+                     Width="24" Height="24" 
+                     Margin="0,0,15,0"
+                     VerticalAlignment="Center"
+                     RenderTransformOrigin="0.5,0.5">
+                
+                <Viewbox.RenderTransform>
+                    <ScaleTransform ScaleX="1" ScaleY="1"/>
+                </Viewbox.RenderTransform>
+                
+                <Path Data="{Binding IconGeometry}"
+                      Fill="{Binding IconBrush}"
+                      Stretch="Uniform"/>
+            </Viewbox>
+            
+            <!-- Message -->
+            <StackPanel Grid.Column="1" 
+                       VerticalAlignment="Center">
+                <TextBlock Text="{Binding Title}"
+                          FontWeight="SemiBold"
+                          FontSize="14"
+                          Foreground="White"
+                          TextWrapping="Wrap"
+                          Margin="0,0,0,2"
+                          AutomationProperties.Name="Error title"
+                          AutomationProperties.IsOffscreenBehavior="FromClip"/>
+                <TextBlock Text="{Binding Message}"
+                          FontSize="12"
+                          Foreground="#E0FFFFFF"
+                          TextWrapping="Wrap"
+                          AutomationProperties.Name="Error message"
+                          AutomationProperties.IsOffscreenBehavior="FromClip"/>
+            </StackPanel>
+            
+            <!-- Action Buttons -->
+            <StackPanel Grid.Column="2" 
+                       Orientation="Horizontal"
+                       VerticalAlignment="Center"
+                       Margin="15,0,0,0">
+                
+                <!-- Retry Button with enhanced hover -->
+                <Button x:Name="RetryButton"
+                       Content="Retry"
+                       Command="{Binding RetryCommand}"
+                       Visibility="{Binding ShowRetryButton, Converter={StaticResource BooleanToVisibilityConverter}}"
+                       Background="#4080FF"
+                       Foreground="White"
+                       Padding="12,6"
+                       Margin="0,0,5,0"
+                       FontSize="12"
+                       BorderThickness="0"
+                       Cursor="Hand"
+                       RenderTransformOrigin="0.5,0.5"
+                       TabIndex="2"
+                       AutomationProperties.Name="Retry action"
+                       AutomationProperties.HelpText="Retries the failed operation">
+                    
+                    <Button.RenderTransform>
+                        <TransformGroup>
+                            <ScaleTransform ScaleX="1" ScaleY="1"/>
+                            <TranslateTransform Y="0"/>
+                        </TransformGroup>
+                    </Button.RenderTransform>
+                    
+                    <Button.Style>
+                        <Style TargetType="Button">
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="Button">
+                                        <Border Background="{TemplateBinding Background}"
+                                                CornerRadius="3"
+                                                Padding="{TemplateBinding Padding}">
+                                            <ContentPresenter HorizontalAlignment="Center"
+                                                            VerticalAlignment="Center"/>
+                                        </Border>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                            <Style.Triggers>
+                                <!-- Hover: Scale + Lift -->
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="Background" Value="#5090FF"/>
+                                    <Trigger.EnterActions>
+                                        <BeginStoryboard>
+                                            <Storyboard>
+                                                <DoubleAnimation Storyboard.TargetProperty="(Button.RenderTransform).(TransformGroup.Children)[0].(ScaleTransform.ScaleX)"
+                                                               To="1.05" Duration="0:0:0.15">
+                                                    <DoubleAnimation.EasingFunction>
+                                                        <QuadraticEase EasingMode="EaseOut"/>
+                                                    </DoubleAnimation.EasingFunction>
+                                                </DoubleAnimation>
+                                                <DoubleAnimation Storyboard.TargetProperty="(Button.RenderTransform).(TransformGroup.Children)[0].(ScaleTransform.ScaleY)"
+                                                               To="1.05" Duration="0:0:0.15">
+                                                    <DoubleAnimation.EasingFunction>
+                                                        <QuadraticEase EasingMode="EaseOut"/>
+                                                    </DoubleAnimation.EasingFunction>
+                                                </DoubleAnimation>
+                                                <DoubleAnimation Storyboard.TargetProperty="(Button.RenderTransform).(TransformGroup.Children)[1].(TranslateTransform.Y)"
+                                                               To="-2" Duration="0:0:0.15">
+                                                    <DoubleAnimation.EasingFunction>
+                                                        <QuadraticEase EasingMode="EaseOut"/>
+                                                    </DoubleAnimation.EasingFunction>
+                                                </DoubleAnimation>
+                                            </Storyboard>
+                                        </BeginStoryboard>
+                                    </Trigger.EnterActions>
+                                    <Trigger.ExitActions>
+                                        <BeginStoryboard>
+                                            <Storyboard>
+                                                <DoubleAnimation Storyboard.TargetProperty="(Button.RenderTransform).(TransformGroup.Children)[0].(ScaleTransform.ScaleX)"
+                                                               To="1" Duration="0:0:0.15"/>
+                                                <DoubleAnimation Storyboard.TargetProperty="(Button.RenderTransform).(TransformGroup.Children)[0].(ScaleTransform.ScaleY)"
+                                                               To="1" Duration="0:0:0.15"/>
+                                                <DoubleAnimation Storyboard.TargetProperty="(Button.RenderTransform).(TransformGroup.Children)[1].(TranslateTransform.Y)"
+                                                               To="0" Duration="0:0:0.15"/>
+                                            </Storyboard>
+                                        </BeginStoryboard>
+                                    </Trigger.ExitActions>
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter Property="Background" Value="#3070EF"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
+                
+                <!-- Dismiss Button with enhanced hover -->
+                <Button x:Name="DismissButton"
+                       Content="Dismiss"
+                       Command="{Binding DismissCommand}"
+                       Background="#40FFFFFF"
+                       Foreground="White"
+                       Padding="12,6"
+                       FontSize="12"
+                       BorderThickness="0"
+                       Cursor="Hand"
+                       RenderTransformOrigin="0.5,0.5"
+                       TabIndex="3"
+                       AutomationProperties.Name="Dismiss error"
+                       AutomationProperties.HelpText="Closes the error notification. You can also press Escape to dismiss."
+                       AutomationProperties.AcceleratorKey="Escape">
+                    
+                    <Button.RenderTransform>
+                        <TransformGroup>
+                            <ScaleTransform ScaleX="1" ScaleY="1"/>
+                            <TranslateTransform Y="0"/>
+                        </TransformGroup>
+                    </Button.RenderTransform>
+                    
+                    <Button.Style>
+                        <Style TargetType="Button">
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="Button">
+                                        <Border Background="{TemplateBinding Background}"
+                                                CornerRadius="3"
+                                                Padding="{TemplateBinding Padding}">
+                                            <ContentPresenter HorizontalAlignment="Center"
+                                                            VerticalAlignment="Center"/>
+                                        </Border>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                            <Style.Triggers>
+                                <!-- Hover: Scale + Lift -->
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="Background" Value="#60FFFFFF"/>
+                                    <Trigger.EnterActions>
+                                        <BeginStoryboard>
+                                            <Storyboard>
+                                                <DoubleAnimation Storyboard.TargetProperty="(Button.RenderTransform).(TransformGroup.Children)[0].(ScaleTransform.ScaleX)"
+                                                               To="1.05" Duration="0:0:0.15">
+                                                    <DoubleAnimation.EasingFunction>
+                                                        <QuadraticEase EasingMode="EaseOut"/>
+                                                    </DoubleAnimation.EasingFunction>
+                                                </DoubleAnimation>
+                                                <DoubleAnimation Storyboard.TargetProperty="(Button.RenderTransform).(TransformGroup.Children)[0].(ScaleTransform.ScaleY)"
+                                                               To="1.05" Duration="0:0:0.15">
+                                                    <DoubleAnimation.EasingFunction>
+                                                        <QuadraticEase EasingMode="EaseOut"/>
+                                                    </DoubleAnimation.EasingFunction>
+                                                </DoubleAnimation>
+                                                <DoubleAnimation Storyboard.TargetProperty="(Button.RenderTransform).(TransformGroup.Children)[1].(TranslateTransform.Y)"
+                                                               To="-2" Duration="0:0:0.15">
+                                                    <DoubleAnimation.EasingFunction>
+                                                        <QuadraticEase EasingMode="EaseOut"/>
+                                                    </DoubleAnimation.EasingFunction>
+                                                </DoubleAnimation>
+                                            </Storyboard>
+                                        </BeginStoryboard>
+                                    </Trigger.EnterActions>
+                                    <Trigger.ExitActions>
+                                        <BeginStoryboard>
+                                            <Storyboard>
+                                                <DoubleAnimation Storyboard.TargetProperty="(Button.RenderTransform).(TransformGroup.Children)[0].(ScaleTransform.ScaleX)"
+                                                               To="1" Duration="0:0:0.15"/>
+                                                <DoubleAnimation Storyboard.TargetProperty="(Button.RenderTransform).(TransformGroup.Children)[0].(ScaleTransform.ScaleY)"
+                                                               To="1" Duration="0:0:0.15"/>
+                                                <DoubleAnimation Storyboard.TargetProperty="(Button.RenderTransform).(TransformGroup.Children)[1].(TranslateTransform.Y)"
+                                                               To="0" Duration="0:0:0.15"/>
+                                            </Storyboard>
+                                        </BeginStoryboard>
+                                    </Trigger.ExitActions>
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter Property="Background" Value="#30FFFFFF"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
+            </StackPanel>
+        </Grid>
+    </Border>
+</UserControl>

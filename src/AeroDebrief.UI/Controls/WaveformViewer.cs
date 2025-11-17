@@ -13,6 +13,24 @@ using AeroDebrief.Core.Audio; // For BufferedRegion class
 
 namespace AeroDebrief.UI.Controls
 {
+    /// <summary>
+    /// LEGACY: Custom Canvas-based waveform viewer control.
+    /// 
+    /// ?? DEPRECATED: This control is deprecated and will be removed in v3.0.
+    /// New implementations should use UnifiedGraphControl instead, which provides:
+    /// - LiveCharts2-based rendering with 10-50x better performance
+    /// - Multi-resolution tiling for scalability
+    /// - Progressive loading with visual feedback
+    /// - Enhanced error handling and recovery
+    /// - Better maintainability and extensibility
+    /// 
+    /// See: docs/LiveCharts2-Migration-Guide.md for migration instructions.
+    /// See: src/AeroDebrief.UI/Controls/Charts/UnifiedGraphControl.cs for the new implementation.
+    /// 
+    /// This control remains functional for backward compatibility but is no longer
+    /// actively maintained. It will be removed in a future major version.
+    /// </summary>
+    [Obsolete("This control is deprecated. Use UnifiedGraphControl instead for better performance and features. See docs/LiveCharts2-Migration-Guide.md", false)]
     public class WaveformViewer : Canvas
     {
         private static readonly NLog.Logger Logger = NLog.LogManager.GetCurrentClassLogger();

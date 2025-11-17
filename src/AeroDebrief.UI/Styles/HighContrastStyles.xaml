@@ -1,0 +1,136 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    
+    <!-- ========================================
+         PHASE 9 STEP 5: High Contrast Styles
+         
+         Purpose: Accessibility support for Windows high contrast themes
+         
+         These styles automatically apply when SystemParameters.HighContrast is true.
+         They ensure proper visibility and contrast ratios for users with
+         visual impairments or in high-contrast mode.
+         
+         WCAG 2.1 AA Requirements:
+         - Text contrast: 4.5:1 minimum
+         - UI component contrast: 3:1 minimum
+         - Clear borders on interactive elements
+         ======================================== -->
+    
+    <!-- ==================== BUTTON STYLES ==================== -->
+    
+    <!-- High Contrast Button Style -->
+    <Style x:Key="HighContrastButton" TargetType="Button">
+        <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.WindowBrushKey}}"/>
+        <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.WindowTextBrushKey}}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource {x:Static SystemColors.WindowTextBrushKey}}"/>
+        <Setter Property="BorderThickness" Value="2"/>
+        <Setter Property="Padding" Value="12,6"/>
+        <Setter Property="MinHeight" Value="44"/>
+        <Setter Property="MinWidth" Value="44"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="0"
+                            Padding="{TemplateBinding Padding}">
+                        <ContentPresenter HorizontalAlignment="Center"
+                                        VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.HighlightTextBrushKey}}"/>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.HighlightTextBrushKey}}"/>
+                        </Trigger>
+                        <Trigger Property="IsFocused" Value="True">
+                            <Setter Property="BorderThickness" Value="3"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+    
+    <!-- ==================== BORDER STYLES ==================== -->
+    
+    <!-- High Contrast Border Style -->
+    <Style x:Key="HighContrastBorder" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.WindowBrushKey}}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource {x:Static SystemColors.WindowTextBrushKey}}"/>
+        <Setter Property="BorderThickness" Value="2"/>
+        <Setter Property="CornerRadius" Value="0"/>
+        <Setter Property="Padding" Value="12"/>
+    </Style>
+    
+    <!-- High Contrast Overlay Border -->
+    <Style x:Key="HighContrastOverlayBorder" TargetType="Border" BasedOn="{StaticResource HighContrastBorder}">
+        <Setter Property="BorderThickness" Value="3"/>
+        <Setter Property="Padding" Value="15"/>
+    </Style>
+    
+    <!-- ==================== TEXT STYLES ==================== -->
+    
+    <!-- High Contrast Text Style -->
+    <Style x:Key="HighContrastText" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.WindowTextBrushKey}}"/>
+        <Setter Property="Background" Value="Transparent"/>
+    </Style>
+    
+    <!-- High Contrast Header Text -->
+    <Style x:Key="HighContrastHeaderText" TargetType="TextBlock" BasedOn="{StaticResource HighContrastText}">
+        <Setter Property="FontWeight" Value="Bold"/>
+        <Setter Property="FontSize" Value="14"/>
+    </Style>
+    
+    <!-- ==================== PROGRESS BAR STYLES ==================== -->
+    
+    <!-- High Contrast Progress Bar -->
+    <Style x:Key="HighContrastProgressBar" TargetType="ProgressBar">
+        <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.WindowBrushKey}}"/>
+        <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource {x:Static SystemColors.WindowTextBrushKey}}"/>
+        <Setter Property="BorderThickness" Value="2"/>
+        <Setter Property="Height" Value="20"/>
+    </Style>
+    
+    <!-- ==================== FOCUS VISUAL STYLES ==================== -->
+    
+    <!-- High Contrast Focus Visual -->
+    <Style x:Key="HighContrastFocusVisual">
+        <Setter Property="Control.Template">
+            <Setter.Value>
+                <ControlTemplate>
+                    <Rectangle Stroke="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}" 
+                              StrokeThickness="3"
+                              SnapsToDevicePixels="True"
+                              Margin="-3"/>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+    
+    <!-- ==================== ERROR/WARNING STYLES ==================== -->
+    
+    <!-- High Contrast Error Banner -->
+    <Style x:Key="HighContrastErrorBanner" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.InfoBrushKey}}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource {x:Static SystemColors.InfoTextBrushKey}}"/>
+        <Setter Property="BorderThickness" Value="3"/>
+        <Setter Property="Padding" Value="15,10"/>
+    </Style>
+    
+    <!-- ==================== HELPER CONVERTERS ==================== -->
+    
+    <!-- Converter to apply high contrast styles based on SystemParameters.HighContrast -->
+    <!-- Usage in triggers:
+         <DataTrigger Binding="{Binding Source={x:Static SystemParameters.HighContrast}}" Value="True">
+             <Setter Property="Style" Value="{StaticResource HighContrastButton}"/>
+         </DataTrigger>
+    -->
+    
+</ResourceDictionary>

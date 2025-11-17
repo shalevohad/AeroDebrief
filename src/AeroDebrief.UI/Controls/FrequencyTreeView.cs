@@ -492,6 +492,35 @@ namespace AeroDebrief.UI.Controls
                 mainPanel.Children.Add(coalitionDot);
             }
 
+            // Phase 4: Add pilot marker next to coalition dot
+            try
+            {
+                // Get frequency info for color
+                var frequency = Frequencies
+                    ?.SelectMany(g => g.Frequencies)
+                    .FirstOrDefault(f => f.SourceData?.Players.Contains(player) == true);
+
+                if (frequency != null)
+                {
+                    var markerIcon = Helpers.PilotMarkerHelper.GetSmallMarkerIcon(
+                        player,
+                        new SolidColorBrush(frequency.WaveformColor)
+                    );
+                    markerIcon.Margin = new Thickness(0, 0, 4, 0);
+                    markerIcon.VerticalAlignment = VerticalAlignment.Center;
+                    markerIcon.ToolTip = $"Pilot marker (unique to {player.Name})";
+                    
+                    DockPanel.SetDock(markerIcon, Dock.Left);
+                    mainPanel.Children.Add(markerIcon);
+                }
+            }
+            catch (Exception ex)
+            {
+                var logger = NLog.LogManager.GetCurrentClassLogger();
+                logger.Warn(ex, $"Failed to create pilot marker for {player.Name}");
+                // Continue without marker - not critical
+            }
+
             // Pilot checkbox filter
             var pilotCheckBox = new CheckBox
             {

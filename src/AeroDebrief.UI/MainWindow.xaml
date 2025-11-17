@@ -24,5 +24,6 @@ WindowStartupLocation="CenterScreen">
         
         <!-- Unified Player Control -->
         <controls:UnifiedPlayerControl x:Name="UnifiedPlayer"/>
+
     </DockPanel>
 </Window>
