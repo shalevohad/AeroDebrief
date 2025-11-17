@@ -565,9 +565,10 @@ namespace AeroDebrief.UI.ViewModels
                 _sessionManager.Pipeline?.SetFrequencyGate(e.Frequency, FrequencyGateMode.Allow);
                 
                 // Phase 12: Sync to UnifiedGraph - show series
+                // Convert frequency (Hz) to string format that graph expects
                 var freqId = $"{e.Frequency:F0}";
                 _graphViewModel.SetFrequencyVisible(freqId, true);
-                Logger.Debug($"? Phase 12: Graph series shown for {e.Frequency:F1} Hz");
+                Logger.Debug($"? Phase 12: Graph series shown for {e.Frequency:F1} Hz (key: {freqId})");
             }
             else
             {
@@ -576,9 +577,10 @@ namespace AeroDebrief.UI.ViewModels
                 _sessionManager.Pipeline?.SetFrequencyGate(e.Frequency, FrequencyGateMode.Block);
                 
                 // Phase 12: Sync to UnifiedGraph - hide series
+                // Convert frequency (Hz) to string format that graph expects
                 var freqId = $"{e.Frequency:F0}";
                 _graphViewModel.SetFrequencyVisible(freqId, false);
-                Logger.Debug($"? Phase 12: Graph series hidden for {e.Frequency:F1} Hz");
+                Logger.Debug($"? Phase 12: Graph series hidden for {e.Frequency:F1} Hz (key: {freqId})");
             }
             
             // Phase 12: Legacy GPU layers and waveform regeneration removed
@@ -992,14 +994,8 @@ namespace AeroDebrief.UI.ViewModels
             
             // Sync with graph visualization
             var freqId = $"{frequency:F0}";
-            if (muted)
-            {
-                _graphViewModel.SetFrequencyVisible(freqId, false);
-            }
-            else
-            {
-                _graphViewModel.SetFrequencyVisible(freqId, true);
-            }
+            _graphViewModel.SetFrequencyVisible(freqId, !muted);
+            Logger.Debug($"? Graph mute sync: {frequency:F1} Hz (key: {freqId}), muted={muted}");
         }
 
         /// <summary>
@@ -1018,7 +1014,36 @@ namespace AeroDebrief.UI.ViewModels
         public void UpdatePilotSelection(string pilotGuid, bool isSelected)
         {
             Logger.Debug($"Pilot selection changed: {pilotGuid} = {isSelected}");
-            // TODO: Implement per-pilot filtering when feature is ready
+            
+            // Find which frequency this pilot belongs to
+            foreach (var group in _frequencyManager.Frequencies)
+            {
+                foreach (var freq in group.Frequencies)
+                {
+                    // Check if this frequency has player data
+                    if (freq.SourceData?.Players == null)
+                        continue;
+                    
+                    var player = freq.SourceData.Players.FirstOrDefault(p => 
+                        p.TransmitterGuid.Equals(pilotGuid, StringComparison.OrdinalIgnoreCase));
+                    
+                    if (player != null)
+                    {
+                        // Convert frequency to string format for graph key
+                        var freqId = $"{freq.Frequency:F0}";
+                        
+                        // Sync with graph visualization - show/hide this specific pilot's series
+                        _graphViewModel.SetPilotVisible(freqId, pilotGuid, isSelected);
+                        Logger.Debug($"? Graph pilot visibility updated: {freq.Frequency:F1} Hz (key: {freqId}), {pilotGuid} = {isSelected}");
+                        
+                        // TODO: Implement per-pilot audio filtering when feature is ready
+                        // For now, pilot selection only affects visualization
+                        return; // Exit once we found the pilot
+                    }
+                }
+            }
+            
+            Logger.Warn($"Pilot not found in any frequency: {pilotGuid}");
         }
 
         #endregion

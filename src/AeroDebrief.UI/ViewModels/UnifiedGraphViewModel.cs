@@ -780,6 +780,8 @@ namespace AeroDebrief.UI.ViewModels
         /// </summary>
         private void ProcessTiles(List<SeriesTile> tiles)
         {
+            _logger.Debug($"ProcessTiles: Processing {tiles.Count} tiles");
+            
             foreach (var tile in tiles)
             {
                 var frequencyId = GetFrequencyKey(tile.Frequency);
@@ -788,6 +790,8 @@ namespace AeroDebrief.UI.ViewModels
                     ? frequencyId 
                     : $"{frequencyId}-{pilotId}";
 
+                _logger.Debug($"Processing tile: Freq={tile.Frequency} Hz, FreqId={frequencyId}, PilotId={pilotId ?? "(null)"}, Key={key}");
+
                 // Track pilot for this frequency
                 if (!string.IsNullOrEmpty(pilotId))
                 {
@@ -795,6 +799,7 @@ namespace AeroDebrief.UI.ViewModels
                         _frequencyPilots[frequencyId] = new HashSet<string>();
                     
                     _frequencyPilots[frequencyId].Add(pilotId);
+                    _logger.Debug($"Added pilot '{pilotId}' to frequency {frequencyId}. Total pilots: {_frequencyPilots[frequencyId].Count}");
                 }
 
                 // Create or get series
@@ -813,6 +818,8 @@ namespace AeroDebrief.UI.ViewModels
                         && pilots.Count > MaxPilotsPerFrequency;
                     var initialVisibility = !shouldCollapse;
                     _seriesVisibility[key] = initialVisibility;
+                    
+                    _logger.Debug($"Created new series: Key={key}, SeriesName={series.Name}, Visible={initialVisibility}, Points={tile.Points.Count}");
                     
                     // Phase 7: Add to Series collection with IsVisible set
                     series.IsVisible = initialVisibility;
@@ -836,12 +843,19 @@ namespace AeroDebrief.UI.ViewModels
                             .ToArray();
                         
                         lineSeries.Values = allPoints;
+                        _logger.Debug($"Updated existing series: Key={key}, Points={allPoints.Length} (was {existingPoints.Length}, added {newPoints.Count()})");
                     }
                 }
             }
 
             // Update visible count
             VisibleSeriesCount = Series.Count(s => s.IsVisible);
+            
+            _logger.Debug($"ProcessTiles complete: {_allSeries.Count} series, {_frequencyPilots.Count} frequencies");
+            foreach (var (freqId, pilots) in _frequencyPilots)
+            {
+                _logger.Debug($"  Frequency {freqId}: {pilots.Count} pilots = [{string.Join(", ", pilots)}]");
+            }
         }
 
         /// <summary>
@@ -1024,6 +1038,10 @@ namespace AeroDebrief.UI.ViewModels
             
             VisibleSeriesCount = visibleCount;
             _logger.Debug($"Updated series visibility: {VisibleSeriesCount} visible / {Series.Count} total");
+            
+            // CRITICAL FIX: Force LiveCharts2 to recognize visibility changes
+            // Trigger collection change notification to force chart redraw
+            OnPropertyChanged(nameof(Series));
         }
         
         /// <summary>
@@ -1085,16 +1103,54 @@ namespace AeroDebrief.UI.ViewModels
         /// </summary>
         public void SetFrequencyVisible(string frequencyId, bool visible)
         {
+            _logger.Debug($"SetFrequencyVisible called: frequencyId={frequencyId}, visible={visible}");
+            _logger.Debug($"Available keys in _frequencyPilots: {string.Join(", ", _frequencyPilots.Keys)}");
+            
             // Phase 7: Search for matching frequency key (supports different formats)
+            // First try exact match
             var actualFreqKey = _frequencyPilots.Keys.FirstOrDefault(k => 
-                k.Equals(frequencyId, StringComparison.OrdinalIgnoreCase) ||
-                k.Contains(frequencyId));
+                k.Equals(frequencyId, StringComparison.OrdinalIgnoreCase));
+            
+            // If no exact match, try numeric comparison
+            // Handle format: "251000000" (Hz) vs "F251.0" (MHz with prefix)
+            if (actualFreqKey == null && double.TryParse(frequencyId, out var targetFreqHz))
+            {
+                var targetFreqMHz = targetFreqHz / 1_000_000.0;
+                _logger.Debug($"Trying numeric match: target={targetFreqHz} Hz ({targetFreqMHz} MHz)");
+                
+                actualFreqKey = _frequencyPilots.Keys.FirstOrDefault(k =>
+                {
+                    // Try to extract numeric value from key (handles "F251.0", "251.0", "251000000", etc.)
+                    var keyNumeric = k.Replace("F", "").Replace("f", "").Trim();
+                    if (double.TryParse(keyNumeric, out var keyValue))
+                    {
+                        // Check if key is in MHz (< 1000) or Hz (> 1000)
+                        var keyMHz = keyValue < 1000 ? keyValue : keyValue / 1_000_000.0;
+                        var match = Math.Abs(keyMHz - targetFreqMHz) < 0.01; // 0.01 MHz tolerance
+                        if (match)
+                        {
+                            _logger.Debug($"Matched: key={k} ({keyMHz} MHz) ? target ({targetFreqMHz} MHz)");
+                        }
+                        return match;
+                    }
+                    return false;
+                });
+            }
+            
+            // If still no match, try partial string matching (fallback)
+            if (actualFreqKey == null)
+            {
+                actualFreqKey = _frequencyPilots.Keys.FirstOrDefault(k => 
+                    k.Contains(frequencyId, StringComparison.OrdinalIgnoreCase));
+            }
             
             if (actualFreqKey == null)
             {
-                _logger.Warn($"Unknown frequency: {frequencyId}");
+                _logger.Warn($"Unknown frequency: {frequencyId}, available keys: {string.Join(", ", _frequencyPilots.Keys)}");
                 return;
             }
+            
+            _logger.Debug($"Found matching key: {actualFreqKey}");
 
             // Phase 7: Prevent event loops during bidirectional sync
             if (_isSyncingVisibility)
@@ -1105,6 +1161,8 @@ namespace AeroDebrief.UI.ViewModels
             {
                 // Update visibility for all pilots in this frequency
                 var pilots = _frequencyPilots[actualFreqKey];
+                _logger.Debug($"Updating visibility for {pilots.Count} pilots on frequency {actualFreqKey}");
+                
                 foreach (var pilotId in pilots)
                 {
                     // Search for matching series key in multiple places
@@ -1117,12 +1175,13 @@ namespace AeroDebrief.UI.ViewModels
                     }
                     
                     _seriesVisibility[matchingKey] = visible;
+                    _logger.Debug($"Set visibility: {matchingKey} = {visible}");
                 }
 
                 RebuildVisibleSeries();
 
                 // Phase 7: Sync to audio mixer
-                SyncVisibilityToMixer(frequencyId, visible);
+                SyncVisibilityToMixer(actualFreqKey, visible);
             }
             finally
             {
@@ -1170,6 +1229,7 @@ namespace AeroDebrief.UI.ViewModels
             if (!_seriesVisibility.ContainsKey(matchingKey))
             {
                 _seriesVisibility[matchingKey] = true; // Assume visible initially
+                _logger.Debug($"Creating visibility entry for key: {matchingKey}");
             }
 
             // Phase 7: Prevent event loops
@@ -1184,6 +1244,8 @@ namespace AeroDebrief.UI.ViewModels
 
                 // Phase 7: Sync to audio mixer
                 SyncPilotVisibilityToMixer(frequencyId, pilotId, visible);
+                
+                _logger.Debug($"Set pilot visibility: {frequencyId}/{pilotId} = {visible}");
             }
             finally
             {

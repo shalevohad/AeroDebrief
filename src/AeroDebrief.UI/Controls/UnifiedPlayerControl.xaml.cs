@@ -27,6 +27,12 @@ namespace AeroDebrief.UI.Controls
         {
             InitializeComponent();
             
+            // Subscribe to PlayerHeaderControl events in code-behind
+            // (cannot be done in XAML due to custom generic event handlers)
+            PlayerHeader.SourceTypeSelected += OnSourceTypeSelected;
+            PlayerHeader.FilePanelRequested += OnFilePanelRequested;
+            PlayerHeader.ServerPanelRequested += OnServerPanelRequested;
+            
             // Subscribe to lifecycle events
             this.DataContextChanged += UnifiedPlayerControl_DataContextChanged;
             this.Loaded += UnifiedPlayerControl_Loaded;

@@ -25,15 +25,14 @@
 
         <!-- PLAYER HEADER - Top header with file/source controls -->
         <player:PlayerHeaderControl Grid.Row="0"
+                               x:Name="PlayerHeader"
                                StatusMessage="{Binding StatusMessage}"
                                SourceName="{Binding CurrentSourceName}"
                                CurrentMode="{Binding CurrentMode}"
                                IsIdle="{Binding IsIdle}"
                                ChangeSourceCommand="{Binding ChangeSourceCommand}"
                                OpenSettingsCommand="{Binding OpenSettingsCommand}"
-                               SourceTypeSelected="OnSourceTypeSelected"
-                               FilePanelRequested="OnFilePanelRequested"
-                               ServerPanelRequested="OnServerPanelRequested" Margin="0,0,0,64" Grid.RowSpan="2"/>
+                               Margin="0,0,0,64" Grid.RowSpan="2"/>
 
         <!-- TACVIEW STATUS - Single-line status bar below player header -->
         <!-- Hidden when no source is loaded, visible (but grayed out) when disconnected -->
