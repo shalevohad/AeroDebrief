@@ -90,6 +90,13 @@ namespace AeroDebrief.UI.Services.Graphs
         /// </summary>
         /// <returns>Current cache statistics</returns>
         TileCacheStats GetStats();
+        
+        /// <summary>
+        /// Sets the recording start time for tile generation from amplitude data.
+        /// Must be called before LoadTilesForViewportAsync if using amplitude provider.
+        /// </summary>
+        /// <param name="recordingStart">Start time of the recording</param>
+        void SetRecordingStart(DateTime recordingStart);
     }
     
     /// <summary>

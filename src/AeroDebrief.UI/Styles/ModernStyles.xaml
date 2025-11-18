@@ -39,7 +39,7 @@
                               Margin="-2">
                         <!-- Animate for extra visibility -->
                         <Rectangle.Triggers>
-                            <EventTrigger RoutedEvent="Loaded">
+                            <EventTrigger RoutedEvent="FrameworkElement.Loaded">
                                 <BeginStoryboard>
                                     <Storyboard RepeatBehavior="Forever">
                                         <DoubleAnimation Storyboard.TargetProperty="StrokeDashOffset"

@@ -90,6 +90,11 @@ namespace AeroDebrief.Tests.ViewModels
                     TotalTilesLoaded = LoadCallCount
                 };
             }
+            
+            public void SetRecordingStart(DateTime recordingStart)
+            {
+                // Mock implementation - no action needed
+            }
         }
 
         /// <summary>

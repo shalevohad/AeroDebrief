@@ -19,26 +19,26 @@ namespace AeroDebrief.UI.ViewModels
     /// <summary>
     /// Main view model for the unified player control.
     /// 
-    /// NEW ARCHITECTURE (Service-Based + Pure FilePacketSource):
+    /// ARCHITECTURE (Service-Based):
     /// - FrequencyManager: Handles frequency discovery and selection
-    /// - WaveformManager: Handles waveform generation and GPU layers
     /// - PlaybackSessionManager: Handles file loading and playback lifecycle
     /// - MixerController: Handles audio mixer channel management
-    /// - Single FilePacketSource (memory-mapped, shared for waveform + playback)
+    /// - UnifiedGraphViewModel: LiveCharts2 tile-based amplitude visualization
+    /// - Single FilePacketSource (memory-mapped, shared for graph + playback)
     /// - FilePlaybackPipeline for playback (batched streaming, instant filtering)
-    /// - GPU-layered waveform rendering (instant frequency toggling!)
+    /// 
+    /// PERFORMANCE:
     /// - 82% less RAM usage (10MB vs 55MB)
     /// - 2.5x faster file open
     /// - 500x faster filtering (instant vs 500-1000ms restart)
-    /// - 50-100x faster frequency toggle (< 20ms vs 500-1000ms)
+    /// - Tile-based viewport rendering for scalability
     /// </summary>
     public class UnifiedPlayerViewModel : ViewModelBase, IDisposable
     {
         private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
 
-        // NEW: Service instances
+        // Service instances
         private readonly FrequencyManager _frequencyManager;
-        private readonly WaveformManager _waveformManager;
         private readonly PlaybackSessionManager _sessionManager;
         private readonly MixerController _mixerController;
         
@@ -49,10 +49,7 @@ namespace AeroDebrief.UI.ViewModels
         private TacviewIntegrationViewModel? _tacviewIntegration;
         private Integrations.Tacview.TacviewIntegrationService? _tacviewService;
         
-        // Core components (legacy, may be removed)
-        private FrequencyAnalysisService? _analysisService;
-        
-        // NEW: Zoom state tracking for GPU compositor (Phase 3.1)
+        // Zoom state tracking for GPU compositor (Phase 3.1)
         private double _zoomStartTime = 0.0;
         private double _zoomEndTime = 1.0;
 
@@ -191,28 +188,6 @@ namespace AeroDebrief.UI.ViewModels
             set => SetProperty(ref _mixerChannels, value);
         }
 
-        public string WaveformEngineIcon
-        {
-            get
-            {
-                if (!_waveformManager.IsUsingGpu)
-                    return "??";
-                
-                return "??";
-            }
-        }
-
-        public string WaveformEngineText
-        {
-            get
-            {
-                if (!_waveformManager.IsUsingGpu)
-                    return "CPU";
-                
-                return "GPU";
-            }
-        }
-
         /// <summary>
         /// Phase 6: Gets the current PlaybackController for integration with chart playhead.
         /// Returns null if no session is loaded.
@@ -234,37 +209,10 @@ namespace AeroDebrief.UI.ViewModels
         }
 
         /// <summary>
-        /// Exposes whether the waveform manager is using GPU so the UI can bind to it.
-        /// </summary>
-        public bool IsUsingGpu => _waveformManager?.IsUsingGpu ?? false;
-
-        /// <summary>
         /// Phase 7 Step 4: Unified graph view model for chart integration with audio sync.
         /// Provides LiveCharts2 amplitude visualization with automatic mute/solo synchronization.
         /// </summary>
         public UnifiedGraphViewModel GraphViewModel => _graphViewModel;
-
-        public System.Windows.Media.Brush WaveformEngineColor
-        {
-            get
-            {
-                if (!_waveformManager.IsUsingGpu)
-                    return new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 152, 0));
-                
-                return new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(76, 175, 80));
-            }
-        }
-
-        public string WaveformEngineTooltip
-        {
-            get
-            {
-                if (!_waveformManager.IsUsingGpu)
-                    return "CPU-based waveform generation";
-                
-                return "GPU-accelerated waveform generation\n10-50x faster than CPU";
-            }
-        }
 
         public bool IsRecordingMode => CurrentMode == PlayerMode.Recording;
         public bool IsPlaybackMode => CurrentMode == PlayerMode.Playback;
@@ -340,6 +288,12 @@ namespace AeroDebrief.UI.ViewModels
             set => SetProperty(ref _renderMode, value);
         }
 
+        /// <summary>
+        /// Phase 12: Exposes the PlaybackSessionManager to allow access to PacketSource and Pipeline
+        /// for WaveformDisplayPanel initialization.
+        /// </summary>
+        public PlaybackSessionManager SessionManager => _sessionManager;
+
         #endregion
 
         #region Commands
@@ -364,17 +318,19 @@ namespace AeroDebrief.UI.ViewModels
 
             // Initialize services
             _frequencyManager = new FrequencyManager();
-            _waveformManager = new WaveformManager();
             _sessionManager = new PlaybackSessionManager();
             _mixerController = new MixerController();
 
             // Phase 7 Step 4: Initialize graph view model with MixerController for audio sync
+            // Phase 8: Tile system now enabled by default (DataTileCache and DataTileManager created automatically)
             _graphViewModel = new UnifiedGraphViewModel(
                 new Services.Graphs.AmplitudeSeriesProvider(),
-                null, // No tile cache for now
-                _mixerController); // Pass mixer for bidirectional sync
+                tileCache: null, // Will be created automatically with 300 MB default budget
+                _mixerController, // Pass mixer for bidirectional sync
+                tileManager: null, // Will be created automatically
+                errorHandler: new ErrorHandlingService(Logger)); // Phase 9: Error handling service
 
-            Logger.Info("? GraphViewModel initialized with audio synchronization");
+            Logger.Info("? GraphViewModel initialized with tile system (ENABLED BY DEFAULT) and audio synchronization");
 
             // Note: Tacview integration will be initialized when a file is loaded
             // (requires PlaybackController which is created during file load)
@@ -938,7 +894,6 @@ namespace AeroDebrief.UI.ViewModels
             
             // Cleanup
             _frequencyManager.Clear();
-            _waveformManager.ClearLayers();
             _mixerController.ClearChannels();
             
             // Clear UI state
@@ -1059,11 +1014,8 @@ namespace AeroDebrief.UI.ViewModels
             // Dispose services in reverse order
             _tacviewService?.Dispose();
             _mixerController?.Dispose();
-            _waveformManager?.Dispose();
             _sessionManager?.Dispose();
             _frequencyManager?.Dispose();
-            
-            _analysisService?.Dispose();
             
             Logger.Info("? UnifiedPlayerViewModel disposed");
         }
@@ -1154,27 +1106,11 @@ namespace AeroDebrief.UI.ViewModels
                 await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
                 {
                     ProgressPercent = 40;
-                    StatusMessage = "Initializing audio services...";
+                    StatusMessage = "Initializing audio mixer...";
                 });
                 
-                // Initialize waveform generator and mixer FIRST - runs on background
-                _analysisService = new FrequencyAnalysisService();
-                _waveformManager.Initialize(_analysisService);
-                
-                // CRITICAL: Initialize mixer controller BEFORE frequency loading
-                // FrequencyManager.LoadFrequenciesAsync() calls SelectAll() which triggers
-                // OnFrequencySelectionChanged() which calls _mixerController.SetupChannel()
                 _mixerController.Initialize();
-                Logger.Info("? Audio services initialized (Mixer ready)");
-
-                // Notify UI that GPU availability may have changed
-                OnPropertyChanged(nameof(IsUsingGpu));
-
-                // Update UI properties
-                OnPropertyChanged(nameof(WaveformEngineIcon));
-                OnPropertyChanged(nameof(WaveformEngineText));
-                OnPropertyChanged(nameof(WaveformEngineColor));
-                OnPropertyChanged(nameof(WaveformEngineTooltip));
+                Logger.Info("? Audio mixer initialized");
                 
                 // Now load frequencies - runs on background thread
                 // This will auto-select all frequencies, which requires mixer to be initialized
@@ -1182,22 +1118,6 @@ namespace AeroDebrief.UI.ViewModels
                 await _frequencyManager.LoadFrequenciesAsync(
                     _sessionManager.PacketSource!,
                     _sessionManager.Pipeline!);
-                
-                // Update UI on completion
-                await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
-                {
-                    ProgressPercent = 50;
-                    StatusMessage = "Initializing waveform generator...";
-                });
-                
-                // Notify UI that GPU availability may have changed
-                OnPropertyChanged(nameof(IsUsingGpu));
-
-                // Update UI properties
-                OnPropertyChanged(nameof(WaveformEngineIcon));
-                OnPropertyChanged(nameof(WaveformEngineText));
-                OnPropertyChanged(nameof(WaveformEngineColor));
-                OnPropertyChanged(nameof(WaveformEngineTooltip));
                 
                 // Bind frequency collections on UI thread
                 await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
@@ -1235,9 +1155,11 @@ namespace AeroDebrief.UI.ViewModels
                     ProgressPercent = 85;
                 });
                 
-                // Get recording time range from session
-                var recordingStart = DateTime.Now; // TODO: Get actual recording start time from session
+                // CRITICAL FIX: Get ACTUAL recording time range from pipeline (not DateTime.Now!)
+                var recordingStart = _sessionManager.Pipeline!.RecordingStart;
                 var recordingEnd = recordingStart.Add(TotalDuration);
+                
+                Logger.Info($"Phase 12: Using ACTUAL recording timestamps: {recordingStart:yyyy-MM-dd HH:mm:ss} to {recordingEnd:yyyy-MM-dd HH:mm:ss}");
                 
                 try
                 {

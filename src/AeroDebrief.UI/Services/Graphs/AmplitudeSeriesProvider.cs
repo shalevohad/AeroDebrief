@@ -181,7 +181,10 @@ namespace AeroDebrief.UI.Services.Graphs
                 
                 var (frequency, transmitter) = group.Key;
                 var packets = group.Value.OrderBy(p => p.Timestamp).ToList();
-                var key = $"F{frequency:F1}-P{GetPilotIndex(transmitter)}";
+                
+                // Convert frequency from Hz to MHz for key format
+                var frequencyMHz = frequency / 1_000_000.0;
+                var key = $"F{frequencyMHz:F1}-P{GetPilotIndex(transmitter)}";
                 
                 // Extract amplitude points from all packets for this pilot
                 var points = new List<ObservablePoint>();

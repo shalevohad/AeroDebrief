@@ -9,6 +9,8 @@ using AeroDebrief.UI.ViewModels;
 using AeroDebrief.UI.Services.Graphs;
 using AeroDebrief.UI.Services;
 using AeroDebrief.UI.Models;
+using AeroDebrief.Core.IO;
+using AeroDebrief.Core.Audio;
 using FontAwesome.WPF;
 
 namespace AeroDebrief.UI.Controls.Player
@@ -347,9 +349,10 @@ namespace AeroDebrief.UI.Controls.Player
         {
             try
             {
-                // Create amplitude provider
+                // Create amplitude provider WITHOUT real data source initially
+                // It will be connected when a recording is loaded via SetRecordingSource()
                 _amplitudeProvider = new AmplitudeSeriesProvider();
-                _logger.Debug("AmplitudeSeriesProvider created");
+                _logger.Debug("AmplitudeSeriesProvider created (synthetic data mode - waiting for recording)");
 
                 // Create tile cache with 300MB budget (required by DataTileManager)
                 var tileCache = new DataTileCache(budgetMB: 300.0);
@@ -384,6 +387,44 @@ namespace AeroDebrief.UI.Controls.Player
             catch (Exception ex)
             {
                 _logger.Error(ex, "Phase 12: Failed to initialize services");
+            }
+        }
+
+        /// <summary>
+        /// Phase 12: Connects the waveform display to a real recording data source.
+        /// Call this when a recording is loaded to switch from synthetic to real data.
+        /// </summary>
+        public void SetRecordingSource(FilePacketSource packetSource, IAudioProcessingEngine audioEngine)
+        {
+            try
+            {
+                _logger.Info("Phase 12: Connecting to real recording data source");
+                
+                // Create new amplitude provider with real data pipeline
+                _amplitudeProvider = new AmplitudeSeriesProvider(packetSource, audioEngine);
+                
+                // Recreate tile cache and manager
+                var tileCache = new DataTileCache(budgetMB: 300.0);
+                _tileManager = new DataTileManager(tileCache);
+                
+                // Recreate UnifiedGraphViewModel with new provider
+                UnifiedGraphViewModel?.Dispose();
+                UnifiedGraphViewModel = new UnifiedGraphViewModel(
+                    _amplitudeProvider,
+                    tileCache: tileCache,
+                    mixerController: null,
+                    tileManager: _tileManager,
+                    errorHandler: _errorHandlingService
+                );
+                
+                // Re-subscribe to events
+                SubscribeToViewModelEvents();
+                
+                _logger.Info("Phase 12: Recording data source connected successfully");
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex, "Phase 12: Failed to set recording source");
             }
         }
 

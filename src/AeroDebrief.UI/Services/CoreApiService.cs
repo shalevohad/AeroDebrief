@@ -99,6 +99,12 @@ namespace AeroDebrief.UI.Services
         }
 
         /// <summary>
+        /// Phase 12: Exposes the FilePacketSource for waveform display initialization.
+        /// This allows WaveformDisplayPanel to connect to real recording data.
+        /// </summary>
+        public FilePacketSource? PacketSource => _packetSource;
+
+        /// <summary>
         /// Loads an audio file for analysis and playback using the NEW Pure FilePacketSource architecture
         /// </summary>
         public async Task<bool> LoadFileAsync(string filePath, IProgress<string>? progress = null)

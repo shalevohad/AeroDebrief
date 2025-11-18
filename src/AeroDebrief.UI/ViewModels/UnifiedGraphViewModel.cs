@@ -28,6 +28,7 @@ namespace AeroDebrief.UI.ViewModels
     /// Phase 7: Visibility toggle with audio mixer synchronization.
     /// Phase 8: Tile-based data loading for scalability.
     /// Phase 9: Loading indicators and error handling.
+    /// Phase 12: Support switching data sources (e.g., from synthetic to real recording data).
     /// </summary>
     public class UnifiedGraphViewModel : INotifyPropertyChanged, IDisposable
     {
@@ -43,8 +44,8 @@ namespace AeroDebrief.UI.ViewModels
         private DateTime _viewportStart = DateTime.Now;
         private DateTime _viewportEnd = DateTime.Now.AddHours(1);
         
-        private readonly IAmplitudeSeriesProvider _amplitudeProvider;
-        private readonly IDataTileCache? _tileCache;
+        private IAmplitudeSeriesProvider _amplitudeProvider;
+        private IDataTileCache? _tileCache;
         private readonly NLog.Logger _logger = NLog.LogManager.GetCurrentClassLogger();
 
         // Phase 7: Audio mixer integration for sync
@@ -52,7 +53,7 @@ namespace AeroDebrief.UI.ViewModels
         private bool _audioSyncEnabled = true;
 
         // Phase 8: Tile-based data loading
-        private readonly IDataTileManager? _tileManager;
+        private IDataTileManager? _tileManager;
         private bool _isTileBasedLoadingEnabled = false;
         private bool _isLoadingTiles = false;
         private CancellationTokenSource? _currentLoadCancellation;
@@ -93,6 +94,9 @@ namespace AeroDebrief.UI.ViewModels
         // Phase 7: Event loop prevention for bidirectional sync
         private bool _isSyncingVisibility = false;
         
+        // Phase 8: Prevent infinite loop during initial data load
+        private bool _isLoadingData = false;
+        
         // Phase 5: Track whether data was loaded via LoadDataAsync (for viewport clamping logic)
         private bool _isDataLoadedExplicitly = false;
 
@@ -113,10 +117,12 @@ namespace AeroDebrief.UI.ViewModels
             _tileManager = tileManager;
             _errorHandler = errorHandler;
             
-            // Phase 8: Enable tile-based loading if tile manager is available
-            _isTileBasedLoadingEnabled = _tileManager != null;
+            // Phase 8: DISABLE tile-based loading temporarily - it causes infinite loops
+            // The tile system needs pre-generated tiles, not on-demand generation from amplitude provider
+            // TODO: Implement proper tile pre-generation or database storage
+            _isTileBasedLoadingEnabled = false; // Forced to false until tile generation is fixed
             
-            _logger.Info($"UnifiedGraphViewModel initialized (Phase 8: TileBasedLoading={_isTileBasedLoadingEnabled}, Phase 9: ErrorHandling={_errorHandler != null})");
+            _logger.Info($"UnifiedGraphViewModel initialized (Phase 8: TileBasedLoading={_isTileBasedLoadingEnabled} [DISABLED - see TODO], Phase 9: ErrorHandling={_errorHandler != null})");
 
             // Phase 7: Subscribe to mixer events if available
             if (_mixerController != null)
@@ -185,8 +191,11 @@ namespace AeroDebrief.UI.ViewModels
                     OnPropertyChanged(nameof(ViewportDuration));
                     ViewportChanged?.Invoke(this, EventArgs.Empty);
                     
-                    // Phase 8: Load tiles for new viewport
-                    _ = LoadTilesForCurrentViewportAsync();
+                    // Phase 8: Load tiles for new viewport (but not during initial data load)
+                    if (!_isLoadingData)
+                    {
+                        _ = LoadTilesForCurrentViewportAsync();
+                    }
                 }
             }
         }
@@ -208,8 +217,11 @@ namespace AeroDebrief.UI.ViewModels
                     OnPropertyChanged(nameof(ViewportDuration));
                     ViewportChanged?.Invoke(this, EventArgs.Empty);
                     
-                    // Phase 8: Load tiles for new viewport
-                    _ = LoadTilesForCurrentViewportAsync();
+                    // Phase 8: Load tiles for new viewport (but not during initial data load)
+                    if (!_isLoadingData)
+                    {
+                        _ = LoadTilesForCurrentViewportAsync();
+                    }
                 }
             }
         }
@@ -512,6 +524,9 @@ namespace AeroDebrief.UI.ViewModels
             {
                 _logger.Info($"Loading amplitude data from {start:HH:mm:ss} to {end:HH:mm:ss}");
                 
+                // Set flag to prevent infinite loop from viewport changes
+                _isLoadingData = true;
+                
                 Start = start;
                 End = end;
                 _isDataLoadedExplicitly = true; // Mark that data was explicitly loaded
@@ -521,6 +536,13 @@ namespace AeroDebrief.UI.ViewModels
                 _frequencyPilots.Clear();
                 _frequencyExpanded.Clear();
                 _totalPoints = 0;
+
+                // CRITICAL: Set recording start time in tile manager for tile generation
+                if (_tileManager != null)
+                {
+                    _tileManager.SetRecordingStart(start);
+                    _logger.Debug($"Tile manager recording start set to {start:yyyy-MM-dd HH:mm:ss}");
+                }
 
                 // Phase 8: Tile-based loading
                 if (_isTileBasedLoadingEnabled)
@@ -533,6 +555,7 @@ namespace AeroDebrief.UI.ViewModels
                 }
 
                 // Phase 5: Initialize viewport to show full range
+                // This won't trigger LoadTilesForCurrentViewportAsync because _isLoadingData is true
                 ViewportStart = start;
                 ViewportEnd = end;
                 
@@ -563,6 +586,11 @@ namespace AeroDebrief.UI.ViewModels
                 }
                 
                 throw;
+            }
+            finally
+            {
+                // Clear flag to allow viewport changes to trigger tile loading
+                _isLoadingData = false;
             }
         }
 
@@ -697,6 +725,10 @@ namespace AeroDebrief.UI.ViewModels
             IsLoadingTiles = true;
             LoadingStatusText = "Loading tiles...";
             
+            // CRITICAL: Set _isLoadingData to prevent viewport changes during tile processing
+            var wasLoadingData = _isLoadingData;
+            _isLoadingData = true;
+
             var stopwatch = System.Diagnostics.Stopwatch.StartNew();
 
             try
@@ -721,7 +753,7 @@ namespace AeroDebrief.UI.ViewModels
                 _logger.Info($"Loaded {tileList.Count} tiles");
                 LoadingStatusText = $"Processing {tileList.Count} tiles...";
 
-                // Process tiles and update series
+                // Process tiles and update series (protected by _isLoadingData flag)
                 ProcessTiles(tileList);
 
                 LoadingStatusText = "Optimizing memory...";
@@ -772,6 +804,12 @@ namespace AeroDebrief.UI.ViewModels
             {
                 IsLoadingTiles = false;
                 stopwatch.Stop();
+                
+                // Restore previous _isLoadingData state (only clear if we set it)
+                if (!wasLoadingData)
+                {
+                    _isLoadingData = false;
+                }
             }
         }
 
@@ -781,6 +819,9 @@ namespace AeroDebrief.UI.ViewModels
         private void ProcessTiles(List<SeriesTile> tiles)
         {
             _logger.Debug($"ProcessTiles: Processing {tiles.Count} tiles");
+            
+            // CRITICAL: Batch all series additions to prevent multiple property change notifications
+            var seriesToAdd = new List<ISeries>();
             
             foreach (var tile in tiles)
             {
@@ -821,9 +862,11 @@ namespace AeroDebrief.UI.ViewModels
                     
                     _logger.Debug($"Created new series: Key={key}, SeriesName={series.Name}, Visible={initialVisibility}, Points={tile.Points.Count}");
                     
-                    // Phase 7: Add to Series collection with IsVisible set
+                    // Phase 7: Set IsVisible property
                     series.IsVisible = initialVisibility;
-                    Series.Add(series);
+                    
+                    // Add to batch list instead of adding directly
+                    seriesToAdd.Add(series);
                 }
                 else
                 {
@@ -845,6 +888,16 @@ namespace AeroDebrief.UI.ViewModels
                         lineSeries.Values = allPoints;
                         _logger.Debug($"Updated existing series: Key={key}, Points={allPoints.Length} (was {existingPoints.Length}, added {newPoints.Count()})");
                     }
+                }
+            }
+
+            // Add all new series in one batch to minimize property change notifications
+            if (seriesToAdd.Count > 0)
+            {
+                _logger.Debug($"Adding {seriesToAdd.Count} new series to collection");
+                foreach (var series in seriesToAdd)
+                {
+                    Series.Add(series);
                 }
             }
 
@@ -971,18 +1024,44 @@ namespace AeroDebrief.UI.ViewModels
 
         /// <summary>
         /// Parse series key into frequency and pilot IDs.
-        /// Format: "251000000-PILOT123" or "251000000" (frequency only)
+        /// Format from AmplitudeSeriesProvider: "F251.0-P1" (MHz with F prefix, pilot index with P prefix)
+        /// Also supports legacy formats: "251000000-PILOT123" or "251000000" (frequency only)
         /// </summary>
-        private (string? frequencyId, string? pilotId) ParseSeriesKey(string key)
+        public (string? frequencyId, string? pilotId) ParseSeriesKey(string key)
         {
-            var parts = key.Split('-');
-            if (parts.Length == 0)
+            if (string.IsNullOrEmpty(key))
                 return (null, null);
             
-            if (parts.Length == 1)
-                return (parts[0], null);
+            // Check for new format: "F251.0-P1"
+            if (key.StartsWith("F") && key.Contains("-P"))
+            {
+                var parts = key.Split('-');
+                if (parts.Length >= 2)
+                {
+                    // Extract frequency: "F251.0" -> "251.0"
+                    var freqStr = parts[0].Substring(1); // Remove "F" prefix
+                    
+                    // Extract pilot: "P1" -> "P1" (keep the P prefix for consistency)
+                    var pilotStr = parts.Length > 1 ? parts[1] : null;
+                    
+                    // Convert MHz to Hz for internal storage
+                    if (double.TryParse(freqStr, out var freqMHz))
+                    {
+                        var freqHz = freqMHz * 1_000_000.0;
+                        return ($"{freqHz:F0}", pilotStr);
+                    }
+                }
+            }
             
-            return (parts[0], parts[1]);
+            // Legacy format: "251000000-PILOT123" or "251000000"
+            var legacyParts = key.Split('-');
+            if (legacyParts.Length == 0)
+                return (null, null);
+            
+            if (legacyParts.Length == 1)
+                return (legacyParts[0], null);
+            
+            return (legacyParts[0], legacyParts[1]);
         }
 
         /// <summary>
@@ -1004,9 +1083,12 @@ namespace AeroDebrief.UI.ViewModels
             // This is better for LiveCharts2 animation and state management
             
             int visibleCount = 0;
+            bool anyChanges = false;
             
             foreach (var series in Series)
             {
+                var previousVisibility = series.IsVisible;
+                
                 // Try to find matching key in _seriesVisibility
                 // Support multiple key formats: "251-SHARK-1-1", "pilot:251.0:SHARK-1-1", etc.
                 var seriesKey = _seriesVisibility.Keys.FirstOrDefault(k => 
@@ -1019,6 +1101,9 @@ namespace AeroDebrief.UI.ViewModels
                     series.IsVisible = shouldBeVisible;
                     if (shouldBeVisible)
                         visibleCount++;
+                    
+                    if (previousVisibility != shouldBeVisible)
+                        anyChanges = true;
                 }
                 else if (_seriesVisibility.TryGetValue(series.Name, out var visible))
                 {
@@ -1026,22 +1111,55 @@ namespace AeroDebrief.UI.ViewModels
                     series.IsVisible = visible;
                     if (visible)
                         visibleCount++;
+                    
+                    if (previousVisibility != visible)
+                        anyChanges = true;
                 }
                 else
                 {
-                    // No explicit state found - keep series visible by default
-                    // Don't modify series.IsVisible, let it stay as initialized
-                    if (series.IsVisible)
-                        visibleCount++;
+                    // No explicit state found - check if ANY key in _seriesVisibility matches this series
+                    // If _seriesVisibility is populated but no match found, series should be hidden
+                    // If _seriesVisibility is empty (initial load), series should be visible by default
+                    
+                    if (_seriesVisibility.Count > 0)
+                    {
+                        // Visibility state exists but no match - this series should be hidden
+                        series.IsVisible = false;
+                        _logger.Debug($"No visibility state found for series '{series.Name}', hiding it");
+                        
+                        if (previousVisibility != false)
+                            anyChanges = true;
+                    }
+                    else
+                    {
+                        // No visibility state at all - keep initial visibility
+                        if (series.IsVisible)
+                            visibleCount++;
+                    }
                 }
             }
             
             VisibleSeriesCount = visibleCount;
-            _logger.Debug($"Updated series visibility: {VisibleSeriesCount} visible / {Series.Count} total");
+            _logger.Debug($"Updated series visibility: {VisibleSeriesCount} visible / {Series.Count} total (changes: {anyChanges})");
             
-            // CRITICAL FIX: Force LiveCharts2 to recognize visibility changes
-            // Trigger collection change notification to force chart redraw
-            OnPropertyChanged(nameof(Series));
+            if (anyChanges)
+            {
+                // CRITICAL FIX: Force LiveCharts2 to recognize visibility changes
+                // Multiple strategies to ensure chart redraws:
+                
+                // 1. Notify that Series collection changed
+                OnPropertyChanged(nameof(Series));
+                
+                // 2. Create a new array reference to force collection change detection
+                var seriesArray = Series.ToArray();
+                Series.Clear();
+                foreach (var s in seriesArray)
+                {
+                    Series.Add(s);
+                }
+                
+                _logger.Debug("Forced Series collection refresh to update chart");
+            }
         }
         
         /// <summary>
@@ -1176,6 +1294,17 @@ namespace AeroDebrief.UI.ViewModels
                     
                     _seriesVisibility[matchingKey] = visible;
                     _logger.Debug($"Set visibility: {matchingKey} = {visible}");
+                    
+                    // CRITICAL FIX: Also update IsVisible on the actual series object
+                    var series = Series.FirstOrDefault(s => 
+                        s.Name == matchingKey || 
+                        s.Name.Contains(actualFreqKey) && s.Name.Contains(pilotId));
+                    
+                    if (series != null)
+                    {
+                        series.IsVisible = visible;
+                        _logger.Debug($"Updated series.IsVisible: {series.Name} = {visible}");
+                    }
                 }
 
                 RebuildVisibleSeries();
@@ -1240,6 +1369,18 @@ namespace AeroDebrief.UI.ViewModels
             try
             {
                 _seriesVisibility[matchingKey] = visible;
+                
+                // CRITICAL FIX: Also update IsVisible on the actual series object
+                var series = Series.FirstOrDefault(s => 
+                    s.Name == matchingKey || 
+                    s.Name.Contains(frequencyId) && s.Name.Contains(pilotId));
+                
+                if (series != null)
+                {
+                    series.IsVisible = visible;
+                    _logger.Debug($"Updated series.IsVisible: {series.Name} = {visible}");
+                }
+                
                 RebuildVisibleSeries();
 
                 // Phase 7: Sync to audio mixer
@@ -1734,7 +1875,7 @@ namespace AeroDebrief.UI.ViewModels
             key = key.Replace("freq:", "").Replace("pilot:", "");
             
             // Split by separators and find the numeric part
-            var parts = key.Split(new[] { ':', '-', ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            var parts = key.Split(new[] { ':', '-' }, StringSplitOptions.RemoveEmptyEntries);
             
             foreach (var part in parts)
             {
@@ -1904,6 +2045,41 @@ namespace AeroDebrief.UI.ViewModels
         public void IncrementFrameCount()
         {
             _frameCount++;
+        }
+
+        /// <summary>
+        /// Phase 12: Reconnects the ViewModel to a new data source (e.g., when switching from synthetic to real recording data).
+        /// This allows switching from test data to actual recording data after a file is loaded.
+        /// </summary>
+        public void SetDataSource(IAmplitudeSeriesProvider provider)
+        {
+            if (provider == null)
+                throw new ArgumentNullException(nameof(provider));
+
+            _logger.Info("Phase 12: Reconnecting to new data source (RAW DATA MODE - tiles disabled)");
+
+            try
+            {
+                // Replace the amplitude provider
+                _amplitudeProvider = provider;
+
+                // CRITICAL: Do NOT create tile manager - it causes infinite loops
+                // The tile system needs pre-generated tiles from a database, not on-demand generation
+                // For now, use raw data loading which is fast enough for 25-minute recordings
+                _tileCache = null;
+                _tileManager = null;
+                
+                // Force tile-based loading to remain disabled
+                _isTileBasedLoadingEnabled = false;
+
+                _logger.Info("Phase 12: Data source reconnected successfully (RAW DATA MODE)");
+                _logger.Info("Phase 12: Will use LoadRawDataAsync() - fast enough for typical recordings");
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex, "Phase 12: Failed to reconnect data source");
+                throw;
+            }
         }
 
         /// <summary>

@@ -136,7 +136,7 @@ namespace AeroDebrief.UI.Controls
             {
                 FileOverlay?.Close();
                 
-                // Phase 12: Connect UnifiedGraph playhead to PlaybackController
+                // Phase 12: Connect UnifiedGraph to real recording data
                 try
                 {
                     var playbackController = ViewModel?.PlaybackController;
@@ -151,10 +151,45 @@ namespace AeroDebrief.UI.Controls
                     {
                         _logger.Error($"Phase 12: Failed to initialize UnifiedGraph - PlaybackController: {playbackController != null}, UnifiedGraph: {UnifiedGraph != null}");
                     }
+
+                    // Phase 12: Connect GraphViewModel to real recording data source
+                    if (ViewModel?.SessionManager != null && ViewModel?.GraphViewModel != null)
+                    {
+                        var packetSource = ViewModel.SessionManager.PacketSource;
+
+                        if (packetSource != null)
+                        {
+                            _logger.Info("Phase 12: Connecting GraphViewModel to recording data source");
+                            
+                            // Create an AudioProcessingEngine for amplitude extraction
+                            var audioEngine = new Core.Audio.AudioProcessingEngine();
+                            
+                            // Create new AmplitudeSeriesProvider with real data pipeline
+                            var amplitudeProvider = new Services.Graphs.AmplitudeSeriesProvider(packetSource, audioEngine);
+                            
+                            _logger.Info($"Phase 12: Recording data sources ready - PacketSource: {packetSource.TotalPackets} packets, Duration: {packetSource.TotalDuration}");
+                            
+                            // Connect the real data source to the GraphViewModel
+                            ViewModel.GraphViewModel.SetDataSource(amplitudeProvider);
+                            _logger.Info("? Phase 12: GraphViewModel connected to real recording data successfully!");
+                            
+                            // NOTE: LoadDataAsync() will be called by UnifiedPlayerViewModel.LoadFrequenciesAsync()
+                            // We only set up the data source here, the actual loading happens in the ViewModel
+                            _logger.Info("Phase 12: Data source connected. UnifiedPlayerViewModel will handle graph data loading.");
+                        }
+                        else
+                        {
+                            _logger.Warn("Phase 12: Cannot connect GraphViewModel - PacketSource is null");
+                        }
+                    }
+                    else
+                    {
+                        _logger.Warn($"Phase 12: Cannot access SessionManager or GraphViewModel - SessionManager: {ViewModel?.SessionManager != null}, GraphViewModel: {ViewModel?.GraphViewModel != null}");
+                    }
                 }
                 catch (Exception ex)
                 {
-                    _logger.Error(ex, "Phase 12: Error initializing UnifiedGraph with PlaybackController");
+                    _logger.Error(ex, "Phase 12: Error initializing graph with real recording data");
                 }
             });
         }

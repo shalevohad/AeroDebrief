@@ -42,5 +42,8 @@
       <Link>Shaders\%(Filename)%(Extension)</Link>
     </None>
   </ItemGroup>
+  <ItemGroup>
+    <Folder Include="Storage\" />
+  </ItemGroup>
 
 </Project>

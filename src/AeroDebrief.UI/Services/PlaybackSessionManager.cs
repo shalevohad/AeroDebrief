@@ -100,7 +100,7 @@ namespace AeroDebrief.UI.Services
                 progress?.Report("Opening file...");
                 _packetSource = new FilePacketSource(filePath);
                 await _packetSource.OpenAsync(progress);
-                Logger.Info($"? FilePacketSource ready: {_packetSource.TotalPackets} packets, {_packetSource.TotalDuration}");
+                Logger.Info($"FilePacketSource ready: {_packetSource.TotalPackets} packets, {_packetSource.TotalDuration}");
                 progress?.Report($"File ready: {_packetSource.TotalPackets:N0} packets");
 
                 // STEP 2: Create FilePlaybackPipeline (shares packet source)
@@ -113,9 +113,9 @@ namespace AeroDebrief.UI.Services
 
                 _currentFilePath = filePath;
 
-                Logger.Info($"? Session loaded successfully");
-                Logger.Info($"?? Memory-mapped packets: {_packetSource.TotalPackets}");
-                Logger.Info($"?? RAM usage: ~10MB (Pure FilePacketSource Architecture)");
+                Logger.Info($"- Session loaded successfully");
+                Logger.Info($"-- Memory-mapped packets: {_packetSource.TotalPackets}");
+                Logger.Info($"-- RAM usage: ~10MB (Pure FilePacketSource Architecture)");
                 progress?.Report("Session loaded successfully");
 
                 // Raise event

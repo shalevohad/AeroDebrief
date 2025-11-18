@@ -27,12 +27,14 @@ namespace AeroDebrief.UI.Services.Graphs
         
         // Dependencies
         private readonly IDataTileCache _tileCache;
+        private readonly IAmplitudeSeriesProvider? _amplitudeProvider;
         
         // State
         private readonly Dictionary<string, CachedTile> _loadedTiles = new();
         private readonly object _lock = new();
         private long _memoryBudgetBytes = Constants.TILE_CACHE_MEMORY_BUDGET_BYTES;
         private TimeSpan _tileSize = TimeSpan.FromMinutes(Constants.TILE_SIZE_MINUTES);
+        private DateTime _recordingStart = DateTime.MinValue;
         
         // Statistics
         private int _cacheHitCount;
@@ -68,10 +70,22 @@ namespace AeroDebrief.UI.Services.Graphs
         /// Creates a new DataTileManager.
         /// </summary>
         /// <param name="tileCache">Phase 3 tile cache for loading data from database</param>
-        public DataTileManager(IDataTileCache tileCache)
+        /// <param name="amplitudeProvider">Optional amplitude provider for generating tiles on-demand</param>
+        public DataTileManager(IDataTileCache tileCache, IAmplitudeSeriesProvider? amplitudeProvider = null)
         {
             _tileCache = tileCache ?? throw new ArgumentNullException(nameof(tileCache));
+            _amplitudeProvider = amplitudeProvider;
             Logger.Info($"DataTileManager initialized (Budget: {_memoryBudgetBytes / (1024.0 * 1024.0):F1} MB, TileSize: {_tileSize.TotalMinutes:F1} min)");
+        }
+        
+        /// <summary>
+        /// Sets the recording start time for tile generation.
+        /// Must be called before loading tiles if using amplitude provider.
+        /// </summary>
+        public void SetRecordingStart(DateTime recordingStart)
+        {
+            _recordingStart = recordingStart;
+            Logger.Debug($"Recording start time set: {recordingStart:yyyy-MM-dd HH:mm:ss}");
         }
         
         /// <inheritdoc/>
@@ -333,9 +347,126 @@ namespace AeroDebrief.UI.Services.Graphs
         }
         
         /// <summary>
-        /// Loads a single tile from the Phase 3 database cache.
+        /// Loads a single tile from the Phase 3 database cache or generates it from amplitude provider.
         /// </summary>
         private async Task<SeriesTile?> LoadTileFromDatabaseAsync(
+            TileRequest request,
+            CancellationToken ct)
+        {
+            try
+            {
+                // If we have an amplitude provider, generate tiles on-demand
+                if (_amplitudeProvider != null && _recordingStart != DateTime.MinValue)
+                {
+                    return await GenerateTileFromAmplitudeDataAsync(request, ct);
+                }
+                
+                // Fallback to Phase 3 cache (for legacy support)
+                return await LoadTileFromCacheAsync(request, ct);
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, $"Failed to load tile: {request.Frequency:F0} [{request.StartTime:HH:mm:ss}-{request.EndTime:HH:mm:ss}]");
+                return null;
+            }
+        }
+        
+        /// <summary>
+        /// Generates a tile on-demand from the amplitude provider.
+        /// </summary>
+        private async Task<SeriesTile?> GenerateTileFromAmplitudeDataAsync(
+            TileRequest request,
+            CancellationToken ct)
+        {
+            var points = new List<AmplitudePoint>();
+            
+            // Query amplitude data for this tile's time range
+            await foreach (var (key, seriesPoints) in _amplitudeProvider!.GetSeriesAsync(request.StartTime, request.EndTime, ct))
+            {
+                // Parse the series key to get frequency and pilot
+                var (freqStr, pilotId) = ParseSeriesKey(key);
+                
+                if (freqStr == null)
+                    continue;
+                
+                // Check if this series matches our request
+                if (double.TryParse(freqStr, out var freq) && Math.Abs(freq - request.Frequency) < 0.1)
+                {
+                    // Convert ObservablePoints to AmplitudePoints
+                    foreach (var point in seriesPoints)
+                    {
+                        points.Add(new AmplitudePoint
+                        {
+                            Time = request.StartTime + TimeSpan.FromSeconds(point.X ?? 0),
+                            Amplitude = point.Y ?? 0
+                        });
+                    }
+                }
+            }
+            
+            if (points.Count == 0)
+            {
+                Logger.Debug($"No amplitude data found for tile: {request.Frequency:F0} [{request.StartTime:HH:mm:ss}-{request.EndTime:HH:mm:ss}]");
+                return null;
+            }
+            
+            // Create tile (MemoryBytes is computed automatically from Points.Count)
+            var tile = new SeriesTile
+            {
+                Frequency = request.Frequency,
+                PilotId = request.PilotId,
+                StartTime = request.StartTime,
+                EndTime = request.EndTime,
+                Resolution = request.Resolution,
+                Points = points
+            };
+            
+            Logger.Debug($"Generated tile: {request.Frequency:F0} [{request.StartTime:HH:mm:ss}-{request.EndTime:HH:mm:ss}], {points.Count} points");
+            return tile;
+        }
+        
+        /// <summary>
+        /// Parse series key from amplitude provider format.
+        /// Format: "F251.0-P1" or "251000000-PILOT123"
+        /// </summary>
+        private (string? frequencyId, string? pilotId) ParseSeriesKey(string key)
+        {
+            if (string.IsNullOrEmpty(key))
+                return (null, null);
+            
+            // Check for new format: "F251.0-P1"
+            if (key.StartsWith("F") && key.Contains("-P"))
+            {
+                var parts = key.Split('-');
+                if (parts.Length >= 2)
+                {
+                    var freqStr = parts[0].Substring(1); // Remove "F" prefix
+                    var pilotStr = parts.Length > 1 ? parts[1] : null;
+                    
+                    // Convert MHz to Hz for internal storage
+                    if (double.TryParse(freqStr, out var freqMHz))
+                    {
+                        var freqHz = freqMHz * 1_000_000.0;
+                        return ($"{freqHz:F0}", pilotStr);
+                    }
+                }
+            }
+            
+            // Legacy format: "251000000-PILOT123" or "251000000"
+            var legacyParts = key.Split('-');
+            if (legacyParts.Length == 0)
+                return (null, null);
+            
+            if (legacyParts.Length == 1)
+                return (legacyParts[0], null);
+            
+            return (legacyParts[0], legacyParts[1]);
+        }
+        
+        /// <summary>
+        /// Loads a tile from the Phase 3 cache (legacy support).
+        /// </summary>
+        private async Task<SeriesTile?> LoadTileFromCacheAsync(
             TileRequest request,
             CancellationToken ct)
         {
@@ -346,15 +477,12 @@ namespace AeroDebrief.UI.Services.Graphs
                 var level = ResolutionToLevel(request.Resolution);
                 
                 // Load tile from Phase 3 cache
-                // Note: Phase 3 cache uses TimeSpan, we need to convert DateTime
-                var recordingStart = DateTime.MinValue; // TODO: Get from recording metadata
-                var tileStartSpan = request.StartTime - recordingStart;
-                var tileEndSpan = request.EndTime - recordingStart;
+                var tileStartSpan = request.StartTime - _recordingStart;
+                var tileEndSpan = request.EndTime - _recordingStart;
                 
                 DataTile<string>? dataTile = null;
                 
                 // Use GetOrCreateTile with a factory that returns null if data doesn't exist
-                // This is a temporary implementation - in production we'd query the database directly
                 await Task.Run(() =>
                 {
                     dataTile = _tileCache.GetOrCreateTile(
@@ -367,7 +495,7 @@ namespace AeroDebrief.UI.Services.Graphs
                 
                 if (dataTile == null)
                 {
-                    Logger.Debug($"Tile not found in database: {cacheKey} [{request.StartTime:HH:mm:ss}-{request.EndTime:HH:mm:ss}] @ L{level}");
+                    Logger.Debug($"Tile not found in cache: {cacheKey} [{request.StartTime:HH:mm:ss}-{request.EndTime:HH:mm:ss}] @ L{level}");
                     return null;
                 }
                 
@@ -387,7 +515,7 @@ namespace AeroDebrief.UI.Services.Graphs
                 for (int i = 0; i < samples.Length; i++)
                 {
                     var point = samples[i];
-                    var time = recordingStart.AddSeconds(point.X ?? 0); // X is time in seconds
+                    var time = _recordingStart.AddSeconds(point.X ?? 0); // X is time in seconds
                     var amplitude = point.Y ?? 0; // Y is amplitude in dB
                     
                     seriesTile.Points.Add(new AmplitudePoint(time, amplitude));
