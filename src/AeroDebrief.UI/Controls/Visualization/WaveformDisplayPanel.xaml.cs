@@ -6,14 +6,14 @@ using System.Windows.Media;
 using AeroDebrief.UI.Helpers;
 using AeroDebrief.UI.Events;
 using AeroDebrief.UI.ViewModels;
-using AeroDebrief.UI.Services.Graphs;
+using AeroDebrief.UI.Services.Visualization.Graphs;
 using AeroDebrief.UI.Services;
 using AeroDebrief.UI.Models;
 using AeroDebrief.Core.IO;
 using AeroDebrief.Core.Audio;
 using FontAwesome.WPF;
 
-namespace AeroDebrief.UI.Controls.Player
+namespace AeroDebrief.UI.Controls.Visualization
 {
     /// <summary>
     /// Phase 12: Migrated waveform display panel using UnifiedGraphControl.
@@ -45,22 +45,8 @@ namespace AeroDebrief.UI.Controls.Player
 
         #region Dependency Properties
 
-        // Keep existing dependency properties for backward compatibility
+        // Legacy dependency properties removed - now using direct IPacketSource binding via UnifiedGraphControl
         
-        public static readonly DependencyProperty WaveformDataProperty =
-            DependencyProperty.Register(
-                nameof(WaveformData),
-                typeof(float[]),
-                typeof(WaveformDisplayPanel),
-                new PropertyMetadata(null, OnWaveformDataChanged));
-
-        public static readonly DependencyProperty FrequencyWaveformsProperty =
-            DependencyProperty.Register(
-                nameof(FrequencyWaveforms),
-                typeof(Dictionary<double, FrequencyWaveformData>),
-                typeof(WaveformDisplayPanel),
-                new PropertyMetadata(null, OnFrequencyWaveformsPropertyChanged));
-
         public static readonly DependencyProperty PlayheadPositionProperty =
             DependencyProperty.Register(
                 nameof(PlayheadPosition),
@@ -184,17 +170,8 @@ namespace AeroDebrief.UI.Controls.Player
 
         #region Properties
 
-        public float[]? WaveformData
-        {
-            get => (float[]?)GetValue(WaveformDataProperty);
-            set => SetValue(WaveformDataProperty, value);
-        }
-
-        public Dictionary<double, FrequencyWaveformData>? FrequencyWaveforms
-        {
-            get => (Dictionary<double, FrequencyWaveformData>?)GetValue(FrequencyWaveformsProperty);
-            set => SetValue(FrequencyWaveformsProperty, value);
-        }
+        // Legacy properties removed - WaveformData and FrequencyWaveforms
+        // Visualization now handled by UnifiedGraphControl with direct IPacketSource binding
 
         public double PlayheadPosition
         {
@@ -554,22 +531,6 @@ namespace AeroDebrief.UI.Controls.Player
 
         #region Property Change Handlers - Phase 12
 
-        private static void OnWaveformDataChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
-        {
-            if (d is WaveformDisplayPanel panel)
-            {
-                panel.UpdateWaveformData();
-            }
-        }
-
-        private static void OnFrequencyWaveformsPropertyChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
-        {
-            if (d is WaveformDisplayPanel panel)
-            {
-                panel.UpdateFrequencyWaveforms();
-            }
-        }
-
         private static void OnPlayheadPositionChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
         {
             if (d is WaveformDisplayPanel panel)
@@ -618,7 +579,7 @@ namespace AeroDebrief.UI.Controls.Player
 
         private async void UpdateWaveformData()
         {
-            if (UnifiedGraphViewModel == null || (WaveformData == null && FrequencyWaveforms == null)) return;
+            if (UnifiedGraphViewModel == null) return;
 
             try
             {
@@ -649,8 +610,7 @@ namespace AeroDebrief.UI.Controls.Player
 
         private async void UpdateFrequencyWaveforms()
         {
-            // Frequency waveforms are handled together with waveform data
-            // Just trigger the same update
+            // Legacy method - now handled by UpdateWaveformData
             await Task.Run(() => UpdateWaveformData());
         }
 

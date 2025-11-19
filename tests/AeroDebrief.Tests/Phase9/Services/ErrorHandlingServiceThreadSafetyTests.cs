@@ -1,6 +1,7 @@
 using Xunit;
 using FluentAssertions;
 using AeroDebrief.UI.Services;
+using AeroDebrief.UI.Services.Visualization.Graphs;
 using NLog;
 using System.Threading.Tasks;
 using System;

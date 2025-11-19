@@ -4,6 +4,7 @@ using System.Windows.Input;
 using AeroDebrief.Core.Audio;
 using AeroDebrief.Core.Playback;
 using AeroDebrief.UI.Services;
+using AeroDebrief.UI.Services.Data;
 using NLog;
 
 namespace AeroDebrief.UI.ViewModels.Player

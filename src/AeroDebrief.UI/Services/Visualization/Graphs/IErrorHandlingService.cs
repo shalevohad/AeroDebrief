@@ -1,4 +1,4 @@
-namespace AeroDebrief.UI.Services;
+namespace AeroDebrief.UI.Services.Visualization.Graphs;
 
 /// <summary>
 /// Service for handling and displaying errors to the user with recovery options.

@@ -9,7 +9,7 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using NLog;
 
-namespace AeroDebrief.UI.Services;
+namespace AeroDebrief.UI.Services.Visualization.Graphs;
 
 /// <summary>
 /// Service for handling and displaying errors to the user.

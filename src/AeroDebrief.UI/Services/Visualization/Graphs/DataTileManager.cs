@@ -8,7 +8,7 @@ using AeroDebrief.Core;
 using AeroDebrief.UI.Models;
 using NLog;
 
-namespace AeroDebrief.UI.Services.Graphs
+namespace AeroDebrief.UI.Services.Visualization.Graphs
 {
     /// <summary>
     /// Manages loading and caching of data tiles for efficient viewport rendering.

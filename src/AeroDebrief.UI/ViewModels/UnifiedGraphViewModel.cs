@@ -2,21 +2,24 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
+using AeroDebrief.Core.IO;
+using AeroDebrief.UI.Charts;
+using AeroDebrief.UI.Commands;
+using AeroDebrief.UI.Models;
+using AeroDebrief.UI.Services;
+using AeroDebrief.UI.Services.Visualization.Graphs;
 using LiveChartsCore;
+using LiveChartsCore.Defaults;
 using LiveChartsCore.SkiaSharpView;
 using LiveChartsCore.SkiaSharpView.Painting;
-using LiveChartsCore.Defaults;
-using AeroDebrief.UI.Services.Graphs;
-using AeroDebrief.UI.Services;
-using AeroDebrief.UI.Charts;
-using AeroDebrief.UI.Models;
-using AeroDebrief.UI.Commands;
 using SkiaSharp;
+using NLog;
 
 namespace AeroDebrief.UI.ViewModels
 {

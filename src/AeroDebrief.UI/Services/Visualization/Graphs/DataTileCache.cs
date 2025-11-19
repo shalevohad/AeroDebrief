@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using NLog;
 
-namespace AeroDebrief.UI.Services.Graphs
+namespace AeroDebrief.UI.Services.Visualization.Graphs
 {
     /// <summary>
     /// Represents a data tile at a specific time range and resolution level.

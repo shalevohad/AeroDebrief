@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using AeroDebrief.UI.Services.Graphs;
+using AeroDebrief.UI.Services.Visualization.Graphs;
 using LiveChartsCore.Defaults;
 
 namespace AeroDebrief.Tests.TestHelpers

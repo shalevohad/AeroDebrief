@@ -2,7 +2,7 @@ using System;
 using System.Windows.Threading;
 using AeroDebrief.Core.Playback;
 
-namespace AeroDebrief.UI.Services.Graphs
+namespace AeroDebrief.UI.Services.Visualization.Graphs
 {
     /// <summary>
     /// Synchronizes chart playhead with audio playback engine.

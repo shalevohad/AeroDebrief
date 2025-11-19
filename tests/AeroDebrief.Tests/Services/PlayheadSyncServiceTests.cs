@@ -1,5 +1,5 @@
 using Xunit;
-using AeroDebrief.UI.Services.Graphs;
+using AeroDebrief.UI.Services.Visualization.Graphs;
 using System;
 
 namespace AeroDebrief.Tests.Services

@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Threading.Tasks;
 using AeroDebrief.UI.ViewModels;
 using AeroDebrief.UI.Services;
+using AeroDebrief.UI.Services.Visualization.Graphs;
 using AeroDebrief.Tests.TestHelpers;
 using NLog;
 

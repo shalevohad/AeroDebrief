@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using AeroDebrief.UI.ViewModels;
 using AeroDebrief.UI.Controls.Player;
 using AeroDebrief.UI.Events;
+using AeroDebrief.UI.Services.Visualization.Graphs;
 
 namespace AeroDebrief.UI.Controls
 {
@@ -165,7 +166,7 @@ namespace AeroDebrief.UI.Controls
                             var audioEngine = new Core.Audio.AudioProcessingEngine();
                             
                             // Create new AmplitudeSeriesProvider with real data pipeline
-                            var amplitudeProvider = new Services.Graphs.AmplitudeSeriesProvider(packetSource, audioEngine);
+                            var amplitudeProvider = new AmplitudeSeriesProvider(packetSource, audioEngine);
                             
                             _logger.Info($"Phase 12: Recording data sources ready - PacketSource: {packetSource.TotalPackets} packets, Duration: {packetSource.TotalDuration}");
                             

@@ -8,7 +8,7 @@ using AeroDebrief.Core.Audio;
 using AeroDebrief.Core.IO;
 using AeroDebrief.Tests.TestHelpers;
 using AeroDebrief.UI.Services.Audio;
-using AeroDebrief.UI.Services.Graphs;
+using AeroDebrief.UI.Services.Visualization.Graphs;
 using NLog;
 
 namespace AeroDebrief.Tests.Graphs

@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 using Xunit;
 using LiveChartsCore.Defaults;
 using AeroDebrief.UI.ViewModels;
-using AeroDebrief.UI.Services.Graphs;
+using AeroDebrief.UI.Services.Visualization.Graphs;
 
 namespace AeroDebrief.Tests.ViewModels
 {

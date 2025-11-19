@@ -1,7 +1,7 @@
 using Xunit;
 using FluentAssertions;
 using AeroDebrief.UI.ViewModels;
-using AeroDebrief.UI.Services.Graphs;
+using AeroDebrief.UI.Services.Visualization.Graphs;
 using AeroDebrief.UI.Services;
 using AeroDebrief.Tests.TestHelpers;
 using System;

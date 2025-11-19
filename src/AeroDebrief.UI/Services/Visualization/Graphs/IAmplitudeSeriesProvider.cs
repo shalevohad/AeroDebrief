@@ -4,7 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using LiveChartsCore.Defaults;
 
-namespace AeroDebrief.UI.Services.Graphs
+namespace AeroDebrief.UI.Services.Visualization.Graphs
 {
     /// <summary>
     /// Interface for providing amplitude time series data for visualization.

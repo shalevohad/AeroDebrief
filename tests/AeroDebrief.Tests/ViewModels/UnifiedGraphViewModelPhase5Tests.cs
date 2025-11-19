@@ -1,6 +1,6 @@
 using Xunit;
 using AeroDebrief.UI.ViewModels;
-using AeroDebrief.UI.Services.Graphs;
+using AeroDebrief.UI.Services.Visualization.Graphs;
 using System;
 using System.Collections.Generic;
 using System.Linq;

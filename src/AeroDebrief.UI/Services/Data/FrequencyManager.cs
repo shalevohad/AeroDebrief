@@ -12,7 +12,7 @@ using AeroDebrief.UI.Charts;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Models.Player;
 using NLog;
 
-namespace AeroDebrief.UI.Services
+namespace AeroDebrief.UI.Services.Data
 {
     /// <summary>
     /// Service responsible for managing frequency data and selection state.

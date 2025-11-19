@@ -11,7 +11,7 @@ using AeroDebrief.UI.Services.Audio;
 using LiveChartsCore.Defaults;
 using NLog;
 
-namespace AeroDebrief.UI.Services.Graphs
+namespace AeroDebrief.UI.Services.Visualization.Graphs
 {
     /// <summary>
     /// Phase 2 implementation: Provides amplitude time series data for visualization.

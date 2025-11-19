@@ -13,6 +13,9 @@ using AeroDebrief.Core.Models;
 using AeroDebrief.Core.Storage;
 using AeroDebrief.UI.Commands;
 using AeroDebrief.UI.Services;
+using AeroDebrief.UI.Services.Data;
+using AeroDebrief.UI.Services.Audio;
+using AeroDebrief.UI.Services.Visualization.Graphs;
 using NLog;
 
 namespace AeroDebrief.UI.ViewModels
@@ -427,7 +430,7 @@ namespace AeroDebrief.UI.ViewModels
             // Phase 7 Step 4: Initialize graph view model with MixerController for audio sync
             // Phase 8: Tile system now enabled by default (DataTileCache and DataTileManager created automatically)
             _graphViewModel = new UnifiedGraphViewModel(
-                new Services.Graphs.AmplitudeSeriesProvider(),
+                new AmplitudeSeriesProvider(),
                 tileCache: null, // Will be created automatically with 300 MB default budget
                 _mixerController, // Pass mixer for bidirectional sync
                 tileManager: null, // Will be created automatically

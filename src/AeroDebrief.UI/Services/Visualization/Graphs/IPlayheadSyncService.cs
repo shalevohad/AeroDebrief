@@ -1,6 +1,6 @@
 using System;
 
-namespace AeroDebrief.UI.Services.Graphs
+namespace AeroDebrief.UI.Services.Visualization.Graphs
 {
     /// <summary>
     /// Synchronizes chart playhead with audio playback engine.
