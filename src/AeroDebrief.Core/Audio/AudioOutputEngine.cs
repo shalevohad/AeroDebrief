@@ -1,3 +1,5 @@
+using AeroDebrief.Core.Interfaces.Audio;
+using System;
 using NAudio.Wave;
 using NAudio.CoreAudioApi;
 using NLog;

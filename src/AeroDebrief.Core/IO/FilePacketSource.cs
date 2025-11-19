@@ -2,6 +2,8 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using NLog;
+using AeroDebrief.Core.Interfaces.Storage;
+using AeroDebrief.Core.Models;
 
 namespace AeroDebrief.Core.IO
 {

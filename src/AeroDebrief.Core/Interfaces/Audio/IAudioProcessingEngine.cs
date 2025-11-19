@@ -1,9 +1,10 @@
 using System;
 
-namespace AeroDebrief.Core.Audio
+namespace AeroDebrief.Core.Interfaces.Audio
 {
     /// <summary>
-    /// Interface for audio processing engines
+    /// Audio processing engine contract for decoding and processing audio packets.
+    /// Handles Opus decoding, volume control, and per-transmitter audio processing.
     /// </summary>
     public interface IAudioProcessingEngine : IDisposable
     {

@@ -45,7 +45,6 @@
     </None>
   </ItemGroup>
   <ItemGroup>
-    <Folder Include="Audio\Gpu\" />
     <Folder Include="Filtering\" />
     <Folder Include="Models\WaveformVisualization\" />
   </ItemGroup>

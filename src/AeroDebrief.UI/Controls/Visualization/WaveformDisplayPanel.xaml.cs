@@ -11,6 +11,8 @@ using AeroDebrief.UI.Services;
 using AeroDebrief.UI.Models;
 using AeroDebrief.Core.IO;
 using AeroDebrief.Core.Audio;
+using AeroDebrief.UI.Interfaces.Visualization;
+using AeroDebrief.Core.Interfaces.Audio;
 using FontAwesome.WPF;
 
 namespace AeroDebrief.UI.Controls.Visualization

@@ -6,6 +6,7 @@ using AeroDebrief.Core.Models;
 using AeroDebrief.Core.Helpers;
 using System;
 using System.Linq;
+using AeroDebrief.Core.Interfaces.Audio;
 
 namespace AeroDebrief.Core.Audio
 {

@@ -5,6 +5,8 @@ using AeroDebrief.Core.Audio;
 using AeroDebrief.Core.Models;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Models.Player;
 using NLog;
+using AeroDebrief.Core.Interfaces.Storage;
+using AeroDebrief.Core.Interfaces.Audio;
 
 namespace AeroDebrief.Core.Playback
 {

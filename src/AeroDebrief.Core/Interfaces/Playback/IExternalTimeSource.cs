@@ -1,9 +1,17 @@
 using System;
 
-namespace AeroDebrief.Core.Playback
+namespace AeroDebrief.Core.Interfaces.Playback
 {
     /// <summary>
-    /// Interface for external time sources (e.g., Tacview) that can control playback timing
+    /// External time source contract for synchronizing playback with external applications.
+    /// Primary use case: Tacview integration for synchronized mission replay.
+    /// 
+    /// Allows external applications to control:
+    /// - Current playback time
+    /// - Play/pause state
+    /// - Playback speed
+    /// 
+    /// AeroDebrief audio playback follows the external time source.
     /// </summary>
     public interface IExternalTimeSource
     {

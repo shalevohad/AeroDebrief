@@ -1,10 +1,11 @@
 using System;
 using System.Threading.Tasks;
 
-namespace AeroDebrief.Core.Audio
+namespace AeroDebrief.Core.Interfaces.Audio
 {
     /// <summary>
-    /// Interface for audio output engines
+    /// Audio output engine contract for rendering decoded audio to speakers.
+    /// Abstracts the underlying audio API (WASAPI, DirectSound, test implementations).
     /// </summary>
     public interface IAudioOutputEngine : IDisposable
     {

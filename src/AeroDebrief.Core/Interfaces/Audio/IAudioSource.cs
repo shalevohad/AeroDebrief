@@ -1,12 +1,12 @@
-using AeroDebrief.Core;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace AeroDebrief.Core.Audio
+namespace AeroDebrief.Core.Interfaces.Audio
 {
     /// <summary>
-    /// Interface for audio data sources that feed audio into the processing pipeline.
-    /// Enables testability by allowing injection of test audio sources.
+    /// Audio source contract for feeding audio into the processing pipeline.
+    /// Enables testability by allowing injection of test audio sources (e.g., synthetic audio).
+    /// Used primarily for unit testing UserWorker and FrequencyWorker without real packet sources.
     /// </summary>
     public interface IAudioSource
     {

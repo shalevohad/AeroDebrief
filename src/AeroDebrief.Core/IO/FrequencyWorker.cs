@@ -2,6 +2,8 @@ using System.Threading.Channels;
 using System.Diagnostics;
 using NLog;
 using AeroDebrief.Core.Audio;
+using AeroDebrief.Core.Interfaces.Audio;
+using AeroDebrief.Core.Models;
 
 namespace AeroDebrief.Core.IO
 {

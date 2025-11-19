@@ -6,6 +6,7 @@ using AeroDebrief.UI.Services;
 using AeroDebrief.Tests.TestHelpers;
 using System;
 using System.Threading.Tasks;
+using AeroDebrief.UI.Interfaces.Visualization;
 
 namespace AeroDebrief.Tests.Phase9.ViewModels
 {

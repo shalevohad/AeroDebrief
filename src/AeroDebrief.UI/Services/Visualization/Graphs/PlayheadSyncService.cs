@@ -1,3 +1,4 @@
+using AeroDebrief.UI.Interfaces.Visualization;
 using System;
 using System.Windows.Threading;
 using AeroDebrief.Core.Playback;

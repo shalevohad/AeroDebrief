@@ -2,6 +2,7 @@ using NLog;
 using System;
 using System.Threading.Tasks;
 using AeroDebrief.Core.Audio;
+using AeroDebrief.Core.Interfaces.Audio;
 
 namespace AeroDebrief.Core.Playback
 {

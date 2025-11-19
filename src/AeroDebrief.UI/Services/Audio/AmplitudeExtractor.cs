@@ -1,3 +1,4 @@
+using AeroDebrief.Core.Interfaces.Audio;
 using System;
 using System.Collections.Generic;
 using AeroDebrief.Core;
@@ -29,8 +30,7 @@ namespace AeroDebrief.UI.Services.Audio
         
         /// <summary>
         /// Create amplitude extractor with specified parameters.
-        /// </summary>
-        /// <param name="audioEngine">Audio processing engine for decoding</param>
+        /// /// <param name="audioEngine">Audio processing engine for decoding</param>
         /// <param name="sampleRate">Audio sample rate (typically 48000 Hz)</param>
         /// <param name="windowSizeMs">Peak detection window size in milliseconds (default 10ms)</param>
         /// <param name="hopSizeMs">Hop size between windows in milliseconds (default 5ms)</param>

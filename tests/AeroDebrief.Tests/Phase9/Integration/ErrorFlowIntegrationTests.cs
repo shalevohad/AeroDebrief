@@ -7,6 +7,7 @@ using AeroDebrief.Tests.TestHelpers;
 using NLog;
 using System;
 using System.Threading.Tasks;
+using AeroDebrief.UI.Interfaces.Visualization;
 
 namespace AeroDebrief.Tests.Phase9.Integration
 {

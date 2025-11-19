@@ -1,14 +1,18 @@
 using System;
 using System.Collections.Generic;
-using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
+using AeroDebrief.Core.IO;
 
-namespace AeroDebrief.Core.IO
+namespace AeroDebrief.Core.Interfaces.Storage
 {
     /// <summary>
-    /// Interface for packet sources that can provide audio packets for playback.
-    /// Abstracts the underlying storage mechanism (file-based, database, etc.)
+    /// Packet source contract for providing audio packets for playback.
+    /// Abstracts the underlying storage mechanism:
+    /// - FilePacketSource: Memory-mapped .adb files
+    /// - DuckDBPacketSource: DuckDB database (.cvr, .duckdb)
+    /// 
+    /// Enables unified playback pipeline regardless of source format.
     /// </summary>
     public interface IPacketSource : IDisposable
     {
