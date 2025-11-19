@@ -21,8 +21,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="DuckDB.NET.Data" Version="1.4.1" />
     <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
     <PackageReference Include="NLog" Version="6.0.0" />
+    <PackageReference Include="SharpCompress" Version="0.41.0" />
     <PackageReference Include="sharpconfig" Version="3.2.9.1" />
     <PackageReference Include="System.Drawing.Common" Version="8.0.0" />
     <PackageReference Include="Vortice.Direct3D11" Version="3.5.0" />
@@ -41,9 +43,6 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Link>Shaders\%(Filename)%(Extension)</Link>
     </None>
-  </ItemGroup>
-  <ItemGroup>
-    <Folder Include="Storage\" />
   </ItemGroup>
 
 </Project>

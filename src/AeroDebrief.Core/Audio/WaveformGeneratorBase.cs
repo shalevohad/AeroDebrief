@@ -177,10 +177,40 @@ namespace AeroDebrief.Core.Audio
         }
 
         /// <summary>
-        /// NEW: Generates waveform from FilePacketSource (memory-mapped, indexed reading)
-        /// This is 20-30x faster and uses 10x less RAM than loading all packets
+        /// Generates waveform from IPacketSource (memory-mapped, efficient)
+        /// Default implementation - subclasses should override for optimal performance
         /// </summary>
-        public async Task<WaveformData> GenerateWaveformFromSourceAsync(
+        public virtual async Task<WaveformData> GenerateWaveformFromSourceAsync(
+            IPacketSource source,
+            TimeSpan from,
+            TimeSpan to,
+            HashSet<double> selectedFrequencies,
+            IProgress<double>? progress = null,
+            CancellationToken cancellationToken = default)
+        {
+            Logger.Info($"GenerateWaveformFromSourceAsync (base): from={from}, to={to}, frequencies={selectedFrequencies.Count}");
+            
+            // For now, if it's a FilePacketSource, use the existing implementation
+            if (source is FilePacketSource fileSource)
+            {
+                return await GenerateWaveformFromFilePacketSourceAsync(fileSource, from, to, selectedFrequencies, progress, cancellationToken);
+            }
+            
+            // For DuckDBPacketSource or other sources, we'll need to implement later
+            // For now, return empty waveform
+            Logger.Warn($"Waveform generation not yet implemented for {source.GetType().Name}");
+            return new WaveformData
+            {
+                SelectedFrequencies = selectedFrequencies,
+                CombinedWaveform = new float[MaxDataPointsValue],
+                IsFiltered = selectedFrequencies.Count > 0
+            };
+        }
+
+        /// <summary>
+        /// Helper method for FilePacketSource-based generation
+        /// </summary>
+        protected virtual async Task<WaveformData> GenerateWaveformFromFilePacketSourceAsync(
             FilePacketSource source,
             TimeSpan from,
             TimeSpan to,
@@ -188,80 +218,10 @@ namespace AeroDebrief.Core.Audio
             IProgress<double>? progress = null,
             CancellationToken cancellationToken = default)
         {
-            if (source == null)
-                throw new ArgumentNullException(nameof(source));
-
-            Logger.Info($"Generating waveform from FilePacketSource: from={from}, to={to}, frequencies={selectedFrequencies.Count}");
-            progress?.Report(0);
-
-            try
-            {
-                return await Task.Run(async () =>
-                {
-                    var waveformData = new WaveformData
-                    {
-                        SelectedFrequencies = new HashSet<double>(selectedFrequencies),
-                        IsFiltered = selectedFrequencies.Count > 0
-                    };
-
-                    progress?.Report(10);
-
-                    // Read packets from FilePacketSource (efficient, indexed, memory-mapped)
-                    var packets = new List<AudioPacketMetadata>();
-                    
-                    await foreach (var radioPacket in source.ReadRange(from, cancellationToken))
-                    {
-                        var metadata = radioPacket.ToMetadata();
-                        
-                        // Filter by frequency
-                        if (selectedFrequencies.Count == 0 || selectedFrequencies.Contains(metadata.Frequency))
-                        {
-                            packets.Add(metadata);
-                        }
-                        
-                        // Yield control periodically to prevent blocking
-                        if (packets.Count % 1000 == 0)
-                        {
-                            await Task.Yield();
-                        }
-                    }
-                    
-                    progress?.Report(30);
-
-                    if (packets.Count == 0)
-                    {
-                        Logger.Warn("No packets found for waveform generation from FilePacketSource");
-                        waveformData.CombinedWaveform = new float[MaxDataPointsValue];
-                        OnWaveformUpdated();
-                        progress?.Report(100);
-                        return waveformData;
-                    }
-
-                    Logger.Info($"Loaded {packets.Count} packets from FilePacketSource for waveform generation");
-
-                    // Generate waveforms using GPU/CPU (same as existing implementation)
-                    await GenerateChannelWaveformsAsync(waveformData, packets, progress, cancellationToken);
-                    
-                    progress?.Report(90);
-                    
-                    GenerateCombinedWaveform(waveformData);
-                    UpdateInternalChannels(waveformData);
-
-                    Logger.Info($"Generated waveform with {waveformData.CombinedWaveform.Length} points for {waveformData.Channels.Count} channels from FilePacketSource");
-                    
-                    OnWaveformUpdated();
-                    progress?.Report(100);
-                    
-                    return waveformData;
-
-                }, cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                Logger.Error(ex, "Failed to generate waveform from FilePacketSource");
-                throw;
-            }
+            // Default empty implementation - subclasses override this
+            throw new NotImplementedException("Subclass must implement GenerateWaveformFromFilePacketSourceAsync");
         }
+       
 
         public float[] GetCombinedWaveform()
         {

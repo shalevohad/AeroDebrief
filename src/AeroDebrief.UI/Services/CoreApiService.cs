@@ -3,13 +3,16 @@ using AeroDebrief.Core.Models;
 using AeroDebrief.Core.Analysis;
 using AeroDebrief.Core.Audio;
 using AeroDebrief.Core.IO;
+using AeroDebrief.Core.Storage;  // Add this for DuckDBStore and RecordingFileLoader
 using AeroDebrief.Core.Playback;
 using AeroDebrief.UI.ViewModels;
 using AeroDebrief.UI.Models;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
-using Ciribob.DCS.SimpleRadio.Standalone.Common.Models.Player;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace AeroDebrief.UI.Services
 {
@@ -27,9 +30,10 @@ namespace AeroDebrief.UI.Services
     public class AudioSession : IDisposable
     {
         // NEW: Single FilePacketSource (shared between waveform and playback)
-        private FilePacketSource? _packetSource;
         private FilePlaybackPipeline? _pipeline;
-        
+        private IPacketSource? _packetSource;  // Changed from FilePacketSource to IPacketSource
+        private DuckDBStore? _duckDbStore;  // NEW: Track DuckDB store for cleanup
+        private string? _tempDbPath;  // NEW: Track temp file for cleanup
         private float[]? _waveformData;
         private bool _disposed;
         
@@ -99,15 +103,16 @@ namespace AeroDebrief.UI.Services
         }
 
         /// <summary>
-        /// Phase 12: Exposes the FilePacketSource for waveform display initialization.
+        /// Phase 12: Exposes the IPacketSource for waveform display initialization.
         /// This allows WaveformDisplayPanel to connect to real recording data.
         /// </summary>
-        public FilePacketSource? PacketSource => _packetSource;
+        public IPacketSource? PacketSource => _packetSource;  // Changed from FilePacketSource to IPacketSource
 
         /// <summary>
-        /// Loads an audio file for analysis and playback using the NEW Pure FilePacketSource architecture
+        /// Loads an audio file for analysis and playback using the unified architecture
+        /// Supports: CVR (compressed), ADB (legacy), DuckDB (uncompressed)
         /// </summary>
-        public async Task<bool> LoadFileAsync(string filePath, IProgress<string>? progress = null)
+        public async Task<bool> LoadFileAsync(string filePath, IProgress<string>? progress = null, CancellationToken cancellationToken = default)
         {
             try
             {
@@ -120,6 +125,13 @@ namespace AeroDebrief.UI.Services
                 }
 
                 _packetSource?.Dispose();
+                _duckDbStore?.Dispose();
+                if (_tempDbPath != null)
+                {
+                    RecordingFileLoader.Cleanup(_tempDbPath);
+                    _tempDbPath = null;
+                }
+                
                 _analysisService?.Dispose();
                 _spectrumAnalyzer?.Dispose();
                 _waveformGenerator?.Dispose();
@@ -129,15 +141,15 @@ namespace AeroDebrief.UI.Services
 
                 var logger = NLog.LogManager.GetCurrentClassLogger();
 
-                logger.Info("======== LOADING FILE (Pure FilePacketSource Architecture) ========");
+                logger.Info("======== LOADING FILE (Unified Architecture) ========");
                 logger.Info($"File: {filePath}");
                 progress?.Report("Initializing file loading...");
                 
                 #if DEBUG
                 logger.Info("🔴 BUILD CONFIGURATION: DEBUG");
-#else
+                #else
                 logger.Info("🔴 BUILD CONFIGURATION: RELEASE");
-#endif
+                #endif
 
                 var assembly = System.Reflection.Assembly.GetExecutingAssembly();
                 var assemblyName = assembly.GetName();
@@ -145,16 +157,31 @@ namespace AeroDebrief.UI.Services
                 logger.Info($"📦 Assembly Version: {assemblyName.Version}");
                 logger.Info($"🕐 Build Date: {buildDate:yyyy-MM-dd HH:mm:ss}");
                 
-                // STEP 1: Open FilePacketSource ONCE (memory-mapped, indexed, ~5MB)
-                logger.Info("Step 1: Opening FilePacketSource (memory-mapped, shared)...");
+                // STEP 1: Use RecordingFileLoader to handle ALL formats
+                logger.Info("Step 1: Loading recording file...");
                 progress?.Report("Opening file...");
-                _packetSource = new FilePacketSource(filePath);
-                await _packetSource.OpenAsync(progress);
-                logger.Info($"✅ FilePacketSource ready: {_packetSource.TotalPackets} packets, {_packetSource.TotalDuration}");
+                
+                // RecordingFileLoader handles:
+                // - CVR: Decompress to temp DuckDB
+                // - ADB: Convert to DuckDB (cached)
+                // - DuckDB: Direct open
+                var (store, tempPath) = await RecordingFileLoader.OpenAsync(filePath, progress, cancellationToken);
+                _duckDbStore = store;
+                _tempDbPath = tempPath;
+                
+                logger.Info($"✅ DuckDB store ready: {store.TotalPackets:N0} packets");
+                
+                // STEP 2: Create DuckDBPacketSource from the store
+                logger.Info("Step 2: Creating DuckDBPacketSource...");
+                var duckDbSource = new DuckDBPacketSource(store);
+                await duckDbSource.OpenAsync(progress, cancellationToken);
+                _packetSource = duckDbSource;
+                
+                logger.Info($"✅ DuckDBPacketSource ready: {duckDbSource.TotalPackets:N0} packets");
                 progress?.Report($"File ready: {_packetSource.TotalPackets:N0} packets");
                 
-                // STEP 2: Create FilePlaybackPipeline (shares packet source!)
-                logger.Info("Step 2: Creating FilePlaybackPipeline...");
+                // STEP 3: Create FilePlaybackPipeline (shares packet source!)
+                logger.Info("Step 3: Creating FilePlaybackPipeline...");
                 progress?.Report("Initializing playback engine...");
                 _pipeline = new FilePlaybackPipeline(_packetSource);
                 await _pipeline.OpenAsync();
@@ -174,8 +201,8 @@ namespace AeroDebrief.UI.Services
                     OnPlaybackProgress?.Invoke(pos.TotalSeconds / total.TotalSeconds);
                 _pipeline.ErrorOccurred += (ex) => PlaybackError?.Invoke(ex);
                 
-                // STEP 3: Initialize services (GPU waveform generator, etc.)
-                logger.Info("Step 3: Initializing analysis services...");
+                // STEP 4: Initialize services (GPU waveform generator, etc.)
+                logger.Info("Step 4: Initializing analysis services...");
                 progress?.Report("Initializing audio analysis...");
                 try
                 {
@@ -213,8 +240,8 @@ namespace AeroDebrief.UI.Services
                     logger.Warn(ex, "Failed to initialize some analysis services");
                 }
 
-                // STEP 4: Generate waveform using FilePacketSource (memory-mapped, efficient)
-                logger.Info("Step 4: Generating waveform from FilePacketSource...");
+                // STEP 5: Generate waveform using FilePacketSource (memory-mapped, efficient)
+                logger.Info("Step 5: Generating waveform from FilePacketSource...");
                 progress?.Report("Generating waveform...");
                 
                 var waveformProgress = new Progress<double>(percent =>
@@ -229,16 +256,21 @@ namespace AeroDebrief.UI.Services
                 progress?.Report("Waveform generation complete");
 
                 logger.Info("======== FILE LOADED SUCCESSFULLY ========");
-                logger.Info($"📊 PURE FilePacketSource ARCHITECTURE:");
+                logger.Info($"📊 UNIFIED DuckDB ARCHITECTURE:");
                 logger.Info($"   File: {CurrentFilePath}");
+                logger.Info($"   Format: {CvrFormat.GetFormatName(filePath)}");
                 logger.Info($"   Total duration: {TotalDuration}");
-                logger.Info($"   Memory-mapped packets: {_packetSource.TotalPackets}");
-                logger.Info($"   RAM usage: ~10MB (FilePacketSource + Pipeline)");
-                logger.Info($"   🎯 Memory savings: 82% less RAM!");
-                logger.Info($"   🎯 File open: 2.5x faster!");
-                logger.Info($"   🎯 Filtering: 500x faster (instant vs 500-1000ms)!");
+                logger.Info($"   Total packets: {_packetSource.TotalPackets:N0}");
+                logger.Info($"   Source: DuckDBPacketSource");
+                if (tempPath != null)
+                {
+                    logger.Info($"   Temp DB: {tempPath}");
+                }
+                logger.Info($"   🎯 Supports: CVR (decompress), ADB (convert), DuckDB (direct)");
+                logger.Info($"   🎯 All formats → DuckDB → Unified playback!");
                 
                 progress?.Report("File loaded successfully");
+                
                 return true;
             }
             catch (Exception ex)
@@ -411,36 +443,33 @@ namespace AeroDebrief.UI.Services
             // Check if using GPU waveform generator with layered rendering
             if (_waveformGenerator is GpuWaveformGenerator gpuGen && gpuGen.IsUsingLayeredRendering)
             {
-                // Phase 3.1: Use GPU compositor for final blending
-                if (Constants.USE_GPU_COMPOSITOR)
+                // Phase 3.1: Use GPU compositor for final blending (if available)
+                try
                 {
-                    try
+                    logger.Info($"🎨 Using GPU compositor for {_selectedFrequencies.Count} layers");
+                    
+                    // Get GPU composite texture
+                    var compositeTexture = await gpuGen.ComposeLayersAsync(
+                        outputWidth,
+                        outputHeight,
+                        zoomStart,
+                        zoomEnd);
+                    
+                    // Return special marker to indicate GPU composite is ready
+                    result[double.NegativeInfinity] = new FrequencyWaveformData
                     {
-                        logger.Info($"🎨 Using GPU compositor for {_selectedFrequencies.Count} layers");
-                        
-                        // Get GPU composite texture
-                        var compositeTexture = await gpuGen.ComposeLayersAsync(
-                            outputWidth,
-                            outputHeight,
-                            zoomStart,
-                            zoomEnd);
-                        
-                        // Return special marker to indicate GPU composite is ready
-                        result[double.NegativeInfinity] = new FrequencyWaveformData
-                        {
-                            Frequency = double.NegativeInfinity,
-                            GpuCompositeTexture = compositeTexture,
-                            IsGpuComposite = true
-                        };
-                        
-                        logger.Info("✅ GPU compositor rendered successfully");
-                        return result;
-                    }
-                    catch (Exception ex)
-                    {
-                        logger.Warn(ex, "GPU compositor failed, falling back to CPU");
-                        // Fall through to CPU path
-                    }
+                        Frequency = double.NegativeInfinity,
+                        GpuCompositeTexture = compositeTexture,
+                        IsGpuComposite = true
+                    };
+                    
+                    logger.Info("✅ GPU compositor rendered successfully");
+                    return result;
+                }
+                catch (Exception ex)
+                {
+                    logger.Warn(ex, "GPU compositor failed, falling back to CPU");
+                    // Fall through to CPU path
                 }
             }
 
@@ -601,15 +630,23 @@ namespace AeroDebrief.UI.Services
                             logger.Info($"🎨 Creating GPU layer for {displayName} (background task)...");
                             var startTime = DateTime.UtcNow;
                             
-                            var layerId = await gpuGen.AddLayerAsync(
-                                frequency,
-                                displayName,
-                                color,
-                                _packetSource,
-                                progress: null);
-                            
-                            var elapsed = (DateTime.UtcNow - startTime).TotalMilliseconds;
-                            logger.Info($"✅ GPU layer created: {displayName} (LayerId: {layerId}) in {elapsed:F0}ms");
+                            // Temporarily cast to FilePacketSource until GPU generator supports IPacketSource
+                            if (_packetSource is FilePacketSource fileSource)
+                            {
+                                var layerId = await gpuGen.AddLayerAsync(
+                                    frequency,
+                                    displayName,
+                                    color,
+                                    fileSource,
+                                    progress: null);
+                                
+                                var elapsed = (DateTime.UtcNow - startTime).TotalMilliseconds;
+                                logger.Info($"✅ GPU layer created: {displayName} (LayerId: {layerId}) in {elapsed:F0}ms");
+                            }
+                            else
+                            {
+                                logger.Warn($"GPU waveform rendering not yet supported for {_packetSource.GetType().Name}");
+                            }
                             
                             // Trigger UI update on UI thread
                             System.Windows.Application.Current?.Dispatcher.BeginInvoke(() =>

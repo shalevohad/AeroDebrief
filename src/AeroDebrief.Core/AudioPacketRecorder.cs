@@ -11,6 +11,7 @@ using System.Collections.Concurrent;
 using SRSTCPClientStatusMessage = Ciribob.DCS.SimpleRadio.Standalone.Common.Models.EventMessages.TCPClientStatusMessage;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Models.Player;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Models;
+using AeroDebrief.Core.Storage; // Phase 3: DuckDB recording
 
 namespace AeroDebrief.Core{
     public class AudioPacketRecorder : IHandle<SRSTCPClientStatusMessage>, IHandle<NetworkMessage>
@@ -19,7 +20,12 @@ namespace AeroDebrief.Core{
 
         private TCPClientHandler? _tcpClientHandler;
         private UDPVoiceHandler? _udpVoiceHandler;
-        private FileStream? _fileStream;
+        
+        // Phase 3: Replace FileStream with DuckDB recording
+        private DuckDBStore? _recordingStore;
+        private string? _tempDatabasePath;
+        private DateTime _recordingStartTime;
+        
         private CancellationTokenSource? _recordingCts;
         private System.Timers.Timer? _keepAliveTimer;
         private string? _outputFile;
@@ -39,6 +45,10 @@ namespace AeroDebrief.Core{
         public bool IsConnected => _tcpClientHandler?.TCPConnected ?? false;
 
         public string? ServerVersion { get; private set; }
+        
+        // Phase 3: Events for recording lifecycle
+        public event Action<string>? LivePlaybackReady;  // Fired when database is ready for concurrent read
+        public event Action<string>? RecordingComplete;   // Fired when recording is finalized
 
         /// <summary>
         /// Connects to the SRS server using TCP for control and UDP for audio.
@@ -91,7 +101,7 @@ namespace AeroDebrief.Core{
             Logger.Info("Disconnecting from SRS server.");
 
             _tcpClientHandler?.Disconnect();
-            StopRecording();
+            StopRecording(); // Synchronous wrapper
             _udpVoiceHandler?.RequestStop();
             _udpVoiceHandler = null;
             EventBus.Instance.Unsubscribe(this);
@@ -106,10 +116,42 @@ namespace AeroDebrief.Core{
         }
 
         /// <summary>
-        /// Starts recording incoming UDP audio packets to a raw file.
-        /// Uses RecorderSettingsStore for default file path if not provided.
+        /// Synchronous wrapper for StopRecordingAsync (for backward compatibility)
+        /// </summary>
+        public void StopRecording()
+        {
+            try
+            {
+                StopRecordingAsync().GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, "Error stopping recording (synchronous wrapper)");
+            }
+        }
+
+        /// <summary>
+        /// Synchronous wrapper for StartRecordingAsync (for backward compatibility)
         /// </summary>
         public void StartRecording(string? filePath = null)
+        {
+            try
+            {
+                StartRecordingAsync(filePath).GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, "Error starting recording (synchronous wrapper)");
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Starts recording incoming UDP audio packets to DuckDB database.
+        /// Phase 3: Records directly to DuckDB instead of .adb format.
+        /// Uses RecorderSettingsStore for default file path if not provided.
+        /// </summary>
+        public async Task StartRecordingAsync(string? filePath = null)
         {
             if (_recordingCts != null && !_recordingCts.IsCancellationRequested)
             {
@@ -129,8 +171,8 @@ namespace AeroDebrief.Core{
             // Build an output filename that includes server IP, port and start timestamp
             var ipForName = _serverEndpoint?.Address.ToString() ?? settings.GetRecorderSettingString(RecorderSettingKeys.ServerIp) ?? string.Empty;
             var portForName = _serverEndpoint?.Port ?? settings.GetRecorderSettingInt(RecorderSettingKeys.ServerPort);
-            var startTime = DateTime.UtcNow;
-            var timestampForName = startTime.ToString("yyyyMMddTHHmmssZ");
+            _recordingStartTime = DateTime.UtcNow;
+            var timestampForName = _recordingStartTime.ToString("yyyyMMddTHHmmssZ");
 
             // Sanitize pieces for filename
             string Sanitize(string s)
@@ -150,71 +192,66 @@ namespace AeroDebrief.Core{
 
             var dir = Path.GetDirectoryName(requestedPath) ?? string.Empty;
             var baseName = Path.GetFileNameWithoutExtension(requestedPath) ?? "recording";
-            var ext = Path.GetExtension(requestedPath);
-            // Use .adb extension for recording files
-            if (string.IsNullOrEmpty(ext) || !ext.Equals(".adb", StringComparison.OrdinalIgnoreCase))
-                ext = ".adb";
-
+            
+            // Phase 3: Use .duckdb extension for temp, final format determined by settings
             var sanitizedIp = Sanitize(ipForName);
             var sanitizedBase = Sanitize(baseName);
 
-            var finalName = $"{sanitizedBase}_srv_{sanitizedIp}_{portForName}_t{timestampForName}{ext}";
-            _outputFile = string.IsNullOrEmpty(dir) ? finalName : Path.Combine(dir, finalName);
+            var finalName = $"{sanitizedBase}_srv_{sanitizedIp}_{portForName}_t{timestampForName}.duckdb";
+            var finalPath = string.IsNullOrEmpty(dir) ? finalName : Path.Combine(dir, finalName);
 
-            Logger.Info($"Starting recording to file: {_outputFile}");
+            // Phase 3: Create temporary database for recording
+            _tempDatabasePath = Path.Combine(Path.GetTempPath(), $"aerodebrief_recording_{Guid.NewGuid():N}.duckdb");
+            _outputFile = finalPath;
+
+            Logger.Info($"? Phase 3: Starting DuckDB recording");
+            Logger.Info($"  Temp database: {_tempDatabasePath}");
+            Logger.Info($"  Final output: {_outputFile}");
 
             try
             {
-                _fileStream = new FileStream(_outputFile, FileMode.Create, FileAccess.Write);
+                // Phase 3: Create DuckDB store with recording metadata
+                var metadata = new RecordingMetadata
+                {
+                    Version = Constants.RECORDING_FILE_MAGIC,
+                    ServerIp = ipForName,
+                    ServerPort = portForName,
+                    StartTime = _recordingStartTime
+                };
+
+                _recordingStore = new DuckDBStore(_tempDatabasePath);
+                await _recordingStore.CreateAsync(metadata);
+
+                Logger.Info($"? Recording database created successfully");
+                Logger.Info($"   Server: {ipForName}:{portForName}");
+                Logger.Info($"   Start: {_recordingStartTime:o}");
+
                 _recordingCts = new CancellationTokenSource();
-
-                // Write a small header to the recording file so CLI/players can know which server
-                // this recording originated from and when it started.
-                try
-                {
-                    var ip = _serverEndpoint?.Address.ToString() ?? settings.GetRecorderSettingString(RecorderSettingKeys.ServerIp) ?? string.Empty;
-                    var portVal = _serverEndpoint?.Port ?? settings.GetRecorderSettingInt(RecorderSettingKeys.ServerPort);
-                    var startTicks = startTime.Ticks;
-
-                    var headerStartPos = _fileStream!.Position;
-                    
-                    using var bw = new BinaryWriter(_fileStream!, Encoding.UTF8, leaveOpen: true);
-                    
-                    // CRITICAL: BinaryWriter.Write(string) automatically writes length-prefix
-                    // Format: [length:7-bit-encoded-int][string-bytes]
-                    // This is read by BinaryReader.ReadString() which expects this format
-                    bw.Write(Constants.RECORDING_FILE_MAGIC);  // e.g., "AERO_REC_V1"
-                    bw.Write(ip);                               // Server IP
-                    bw.Write(portVal);                          // Port (int32)
-                    bw.Write(startTicks);                       // Start time (int64 ticks)
-                    
-                    var headerEndPos = _fileStream.Position;
-                    var headerSize = headerEndPos - headerStartPos;
-
-                    Logger.Info($"? Recording header written successfully:");
-                    Logger.Info($"   Magic: '{Constants.RECORDING_FILE_MAGIC}'");
-                    Logger.Info($"   Server: {ip}:{portVal}");
-                    Logger.Info($"   Start: {new DateTime(startTicks, DateTimeKind.Utc):o}");
-                    Logger.Info($"   Header size: {headerSize} bytes (position: {headerStartPos} -> {headerEndPos})");
-                }
-                catch (Exception ex)
-                {
-                    Logger.Error(ex, "Failed to write recording header to file - file may not be readable!");
-                    throw; // CRITICAL: Don't continue if header write fails
-                }
-
                 _writerRunning = true;
                 _writerTask = Task.Run(() => WriterLoop(_recordingCts.Token));
                 Task.Run(() => RecordingLoop(_recordingCts.Token));
+
+                // Phase 3: Enable live playback if requested
+                if (settings.GetRecorderSettingBool(RecorderSettingKeys.EnableLivePlayback))
+                {
+                    Logger.Info("?? Live playback enabled - database ready for concurrent reads");
+                    LivePlaybackReady?.Invoke(_tempDatabasePath);
+                }
             }
             catch (Exception ex)
             {
                 Logger.Error(ex, "Failed to start recording.");
+                _recordingStore?.Dispose();
+                _recordingStore = null;
                 throw;
             }
         }
 
-        public void StopRecording()
+        /// <summary>
+        /// Stops recording and finalizes the database.
+        /// Phase 3: Optionally compresses to CVR format based on user settings.
+        /// </summary>
+        public async Task StopRecordingAsync()
         {
             Logger.Info("Stopping recording...");
             _recordingCts?.Cancel();
@@ -222,10 +259,10 @@ namespace AeroDebrief.Core{
             
             try
             {
-                // Wait up to 5 seconds for graceful shutdown
-                if (_writerTask != null && !_writerTask.Wait(TimeSpan.FromSeconds(5)))
+                // Wait up to 10 seconds for graceful shutdown (increased for database flush)
+                if (_writerTask != null && !await Task.Run(() => _writerTask.Wait(TimeSpan.FromSeconds(10))))
                 {
-                    Logger.Warn("Writer task did not complete within 5 seconds");
+                    Logger.Warn("Writer task did not complete within 10 seconds");
                 }
             }
             catch (AggregateException ae)
@@ -240,23 +277,72 @@ namespace AeroDebrief.Core{
                 Logger.Error(ex, "Error during writer task shutdown.");
             }
             
-            // CRITICAL: Final flush before closing to ensure all data reaches disk
+            // Phase 3: Finalize and optionally compress
             try
             {
-                if (_fileStream != null)
+                if (_recordingStore != null && !string.IsNullOrEmpty(_tempDatabasePath))
                 {
-                    _fileStream.Flush(flushToDisk: true);
-                    Logger.Info("Recording file flushed to disk");
+                    Logger.Info("Finalizing recording database...");
+                    await _recordingStore.FinalizeAsync();
+                    _recordingStore.Dispose();
+                    _recordingStore = null;
+
+                    var settings = RecorderSettingsStore.Instance;
+
+                    // Phase 3: Compression is mandatory (controlled by RecordingConstants)
+                    // No user settings - always compress in RELEASE, optional in DEBUG
+                    bool shouldCompress = RecordingConstants.FORCE_CVR_COMPRESSION;
+                    
+                    if (shouldCompress)
+                    {
+                        Logger.Info("CVR compression MANDATORY (RecordingConstants.FORCE_CVR_COMPRESSION = true)");
+                    }
+                    else
+                    {
+                        Logger.Warn("CVR compression DISABLED (RecordingConstants.FORCE_CVR_COMPRESSION = false)");
+                        Logger.Warn("This should ONLY happen in development/testing!");
+                    }
+
+                    if (shouldCompress)
+                    {
+                        // Compress to CVR format
+                        var cvrPath = Path.ChangeExtension(_outputFile!, ".cvr");
+                        Logger.Info($"Compressing to CVR format: {cvrPath}");
+
+                        // Phase 3: Use IProgress<int> for percentage progress
+                        var progress = new Progress<int>(percent => Logger.Info($"Compression: {percent}%"));
+                        await CvrFormat.CompressToCvrAsync(_tempDatabasePath, cvrPath, progress);
+
+                        // Delete temporary database
+                        File.Delete(_tempDatabasePath);
+                        Logger.Info($"? Recording compressed to CVR: {cvrPath}");
+                        Logger.Info($"   Temporary database deleted: {_tempDatabasePath}");
+
+                        _outputFile = cvrPath;
+                    }
+                    else
+                    {
+                        // Keep uncompressed - DEBUG ONLY
+                        if (File.Exists(_outputFile!))
+                        {
+                            File.Delete(_outputFile!);
+                        }
+                        File.Move(_tempDatabasePath, _outputFile!);
+                        Logger.Warn($"??  Recording saved UNCOMPRESSED (debug mode): {_outputFile}");
+                        Logger.Warn($"??  This should NEVER happen in production builds!");
+                    }
+
+                    // Notify listeners
+                    RecordingComplete?.Invoke(_outputFile!);
                 }
             }
             catch (Exception ex)
             {
-                Logger.Warn(ex, "Error flushing recording file");
+                Logger.Error(ex, "Error finalizing recording");
+                throw;
             }
             
-            _fileStream?.Dispose();
-            _fileStream = null;
-            Logger.Info("Recording stopped and file stream disposed.");
+            Logger.Info($"?? Recording stopped: {_outputFile}");
         }
 
         private async Task RecordingLoop(CancellationToken token)
@@ -499,88 +585,90 @@ namespace AeroDebrief.Core{
             }
         }
 
+        /// <summary>
+        /// Phase 3: Writer loop using DuckDB batch inserts instead of file writes
+        /// </summary>
         private async Task WriterLoop(CancellationToken token)
         {
-            int writesSinceFlush = 0;
-            const int FLUSH_EVERY_N_WRITES = 100; // Flush every 100 packets (~2 seconds of audio)
+            const int BATCH_SIZE = RecordingConstants.RECORDING_BATCH_SIZE;
+            var batch = new List<AudioPacketMetadata>(BATCH_SIZE);
+            var lastFlushTime = DateTime.UtcNow;
+            const int FLUSH_INTERVAL_MS = RecordingConstants.RECORDING_FLUSH_INTERVAL_MS;
             
-            Logger.Info("WriterLoop started with batch flush strategy (flush every 100 packets)");
+            Logger.Info($"?? Phase 3 WriterLoop started (batch size: {BATCH_SIZE}, flush interval: {FLUSH_INTERVAL_MS}ms)");
             
             while (_writerRunning && !token.IsCancellationRequested)
             {
-                if (_writeQueue.TryDequeue(out var meta))
+                try
                 {
-                    try
+                    // Try to build a batch
+                    var batchFilled = false;
+                    for (int i = 0; i < BATCH_SIZE; i++)
                     {
-                        lock (_fileWriteLock)
+                        if (_writeQueue.TryDequeue(out var meta))
                         {
-                            using var bw = new BinaryWriter(_fileStream!, System.Text.Encoding.UTF8, leaveOpen: true);
-                            if (!meta.TryWriteMetadata(bw))
-                            {
-                                Logger.Warn("Failed to write audio packet metadata.");
-                            }
-                            else
-                            {
-                                writesSinceFlush++;
-                            }
+                            batch.Add(meta);
                             
-                            // Flush periodically to balance safety vs performance
-                            if (writesSinceFlush >= FLUSH_EVERY_N_WRITES)
+                            if (batch.Count >= BATCH_SIZE)
                             {
-                                bw.Flush();
-                                _fileStream?.Flush(flushToDisk: true);
-                                Logger.Debug($"Flushed {writesSinceFlush} packets to disk");
-                                writesSinceFlush = 0;
+                                batchFilled = true;
+                                break;
                             }
                         }
-                    }
-                    catch (Exception ex)
-                    {
-                        Logger.Error(ex, "Error writing audio packet metadata from queue.");
-                    }
-                }
-                else
-                {
-                    // Flush when idle to ensure pending writes are saved
-                    if (writesSinceFlush > 0)
-                    {
-                        try
+                        else
                         {
-                            lock (_fileWriteLock)
-                            {
-                                _fileStream?.Flush(flushToDisk: true);
-                                Logger.Debug($"Flushed {writesSinceFlush} pending packets (idle)");
-                                writesSinceFlush = 0;
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            Logger.Debug(ex, "Error flushing during idle");
+                            break; // No more packets available
                         }
                     }
                     
-                    await Task.Delay(10, token); // Avoid busy wait
-                }
-            }
-            
-            // FINAL FLUSH before exiting to ensure all data is written
-            try
-            {
-                lock (_fileWriteLock)
-                {
-                    if (_fileStream != null && writesSinceFlush > 0)
+                    // Insert batch if we have packets AND either:
+                    // 1. Batch is full, or
+                    // 2. Enough time has passed since last flush
+                    var timeSinceFlush = (DateTime.UtcNow - lastFlushTime).TotalMilliseconds;
+                    if (batch.Count > 0 && (batchFilled || timeSinceFlush >= FLUSH_INTERVAL_MS))
                     {
-                        _fileStream.Flush(flushToDisk: true);
-                        Logger.Info($"Final flush: {writesSinceFlush} packets written to disk");
+                        if (_recordingStore != null)
+                        {
+                            await _recordingStore.InsertPacketsAsync(batch, token);
+                            Logger.Debug($"Inserted batch: {batch.Count} packets (total: {_recordingStore.TotalPackets:N0})");
+                            batch.Clear();
+                            lastFlushTime = DateTime.UtcNow;
+                        }
+                    }
+                    
+                    // Small delay if queue is empty to avoid CPU spinning
+                    if (_writeQueue.IsEmpty)
+                    {
+                        await Task.Delay(50, token); // 50ms delay when idle
                     }
                 }
-            }
-            catch (Exception ex)
-            {
-                Logger.Warn(ex, "Error flushing file stream on writer loop exit");
+                catch (OperationCanceledException)
+                {
+                    Logger.Info("WriterLoop cancelled");
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error(ex, "Error in WriterLoop batch processing");
+                    await Task.Delay(100, token); // Delay on error to avoid tight loop
+                }
             }
             
-            Logger.Info("WriterLoop stopped.");
+            // Final batch insert before shutting down
+            if (batch.Count > 0 && _recordingStore != null)
+            {
+                try
+                {
+                    await _recordingStore.InsertPacketsAsync(batch, CancellationToken.None);
+                    Logger.Info($"Final batch inserted: {batch.Count} packets (total: {_recordingStore.TotalPackets:N0})");
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error(ex, "Error inserting final batch");
+                }
+            }
+            
+            Logger.Info($"WriterLoop stopped - Total packets recorded: {_recordingStore?.TotalPackets:N0}");
         }
 
         // Add this method to handle sync messages

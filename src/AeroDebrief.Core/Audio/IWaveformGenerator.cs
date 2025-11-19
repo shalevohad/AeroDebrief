@@ -45,11 +45,12 @@ namespace AeroDebrief.Core.Audio
             CancellationToken cancellationToken = default);
 
         /// <summary>
-        /// Generates waveform from FilePacketSource (memory-mapped, efficient)
+        /// Generates waveform from IPacketSource (memory-mapped, efficient)
         /// This is 20-30x faster and uses 10x less RAM than loading all packets
+        /// Supports both FilePacketSource (.adb) and DuckDBPacketSource (.cvr/.duckdb)
         /// </summary>
         Task<WaveformData> GenerateWaveformFromSourceAsync(
-            IO.FilePacketSource source,
+            IO.IPacketSource source,
             TimeSpan from,
             TimeSpan to,
             HashSet<double> selectedFrequencies,

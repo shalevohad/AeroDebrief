@@ -51,18 +51,42 @@
 						<!-- File info and loading area -->
 						<StackPanel Grid.Row="1" Grid.Column="1">
 
-							<!-- Loading area: text above progress bar, vertically centered with icon -->
-							<StackPanel Orientation="Vertical" HorizontalAlignment="Left" VerticalAlignment="Center"
+							<!-- Loading area: status text above progress bar -->
+							<StackPanel Orientation="Vertical" 
+                                        HorizontalAlignment="Left" 
+                                        VerticalAlignment="Center"
                                         Visibility="{Binding IsLoading, Converter={StaticResource BoolToVisibilityConverter}}">
-								<TextBlock Text="Loading..."
+								
+								<!-- Loading status text (Phase 2.5: Shows actual status messages) -->
+								<TextBlock Text="{Binding LoadingStatus, FallbackValue='Loading...'}"
                                            Style="{StaticResource BodyTextStyle}"
                                            FontSize="11"
                                            Margin="0,0,0,6"/>
-								<ProgressBar IsIndeterminate="True"
-                                            Width="160"
-                                            Height="6"
-                                            Foreground="{StaticResource AccentBrush}"/>
+								
+								<!-- Progress bar (Phase 2.5: Switches between indeterminate and determinate) -->
+								<ProgressBar IsIndeterminate="{Binding IsIndeterminate}"
+                                             Value="{Binding LoadingProgress}"
+                                             Minimum="0"
+                                             Maximum="100"
+                                             Width="160"
+                                             Height="6"
+                                             Foreground="{StaticResource AccentBrush}"/>
+								
+								<!-- Progress percentage (Phase 2.5: Only shown when determinate) -->
+								<TextBlock Text="{Binding LoadingProgress, StringFormat='{}{0:F0}%'}"
+                                           Style="{StaticResource BodyTextStyle}"
+                                           FontSize="10"
+                                           Margin="0,4,0,0"
+                                           HorizontalAlignment="Center"
+                                           Visibility="{Binding IsIndeterminate, Converter={StaticResource InverseBoolToVisibilityConverter}}"/>
 							</StackPanel>
+							
+							<!-- File info when not loading (Phase 2.5: Shows file name/size) -->
+							<TextBlock Text="{Binding FileInfo}"
+                                       Style="{StaticResource BodyTextStyle}"
+                                       FontSize="11"
+                                       TextWrapping="Wrap"
+                                       Visibility="{Binding IsLoading, Converter={StaticResource InverseBoolToVisibilityConverter}}"/>
 						</StackPanel>
 					</Grid>
 				</Border>
@@ -91,7 +115,7 @@
                                               Foreground="{StaticResource AccentBrush}"
                                               HorizontalAlignment="Center"
                                               Margin="0,0,0,8"/>
-								<TextBlock Text="Drop .adb or .raw files here" 
+								<TextBlock Text="Drop CVR or ADB files here" 
                                            Style="{StaticResource BodyTextStyle}"
                                            HorizontalAlignment="Center"
                                            FontWeight="Medium"

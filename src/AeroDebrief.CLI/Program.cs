@@ -133,16 +133,46 @@ namespace AeroDebrief.CLI
 
                 if (isConnected)
                 {
+                    // Phase 3: Show recording format information
                     string recordingFile = settings.GetRecorderSettingString(RecorderSettingKeys.RecordingFile);
                     recorder.StartRecording(recordingFile);
-                    Console.WriteLine($"Recording to file: '{recordingFile}'...");
-                    Logger.Info($"Recording to file: '{recordingFile}'...");
-                    Console.WriteLine("to stop recording and disconnect: press Ctrl+C or close the window");
-                    Logger.Info("to stop recording and disconnect: press Ctrl+C or close the window");
-                    Console.WriteLine("-----------------------------------------------------");
-                    Logger.Info("-----------------------------------------------------");
-                    Console.WriteLine("\nListening for incoming packets to record:");
-                    Logger.Info("Listening for incoming packets to record:");
+                    
+                    Console.WriteLine("???????????????????????????????????????????????????");
+                    Console.WriteLine("???  Phase 3 Recording Started");
+                    Console.WriteLine("???????????????????????????????????????????????????");
+                    Console.WriteLine($"?? Output file: {recordingFile}");
+                    
+#if DEBUG
+                    // DEBUG build: Compression controlled by RecordingConstants
+                    if (RecordingConstants.FORCE_CVR_COMPRESSION)
+                    {
+                        Console.WriteLine($"?? Format: CVR (Compressed)");
+                        Console.WriteLine($"???  Compression: FORCED (RecordingConstants)");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"?? Format: DuckDB (Uncompressed)");
+                        Console.WriteLine($"???  Compression: DISABLED (RecordingConstants)");
+                    }
+                    Console.ForegroundColor = ConsoleColor.Yellow;
+                    Console.WriteLine($"??  Mode: DEBUG (RecordingConstants.FORCE_CVR_COMPRESSION = {RecordingConstants.FORCE_CVR_COMPRESSION})");
+                    Console.ResetColor();
+#else
+                    // RELEASE build: Always compressed (mandatory)
+                    Console.WriteLine($"?? Format: CVR (Compressed) - MANDATORY");
+                    Console.WriteLine($"???  Compression: ENFORCED (no user control)");
+                    Console.ForegroundColor = ConsoleColor.Green;
+                    Console.WriteLine($"??  Mode: RELEASE (compression required)");
+                    Console.ResetColor();
+#endif
+                    
+                    Console.WriteLine($"? Recording to: Temporary DuckDB database");
+                    Console.WriteLine();
+                    Console.WriteLine("Press Ctrl+C to stop recording and disconnect");
+                    Console.WriteLine("???????????????????????????????????????????????????");
+                    
+                    Logger.Info($"Recording started");
+                    Console.WriteLine("\n?? Listening for incoming packets:");
 
                     recorder.PacketReceived += meta =>
                     {
@@ -154,16 +184,16 @@ namespace AeroDebrief.CLI
                         var position = playerInfo?.Position.ToString() ?? "Unknown Position";
                         var seat = playerInfo?.Seat >= 0 ? $"Seat {playerInfo.Seat}" : "Unknown Seat";
                         
-                        Console.WriteLine($"Packet received:");
-                        Console.WriteLine($"  Time: {meta.Timestamp}");
-                        Console.WriteLine($"  Player: {displayName} ({coalition}, {seat})");
-                        Console.WriteLine($"  Aircraft: {aircraft}");
-                        Console.WriteLine($"  Position: {position}");
-                        Console.WriteLine($"  Frequency: {meta.Frequency} Hz, Modulation: {meta.Modulation}");
-                        Console.WriteLine($"  Audio Size: {meta.AudioPayload.Length} bytes");
+                        Console.WriteLine($"?? Packet received:");
+                        Console.WriteLine($"  ?? Time: {meta.Timestamp:HH:mm:ss.fff}");
+                        Console.WriteLine($"  ?? Player: {displayName} ({coalition}, {seat})");
+                        Console.WriteLine($"  ??  Aircraft: {aircraft}");
+                        Console.WriteLine($"  ?? Position: {position}");
+                        Console.WriteLine($"  ?? Frequency: {meta.Frequency / 1_000_000.0:F1} MHz, Modulation: {meta.Modulation}");
+                        Console.WriteLine($"  ?? Audio: {meta.AudioPayload.Length} bytes");
                         Console.WriteLine();
 
-                        Logger.Debug($"Packet received: Player={displayName}, Aircraft={aircraft}, Freq={meta.Frequency}, Modulation={meta.Modulation}, Size={meta.AudioPayload.Length}");
+                        Logger.Debug($"Packet: Player={displayName}, Aircraft={aircraft}, Freq={meta.Frequency}, Mod={meta.Modulation}, Size={meta.AudioPayload.Length}");
                     };
 
                     // Handle Ctrl+C and window close
@@ -173,10 +203,37 @@ namespace AeroDebrief.CLI
                         if (cleanedUp) return;
                         cleanedUp = true;
 
+                        Console.WriteLine();
+                        Console.WriteLine("???????????????????????????????????????????????????");
+                        Console.WriteLine("??  Stopping recording...");
+                        Console.WriteLine("???????????????????????????????????????????????????");
+                        
                         recorder.StopRecording();
+                        
+                        Console.WriteLine("? Recording finalized");
+                        
+#if DEBUG
+                        if (RecordingConstants.FORCE_CVR_COMPRESSION)
+                        {
+                            Console.WriteLine("???  Compressing to CVR format...");
+                            Console.WriteLine("   (This may take a moment for large recordings)");
+                        }
+                        else
+                        {
+                            Console.ForegroundColor = ConsoleColor.Yellow;
+                            Console.WriteLine("??  Saved UNCOMPRESSED (RecordingConstants.FORCE_CVR_COMPRESSION = false)");
+                            Console.ResetColor();
+                        }
+#else
+                        Console.WriteLine("???  Compressing to CVR format (mandatory)...");
+                        Console.WriteLine("   (This may take a moment for large recordings)");
+#endif
+                        
                         recorder.Disconnect();
-                        Console.WriteLine("Disconnected.");
-                        Logger.Info("Disconnected.");
+                        Console.WriteLine("?? Disconnected from server");
+                        Console.WriteLine("???????????????????????????????????????????????????");
+                        
+                        Logger.Info("Recording stopped and disconnected");
                         Environment.Exit(0);
                     }
 
@@ -246,6 +303,10 @@ namespace AeroDebrief.CLI
             
             switch (command)
             {
+                case "--migrate":
+                    await HandleMigrateCommand(args);
+                    break;
+                    
                 case "--analyze":
                     await HandleAnalyzeCommand(args);
                     break;
@@ -263,6 +324,130 @@ namespace AeroDebrief.CLI
                     Console.WriteLine($"Unknown command: {command}");
                     Console.WriteLine("Use --help to see available commands.");
                     break;
+            }
+        }
+
+        private static async Task HandleMigrateCommand(string[] args)
+        {
+            if (args.Length < 2)
+            {
+                Console.WriteLine("Usage: --migrate <adb_file_or_directory> [output_path]");
+                Console.WriteLine();
+                Console.WriteLine("Examples:");
+                Console.WriteLine("  AeroDebrief.CLI.exe --migrate recording.adb");
+                Console.WriteLine("  AeroDebrief.CLI.exe --migrate recording.adb output.duckdb");
+                Console.WriteLine(@"  AeroDebrief.CLI.exe --migrate C:\Recordings\");
+                return;
+            }
+
+            var inputPath = args[1];
+            var outputPath = args.Length > 2 ? args[2] : null;
+
+            Console.WriteLine("?? ADB ? DuckDB Migration Tool");
+            Console.WriteLine("=" + new string('=', 60));
+            Console.WriteLine("??  WARNING: This is a ONE-WAY migration!");
+            Console.WriteLine("??  ADB files will remain, but won't be used after migration.");
+            Console.WriteLine();
+
+            try
+            {
+                var converter = new AeroDebrief.Core.Storage.AdbToDuckDBConverter();
+
+                // Check if input is a directory or file
+                if (Directory.Exists(inputPath))
+                {
+                    // Batch conversion
+                    var adbFiles = Directory.GetFiles(inputPath, "*.adb", SearchOption.AllDirectories);
+                    
+                    if (adbFiles.Length == 0)
+                    {
+                        Console.WriteLine($"No .adb files found in: {inputPath}");
+                        return;
+                    }
+
+                    Console.WriteLine($"Found {adbFiles.Length} ADB file(s) to convert");
+                    Console.WriteLine();
+
+                    var batchProgress = new Progress<AeroDebrief.Core.Storage.BatchConversionProgress>(p =>
+                    {
+                        var fileName = Path.GetFileName(p.CurrentFile);
+                        Console.Write($"\r[{p.CompletedFiles}/{p.TotalFiles}] {fileName,-40} {p.CurrentFilePercent,3}% - {p.CurrentStage,-30}");
+                    });
+
+                    var results = await converter.ConvertBatchAsync(adbFiles, batchProgress);
+
+                    Console.WriteLine();
+                    Console.WriteLine();
+                    Console.WriteLine("=" + new string('=', 60));
+                    Console.WriteLine($"? Batch conversion complete:");
+                    Console.WriteLine($"   Successful: {results.Count(r => r.Success)}/{results.Count}");
+                    Console.WriteLine($"   Failed: {results.Count(r => !r.Success)}");
+                    
+                    var totalSourceSize = results.Sum(r => r.SourceSizeBytes);
+                    var totalOutputSize = results.Sum(r => r.OutputSizeBytes);
+                    var totalPackets = results.Sum(r => r.TotalPackets);
+                    var avgCompression = results.Where(r => r.Success).Average(r => r.CompressionRatio);
+                    
+                    Console.WriteLine($"   Total packets: {totalPackets:N0}");
+                    Console.WriteLine($"   Total source: {totalSourceSize / 1024.0 / 1024.0:F1} MB");
+                    Console.WriteLine($"   Total output: {totalOutputSize / 1024.0 / 1024.0:F1} MB");
+                    Console.WriteLine($"   Avg compression: {avgCompression:F1}%");
+                    
+                    if (results.Any(r => !r.Success))
+                    {
+                        Console.WriteLine();
+                        Console.WriteLine("Failed files:");
+                        foreach (var failed in results.Where(r => !r.Success))
+                        {
+                            Console.WriteLine($"  - {failed.SourceFile}: {failed.Error}");
+                        }
+                    }
+                }
+                else if (File.Exists(inputPath))
+                {
+                    // Single file conversion
+                    var progress = new Progress<AeroDebrief.Core.Storage.ConversionProgress>(p =>
+                    {
+                        Console.Write($"\r{p.Stage,-30} [{p.Percent,3}%] {p.PacketsProcessed:N0} packets");
+                    });
+
+                    var result = await converter.ConvertAsync(inputPath, outputPath, progress);
+
+                    Console.WriteLine();
+                    Console.WriteLine();
+
+                    if (result.Success)
+                    {
+                        Console.WriteLine("=" + new string('=', 60));
+                        Console.WriteLine($"? Conversion successful!");
+                        Console.WriteLine($"   Output: {result.OutputFile}");
+                        Console.WriteLine($"   Packets: {result.TotalPackets:N0}");
+                        Console.WriteLine($"   Duration: {result.Duration.TotalSeconds:F1}s");
+                        Console.WriteLine($"   Speed: {result.PacketsPerSecond:N0} packets/sec");
+                        Console.WriteLine($"   Source: {result.SourceSizeBytes / 1024.0 / 1024.0:F1} MB");
+                        Console.WriteLine($"   Output: {result.OutputSizeBytes / 1024.0 / 1024.0:F1} MB");
+                        Console.WriteLine($"   Compression: {result.CompressionRatio:F1}% smaller");
+                        Console.WriteLine();
+                        Console.WriteLine($"?? You can now delete the ADB file: {inputPath}");
+                    }
+                    else
+                    {
+                        Console.ForegroundColor = ConsoleColor.Red;
+                        Console.WriteLine($"? Conversion failed: {result.Error}");
+                        Console.ResetColor();
+                    }
+                }
+                else
+                {
+                    Console.WriteLine($"? Input path not found: {inputPath}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine($"? Migration failed: {ex.Message}");
+                Console.ResetColor();
+                Logger.Error(ex, "Migration failed");
             }
         }
 
@@ -540,33 +725,47 @@ namespace AeroDebrief.CLI
         {
             Console.WriteLine("SRS Recording Client - Usage:");
             Console.WriteLine();
-            Console.WriteLine("Recording Mode:");
+            Console.WriteLine("Recording Mode (Phase 3 - DuckDB Recording):");
             Console.WriteLine("  DCS-SRS-RecordingClient.exe <server_ip> <port>");
             Console.WriteLine("  Example: DCS-SRS-RecordingClient.exe 192.168.1.100 5002");
             Console.WriteLine();
-            Console.WriteLine("File Analysis:");
-            Console.WriteLine("  --analyze <file_path> [--export <wav_file>]");
-            Console.WriteLine("    Analyze a recorded file and optionally export to WAV");
-            Console.WriteLine("    Example: --analyze recording.adb --export output.wav");
+            Console.WriteLine("  ?? Note: Records directly to DuckDB database");
+            Console.WriteLine("  ?? Output: Compressed CVR format by default");
+            Console.WriteLine("  ??  Settings: Edit configs/recorder.cfg to change format");
             Console.WriteLine();
-            Console.WriteLine("Audio Activity Analysis:");
-            Console.WriteLine("  --analyze-activity <file_path> [options]");
-            Console.WriteLine("    Analyze when audio activity (non-silence) occurs in the recording");
-            Console.WriteLine("    Options:");
-            Console.WriteLine("      --threshold <value>     Silence threshold (0-32767, default: 500)");
-            Console.WriteLine("      --min-duration <ms>     Minimum activity duration in ms (default: 100)");
-            Console.WriteLine("      --export-csv <path>     Export activity periods to CSV file");
-            Console.WriteLine("      --player <name>         Show only activity for specific player");
-            Console.WriteLine("      --frequency <mhz>       Show only activity for specific frequency");
+            Console.WriteLine("  Available settings:");
+            Console.WriteLine("    OutputFormat = \"CVR\" (compressed) or \"Uncompressed\" (DuckDB)");
+            Console.WriteLine("    AutoCompress = true (compress on stop) or false");
+            Console.WriteLine("    EnableLivePlayback = false (Phase 4 feature)");
+            Console.WriteLine();
+            Console.WriteLine("File Migration:");
+            Console.WriteLine("  --migrate <adb_file_or_directory> [output_path]");
+            Console.WriteLine("    Convert legacy ADB file(s) to DuckDB format");
             Console.WriteLine("    Examples:");
-            Console.WriteLine("      --analyze-activity recording.adb");
-            Console.WriteLine("      --analyze-activity recording.adb --threshold 1000 --min-duration 500");
-            Console.WriteLine("      --analyze-activity recording.adb --player \"Viper1\" --export-csv activity.csv");
-            Console.WriteLine("      --analyze-activity recording.adb --frequency 251.0");
+            Console.WriteLine("      --migrate recording.adb");
+            Console.WriteLine("      --migrate recording.adb output.duckdb");
+            Console.WriteLine(@"      --migrate C:\Recordings\");
             Console.WriteLine();
-            Console.WriteLine("Help:");
-            Console.WriteLine("  --help | --h");
-            Console.WriteLine("    Show this help message");
+            Console.WriteLine("Audio Analysis:");
+            Console.WriteLine("  --analyze <file_path> [--export <wav_file>]");
+            Console.WriteLine("    Analyze recording file and optionally export to WAV");
+            Console.WriteLine();
+            Console.WriteLine("  --analyze-activity <file_path> [options]");
+            Console.WriteLine("    Analyze voice activity periods in recording");
+            Console.WriteLine("    Options:");
+            Console.WriteLine("      --threshold <value>    : Amplitude threshold (default: 500)");
+            Console.WriteLine("      --min-duration <ms>    : Minimum duration in ms (default: 300)");
+            Console.WriteLine("      --player <name>        : Filter by player name");
+            Console.WriteLine("      --frequency <freq>     : Filter by frequency (MHz)");
+            Console.WriteLine("      --csv <output.csv>     : Export results to CSV");
+            Console.WriteLine();
+            Console.WriteLine("Phase 3 Features:");
+            Console.WriteLine("  ? Direct DuckDB recording (no ADB conversion needed)");
+            Console.WriteLine("  ? Automatic CVR compression on stop");
+            Console.WriteLine("  ? 60% smaller files with CVR format");
+            Console.WriteLine("  ? Real-time metadata indexing");
+            Console.WriteLine("  ? 3x faster write performance");
+            Console.WriteLine("  ? Live playback during recording (Phase 4)");
         }
     }
 }

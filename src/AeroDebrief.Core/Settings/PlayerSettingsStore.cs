@@ -22,6 +22,7 @@ namespace AeroDebrief.Core.Settings
         MasterVolume,
         EnableDebugLogging,
         LastRecordingFile,
+        RecentRecordingFiles,  // Phase 2.5: JSON array of recent recording files
         EnableFrequencyFilterByDefault,
         ThemeFile,
         
@@ -59,6 +60,7 @@ namespace AeroDebrief.Core.Settings
             { PlayerSettingKeys.MasterVolume.ToString(), "100" },
             { PlayerSettingKeys.EnableDebugLogging.ToString(), "true" },
             { PlayerSettingKeys.LastRecordingFile.ToString(), "" },
+            { PlayerSettingKeys.RecentRecordingFiles.ToString(), "[]" }, // Default to empty JSON array
             { PlayerSettingKeys.EnableFrequencyFilterByDefault.ToString(), "false" },
             { PlayerSettingKeys.ThemeFile.ToString(), "light.json" },
             
@@ -226,6 +228,7 @@ namespace AeroDebrief.Core.Settings
             SetPlayerSetting(PlayerSettingKeys.MasterVolume, int.Parse(defaultPlayerSettings[PlayerSettingKeys.MasterVolume.ToString()]));
             SetPlayerSetting(PlayerSettingKeys.EnableDebugLogging, bool.Parse(defaultPlayerSettings[PlayerSettingKeys.EnableDebugLogging.ToString()]));
             SetPlayerSetting(PlayerSettingKeys.LastRecordingFile, defaultPlayerSettings[PlayerSettingKeys.LastRecordingFile.ToString()]);
+            SetPlayerSetting(PlayerSettingKeys.RecentRecordingFiles, defaultPlayerSettings[PlayerSettingKeys.RecentRecordingFiles.ToString()]); // Parse JSON array
             SetPlayerSetting(PlayerSettingKeys.EnableFrequencyFilterByDefault, bool.Parse(defaultPlayerSettings[PlayerSettingKeys.EnableFrequencyFilterByDefault.ToString()]));
             // Theme default
             SetPlayerSetting(PlayerSettingKeys.ThemeFile, defaultPlayerSettings[PlayerSettingKeys.ThemeFile.ToString()]);

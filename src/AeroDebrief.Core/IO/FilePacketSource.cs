@@ -9,7 +9,7 @@ namespace AeroDebrief.Core.IO
     /// High-performance packet source using memory-mapped files and PTS-sorted secondary index.
     /// Supports efficient seeking and range queries for large recording files.
     /// </summary>
-    public sealed class FilePacketSource : IDisposable
+    public sealed class FilePacketSource : IPacketSource
     {
         private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
 

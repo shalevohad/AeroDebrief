@@ -595,6 +595,28 @@ namespace AeroDebrief.UI.ViewModels
         }
 
         /// <summary>
+        /// Phase 4: Refresh data for live recording.
+        /// Extends the time range and loads new packets without clearing existing data.
+        /// </summary>
+        public void RefreshLiveData()
+        {
+            try
+            {
+                // Simply trigger a redraw - the data will be automatically loaded
+                // when the viewport is updated
+                _logger.Debug("?? LIVE: Refreshing graph data");
+                
+                // Notify that series collection changed (triggers redraw)
+                OnPropertyChanged(nameof(Series));
+                OnPropertyChanged(nameof(TotalPoints));
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex, "Failed to refresh live data");
+            }
+        }
+
+        /// <summary>
         /// Phase 8: Load data using tile-based manager for improved performance.
         /// Only loads tiles for the current viewport with preload buffer.
         /// </summary>

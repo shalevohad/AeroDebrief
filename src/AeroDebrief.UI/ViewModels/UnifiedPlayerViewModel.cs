@@ -10,6 +10,7 @@ using AeroDebrief.Core.Audio;
 using AeroDebrief.Core.Analysis;
 using AeroDebrief.Core.Playback;
 using AeroDebrief.Core.Models;
+using AeroDebrief.Core.Storage;
 using AeroDebrief.UI.Commands;
 using AeroDebrief.UI.Services;
 using NLog;
@@ -41,6 +42,8 @@ namespace AeroDebrief.UI.ViewModels
         private readonly FrequencyManager _frequencyManager;
         private readonly PlaybackSessionManager _sessionManager;
         private readonly MixerController _mixerController;
+        private readonly LivePlaybackManager _livePlaybackManager; // Phase 4: Live playback
+        private readonly LiveAudioPlaybackService _liveAudioService; // Phase 4: Live audio
         
         // Phase 7 Step 4: Unified graph view model for chart integration
         private readonly UnifiedGraphViewModel _graphViewModel;
@@ -63,6 +66,11 @@ namespace AeroDebrief.UI.ViewModels
         private double _playheadPositionNormalized = 0.0;
         private bool _isBuffering = false;
         private string _currentSourceName = string.Empty;
+        private bool _isLiveRecording = false; // Phase 4: Track live recording state
+        
+        // Phase 4 Enhanced: Dual playhead support
+        private TimeSpan _recordingPosition = TimeSpan.Zero;  // Where recording is (static playhead)
+        private TimeSpan _playbackPosition = TimeSpan.Zero;   // Where audio is playing (dynamic playhead)
         
         private double _bufferStartPosition = 0.0;
         private double _bufferEndPosition = 0.0;
@@ -70,6 +78,9 @@ namespace AeroDebrief.UI.ViewModels
         // Source view models
         private ServerSourceViewModel? _serverSource;
         private FileSourceViewModel? _fileSource;
+        
+        // Phase 2.5: File format display
+        private string _fileFormat = string.Empty;
 
         // Collections (now backed by services)
         private ObservableCollection<FrequencyGroupViewModel> _frequencies = new();
@@ -175,6 +186,15 @@ namespace AeroDebrief.UI.ViewModels
             get => _currentSourceName;
             set => SetProperty(ref _currentSourceName, value);
         }
+        
+        /// <summary>
+        /// Phase 2.5: File format display (CVR, ADB, or CVR Uncompressed).
+        /// </summary>
+        public string FileFormat
+        {
+            get => _fileFormat;
+            set => SetProperty(ref _fileFormat, value);
+        }
 
         public ObservableCollection<FrequencyGroupViewModel> Frequencies
         {
@@ -223,6 +243,81 @@ namespace AeroDebrief.UI.ViewModels
         public string CurrentPositionDisplay => CurrentPosition.ToString(@"hh\:mm\:ss");
         public string TotalDurationDisplay => TotalDuration.ToString(@"hh\:mm\:ss");
 
+        /// <summary>
+        /// Phase 4: Gets whether live recording is currently active.
+        /// </summary>
+        public bool IsLiveRecording
+        {
+            get => _isLiveRecording;
+            set => SetProperty(ref _isLiveRecording, value);
+        }
+
+        /// <summary>
+        /// Phase 4 Enhanced: Gets the recording playhead position (static - where packets are being written).
+        /// This is the "pencil" drawing the waveform.
+        /// </summary>
+        public TimeSpan RecordingPosition
+        {
+            get => _recordingPosition;
+            set
+            {
+                if (SetProperty(ref _recordingPosition, value))
+                {
+                    OnPropertyChanged(nameof(RecordingPositionNormalized));
+                    OnPropertyChanged(nameof(RecordingPositionDisplay));
+                }
+            }
+        }
+
+        /// <summary>
+        /// Phase 4 Enhanced: Gets the playback playhead position (dynamic - where audio is playing).
+        /// This is synchronized with the audio output.
+        /// </summary>
+        public TimeSpan PlaybackPosition
+        {
+            get => _playbackPosition;
+            set
+            {
+                if (SetProperty(ref _playbackPosition, value))
+                {
+                    OnPropertyChanged(nameof(PlaybackPositionNormalized));
+                }
+            }
+        }
+
+        /// <summary>
+        /// Gets the normalized recording position (0.0 to 1.0) for UI binding.
+        /// </summary>
+        public double RecordingPositionNormalized
+        {
+            get
+            {
+                if (TotalDuration.TotalSeconds <= 0)
+                    return 1.0; // At end if no duration yet
+                
+                return RecordingPosition.TotalMilliseconds / TotalDuration.TotalMilliseconds;
+            }
+        }
+
+        /// <summary>
+        /// Gets the normalized playback position (0.0 to 1.0) for UI binding.
+        /// </summary>
+        public double PlaybackPositionNormalized
+        {
+            get
+            {
+                if (TotalDuration.TotalSeconds <= 0)
+                    return 0.0;
+                
+                return PlaybackPosition.TotalMilliseconds / TotalDuration.TotalMilliseconds;
+            }
+        }
+
+        /// <summary>
+        /// Gets the recording position display string.
+        /// </summary>
+        public string RecordingPositionDisplay => RecordingPosition.ToString(@"hh\:mm\:ss");
+
         public ServerSourceViewModel ServerSource
         {
             get => _serverSource ??= new ServerSourceViewModel();
@@ -268,7 +363,7 @@ namespace AeroDebrief.UI.ViewModels
                 SetProperty(ref _zoomEndTime, value);
             }
         }
-
+        
         // Phase 3.1: Performance monitoring properties
         public int CurrentFPS
         {
@@ -307,6 +402,12 @@ namespace AeroDebrief.UI.ViewModels
         public ICommand SelectAllFrequenciesCommand { get; }
         public ICommand SelectNoFrequenciesCommand { get; }
         public ICommand OpenSettingsCommand { get; }
+        
+        // Phase 4 Enhanced: Live recording playback commands
+        public ICommand PlayLiveRecordingCommand { get; }
+        public ICommand PauseLiveRecordingCommand { get; }
+        public ICommand SeekLiveRecordingCommand { get; }
+        public ICommand GoToLivePositionCommand { get; }
 
         #endregion
 
@@ -320,6 +421,8 @@ namespace AeroDebrief.UI.ViewModels
             _frequencyManager = new FrequencyManager();
             _sessionManager = new PlaybackSessionManager();
             _mixerController = new MixerController();
+            _livePlaybackManager = new LivePlaybackManager(_frequencyManager); // Phase 4: Live playback
+            _liveAudioService = new LiveAudioPlaybackService(); // Phase 4: Live audio
 
             // Phase 7 Step 4: Initialize graph view model with MixerController for audio sync
             // Phase 8: Tile system now enabled by default (DataTileCache and DataTileManager created automatically)
@@ -349,10 +452,17 @@ namespace AeroDebrief.UI.ViewModels
             SelectAllFrequenciesCommand = new RelayCommand(ExecuteSelectAllFrequencies);
             SelectNoFrequenciesCommand = new RelayCommand(ExecuteSelectNoFrequencies);
             OpenSettingsCommand = new RelayCommand(ExecuteOpenSettings);
+            
+            // Phase 4 Enhanced: Live recording playback commands
+            PlayLiveRecordingCommand = new RelayCommand(ExecutePlayLiveRecording, CanExecutePlayLiveRecording);
+            PauseLiveRecordingCommand = new RelayCommand(ExecutePauseLiveRecording, CanExecutePauseLiveRecording);
+            SeekLiveRecordingCommand = new RelayCommand<double>(pos => ExecuteSeekLiveRecording(pos), pos => CanExecuteSeekLiveRecording(pos));
+            GoToLivePositionCommand = new RelayCommand(ExecuteGoToLivePosition, CanExecuteGoToLivePosition);
 
             // Wire up source view model events
             ServerSource.ConnectionStateChanged += OnServerConnectionStateChanged;
             ServerSource.RecordingStateChanged += OnServerRecordingStateChanged;
+            ServerSource.LivePlaybackReady += OnServerLivePlaybackReady; // Phase 4
             FileSource.FileLoaded += OnFileLoaded;
             FileSource.FileUnloaded += OnFileUnloaded;
 
@@ -380,6 +490,13 @@ namespace AeroDebrief.UI.ViewModels
             _mixerController.ChannelAdded += OnMixerChannelAdded;
             _mixerController.ChannelRemoved += OnMixerChannelRemoved;
             _mixerController.ChannelChanged += OnMixerChannelChanged;
+
+            // Phase 4: Live playback events
+            _livePlaybackManager.FrequencyDetected += OnLiveFrequencyDetected;
+            _livePlaybackManager.PlayerDetected += OnLivePlayerDetected;
+            _livePlaybackManager.PacketsAvailable += OnLivePacketsAvailable;
+            _livePlaybackManager.DurationUpdated += OnLiveDurationUpdated;
+            _livePlaybackManager.AudioPacketsAvailable += OnLiveAudioPacketsAvailable; // Phase 4: Audio streaming
 
             Logger.Debug("? Service events wired");
         }
@@ -492,6 +609,7 @@ namespace AeroDebrief.UI.ViewModels
             // Clear UI state
             Frequencies.Clear();
             MixerChannels.Clear();
+            FileFormat = string.Empty; // Phase 2.5: Clear file format
         }
 
         private void OnSessionError(object? sender, SessionErrorEventArgs e)
@@ -601,6 +719,297 @@ namespace AeroDebrief.UI.ViewModels
         private void OnMixerChannelChanged(object? sender, ChannelChangedEventArgs e)
         {
             Logger.Debug($"Mixer channel changed: {e.Frequency:F1} Hz, {e.Property} = {e.Value}");
+        }
+
+        #endregion
+
+        #region Phase 4: Live Playback Event Handlers
+
+        private void OnLiveFrequencyDetected(object? sender, FrequencyDetectedEventArgs e)
+        {
+            Logger.Info($"?? LIVE: New frequency detected - {e.Frequency.Frequency:F1} MHz");
+            
+            try
+            {
+                // Add frequency to UI on dispatcher thread
+                System.Windows.Application.Current?.Dispatcher?.InvokeAsync(() =>
+                {
+                    // Find or create coalition group
+                    var coalition = GetCoalitionFromFrequency(e.Frequency);
+                    var group = Frequencies.FirstOrDefault(g => g.Name.Contains(coalition));
+                    
+                    if (group == null)
+                    {
+                        group = new FrequencyGroupViewModel
+                        {
+                            Name = $"{coalition} (Live Recording)",
+                            IsExpanded = true
+                        };
+                        Frequencies.Add(group);
+                    }
+                    
+                    // Create frequency view model
+                    var freqViewModel = new FrequencyViewModel
+                    {
+                        Frequency = e.Frequency.Frequency,
+                        DisplayName = $"{e.Frequency.Frequency / 1_000_000.0:F3} MHz",
+                        PacketCount = (int)e.Frequency.PacketCount,
+                        IsSelected = true // Auto-select new frequencies
+                    };
+                    
+                    group.Frequencies.Add(freqViewModel);
+                    
+                    // Auto-select and setup mixer for new frequency
+                    _frequencyManager.SelectFrequency(e.Frequency.Frequency);
+                    
+                    StatusMessage = $"?? LIVE: New frequency {e.Frequency.Frequency / 1_000_000.0:F3} MHz";
+                }, System.Windows.Threading.DispatcherPriority.Normal);
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, "Failed to handle live frequency detection");
+            }
+        }
+
+        private void OnLivePlayerDetected(object? sender, PlayerDetectedEventArgs e)
+        {
+            Logger.Info($"?? LIVE: New player detected - {e.Player.PlayerName} ({GetCoalitionName(e.Player.Coalition)})");
+            
+            try
+            {
+                // Update UI to show new player
+                System.Windows.Application.Current?.Dispatcher?.InvokeAsync(() =>
+                {
+                    StatusMessage = $"?? LIVE: Player joined - {e.Player.PlayerName}";
+                    
+                    // Find frequency groups that include this player's frequencies
+                    foreach (var freq in e.Player.Frequencies)
+                    {
+                        var freqViewModel = FindFrequencyViewModel(freq);
+                        if (freqViewModel != null)
+                        {
+                            // Update player count or add player info
+                            freqViewModel.PacketCount++;
+                        }
+                    }
+                }, System.Windows.Threading.DispatcherPriority.Normal);
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, "Failed to handle live player detection");
+            }
+        }
+
+        private void OnLivePacketsAvailable(object? sender, LivePacketsEventArgs e)
+        {
+            Logger.Debug($"?? LIVE: {e.NewPacketCount} new packets available, duration: {e.CurrentDuration}");
+            
+            try
+            {
+                // Update waveform and timeline in real-time
+                System.Windows.Application.Current?.Dispatcher?.InvokeAsync(() =>
+                {
+                    // Update duration if recording is growing
+                    if (e.CurrentDuration > TotalDuration)
+                    {
+                        TotalDuration = e.CurrentDuration;
+                    }
+                    
+                    // Trigger waveform refresh for UnifiedGraphViewModel
+                    // The graph will automatically extend to show new data
+                    _graphViewModel.RefreshLiveData();
+                    
+                }, System.Windows.Threading.DispatcherPriority.Background);
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, "Failed to handle live packets");
+            }
+        }
+
+        private void OnLiveDurationUpdated(object? sender, TimeSpan duration)
+        {
+            Logger.Debug($"?? LIVE: Duration updated - {duration}");
+            
+            try
+            {
+                System.Windows.Application.Current?.Dispatcher?.InvokeAsync(() =>
+                {
+                    TotalDuration = duration;
+                    RecordingPosition = duration; // Recording playhead follows duration
+                    
+                    // If user is at the end (live position), auto-scroll
+                    if (IsAtLivePosition())
+                    {
+                        // Auto-scroll to end
+                        CurrentPosition = duration;
+                        PlayheadPositionNormalized = 1.0;
+                    }
+                }, System.Windows.Threading.DispatcherPriority.Background);
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, "Failed to update live duration");
+            }
+        }
+
+        /// <summary>
+        /// Phase 4 Enhanced: Handle live audio packets for real-time playback
+        /// </summary>
+        private void OnLiveAudioPacketsAvailable(object? sender, LiveAudioPacketsEventArgs e)
+        {
+            try
+            {
+                if (e.Packets.Count > 0)
+                {
+                    Logger.Debug($"?? Received {e.Packets.Count} audio packets for live playback");
+                    
+                    // Forward to audio playback service
+                    _liveAudioService.AddPackets(e.Packets);
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, "Failed to handle live audio packets");
+            }
+        }
+
+        /// <summary>
+        /// Helper: Check if playhead is near the end (live position)
+        /// </summary>
+        private bool IsAtLivePosition()
+        {
+            if (TotalDuration.TotalSeconds < 1)
+                return true;
+            
+            var distanceFromEnd = TotalDuration - CurrentPosition;
+            return distanceFromEnd.TotalSeconds < 2.0; // Within 2 seconds of end
+        }
+
+        /// <summary>
+        /// Helper: Get coalition name from frequency info
+        /// </summary>
+        private string GetCoalitionFromFrequency(Core.Storage.FrequencyInfo freq)
+        {
+            // Try to determine coalition from frequency metadata
+            // This is a simplified version - you may need to enhance based on your data
+            return "Mixed"; // Default to Mixed for live frequencies
+        }
+
+        /// <summary>
+        /// Helper: Get coalition name from coalition code
+        /// </summary>
+        private string GetCoalitionName(byte coalition)
+        {
+            return coalition switch
+            {
+                0 => "Neutral",
+                1 => "Red",
+                2 => "Blue",
+                _ => "Unknown"
+            };
+        }
+
+        /// <summary>
+        /// Helper: Find frequency view model by frequency value
+        /// </summary>
+        private FrequencyViewModel? FindFrequencyViewModel(double frequency)
+        {
+            foreach (var group in Frequencies)
+            {
+                var freq = group.Frequencies.FirstOrDefault(f => Math.Abs(f.Frequency - frequency) < 0.1);
+                if (freq != null)
+                    return freq;
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// Phase 4: Start live playback monitoring for the given recording database
+        /// </summary>
+        public async Task StartLivePlaybackAsync(string liveDatabasePath)
+        {
+            try
+            {
+                Logger.Info($"?? Starting live playback: {liveDatabasePath}");
+                
+                // Start live playback monitoring
+                await _livePlaybackManager.StartLivePlaybackAsync(liveDatabasePath);
+                
+                // Wire up to playback pipeline's PlaybackController
+                if (_livePlaybackManager.PlaybackPipeline?.PlaybackController != null)
+                {
+                    var controller = _livePlaybackManager.PlaybackPipeline.PlaybackController;
+                    
+                    // Subscribe to playback position updates
+                    controller.TimeChanged += OnLivePlaybackTimeChanged;
+                    
+                    Logger.Info("   ? Playback controller wired for dual-playhead tracking");
+                }
+                
+                // Start live audio playback (legacy service - may be replaced by pipeline)
+                await _liveAudioService.StartAsync();
+                
+                IsLiveRecording = true;
+                StatusMessage = "?? LIVE RECORDING - Dual playhead tracking active";
+                
+                Logger.Info("? Live playback monitoring, audio streaming, and dual playheads active");
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, "Failed to start live playback");
+                StatusMessage = $"Live playback error: {ex.Message}";
+            }
+        }
+
+        /// <summary>
+        /// Phase 4: Stop live playback monitoring
+        /// </summary>
+        public async Task StopLivePlaybackAsync()
+        {
+            try
+            {
+                Logger.Info("?? Stopping live playback...");
+                
+                // Unsubscribe from playback pipeline
+                if (_livePlaybackManager.PlaybackPipeline?.PlaybackController != null)
+                {
+                    _livePlaybackManager.PlaybackPipeline.PlaybackController.TimeChanged -= OnLivePlaybackTimeChanged;
+                }
+                
+                await _livePlaybackManager.StopLivePlaybackAsync();
+                await _liveAudioService.StopAsync();
+                
+                IsLiveRecording = false;
+                RecordingPosition = TimeSpan.Zero;
+                PlaybackPosition = TimeSpan.Zero;
+                StatusMessage = "Live recording stopped";
+                
+                Logger.Info("? Live playback monitoring, audio, and playheads stopped");
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, "Failed to stop live playback");
+            }
+        }
+
+        /// <summary>
+        /// Phase 4 Enhanced: Handle playback time changes from live pipeline.
+        /// </summary>
+        private void OnLivePlaybackTimeChanged(TimeSpan currentTime, TimeSpan totalTime)
+        {
+            try
+            {
+                System.Windows.Application.Current?.Dispatcher?.InvokeAsync(() =>
+                {
+                    PlaybackPosition = currentTime;
+                    CurrentPosition = currentTime; // Also update main position for scrubber
+                }, System.Windows.Threading.DispatcherPriority.Render);
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, "Failed to update playback position");
+            }
         }
 
         #endregion
@@ -780,6 +1189,109 @@ namespace AeroDebrief.UI.ViewModels
             }
         }
 
+        /// <summary>
+        /// Phase 4 Enhanced: Play the live recording from the current position.
+        /// Behaves like PlayCommand, but targets the live recording stream.
+        /// </summary>
+        private bool CanExecutePlayLiveRecording() => IsLiveRecording && PlaybackState != PlaybackState.Playing;
+
+        private void ExecutePlayLiveRecording()
+        {
+            try
+            {
+                Logger.Info("Playing live recording");
+                
+                // Just resume if already playing
+                if (PlaybackState == PlaybackState.Playing)
+                    return;
+                
+                // For live recording, we directly set the playback state
+                PlaybackState = PlaybackState.Playing;
+                StatusMessage = "Live recording in progress...";
+                
+                Logger.Info("? Live recording playback started");
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, "Failed to start live recording playback");
+                StatusMessage = $"Error: {ex.Message}";
+            }
+        }
+
+        /// <summary>
+        /// Phase 4 Enhanced: Pause the live recording playback.
+        /// This pauses the dual playheads and live audio stream.
+        /// </summary>
+        private bool CanExecutePauseLiveRecording() => IsLiveRecording && PlaybackState == PlaybackState.Playing;
+
+        private void ExecutePauseLiveRecording()
+        {
+            try
+            {
+                Logger.Info("Pausing live recording playback");
+                
+                PlaybackState = PlaybackState.Paused;
+                StatusMessage = "Live recording paused";
+                
+                Logger.Info("? Live recording playback paused");
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, "Failed to pause live recording playback");
+                StatusMessage = $"Error: {ex.Message}";
+            }
+        }
+
+        /// <summary>
+        /// Phase 4 Enhanced: Seek within the live recording.
+        /// This adjusts the dynamic playhead position in the live recording stream.
+        /// </summary>
+        private bool CanExecuteSeekLiveRecording(double? normalizedPosition) => IsLiveRecording && normalizedPosition.HasValue;
+
+        private void ExecuteSeekLiveRecording(double? normalizedPosition)
+        {
+            if (!normalizedPosition.HasValue) return;
+
+            try
+            {
+                var targetPosition = TimeSpan.FromTicks((long)(TotalDuration.Ticks * normalizedPosition.Value));
+                
+                Logger.Info($"Seeking live recording to {targetPosition}");
+                
+                // For live recording, we directly set the playback position
+                PlaybackPosition = targetPosition;
+                CurrentPosition = targetPosition; // Also update main position
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, "Failed to seek live recording");
+            }
+        }
+
+        /// <summary>
+        /// Phase 4 Enhanced: Jump to the live position in the recording.
+        /// This seeks to the latest position of the live recording.
+        /// </summary>
+        private bool CanExecuteGoToLivePosition() => IsLiveRecording && PlaybackState != PlaybackState.Stopped;
+
+        private void ExecuteGoToLivePosition()
+        {
+            try
+            {
+                Logger.Info("Jumping to live position in recording");
+                
+                // For live recording, we directly set the playback position to the end
+                PlaybackPosition = TotalDuration;
+                CurrentPosition = TotalDuration; // Also update main position
+                
+                Logger.Info("? Jumped to live position");
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, "Failed to jump to live position");
+            }
+        }
+
         #endregion
 
         #region Event Handlers (Legacy)
@@ -820,30 +1332,61 @@ namespace AeroDebrief.UI.ViewModels
             }
         }
 
+        /// <summary>
+        /// Phase 4: Handle live playback ready from server recording
+        /// </summary>
+        private async void OnServerLivePlaybackReady(string liveDatabasePath)
+        {
+            try
+            {
+                Logger.Info($"?? Server recording started - enabling live playback: {liveDatabasePath}");
+                
+                // Start live playback monitoring
+                await StartLivePlaybackAsync(liveDatabasePath);
+                
+                StatusMessage = "?? LIVE RECORDING - Monitoring for new frequencies/players";
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, "Failed to start live playback from server recording");
+                StatusMessage = $"Live playback error: {ex.Message}";
+            }
+        }
+
         private async void OnFileLoaded(string filePath)
         {
             try
             {
                 CurrentMode = PlayerMode.Playback;
                 CurrentSourceName = System.IO.Path.GetFileName(filePath);
+                
+                // Phase 2.5: Detect and display file format
+                FileFormat = CvrFormat.GetFormatName(filePath);
+                Logger.Info($"File format detected: {FileFormat}");
+                
                 IsBuffering = true;
                 StatusMessage = "Loading file...";
                 ProgressPercent = 0;
                 
-                Logger.Info($"======== LOADING FILE (Service Architecture): {filePath} ========{"======== LOADING FILE (Service Architecture): "}{filePath} ========");
-                
+                Logger.Info($"======== LOADING FILE (Service Architecture): {filePath} ========");
+
                 // Create progress reporter for status updates - update every 5% of file load
                 int lastProgress = 0;
                 var progress = new Progress<string>(status =>
                 {
+                    // Phase 2.5: Also update FileSourceViewModel's loading display
+                    bool hasPercent = false;
+                    int percent = 0;
+                    
                     // Parse progress from status messages like "Loading frequencies... 45%"
                     if (status.Contains("%"))
                     {
                         // Extract percentage from message
                         if (int.TryParse(
                             System.Text.RegularExpressions.Regex.Match(status, @"\d+").Value, 
-                            out int percent))
+                            out percent))
                         {
+                            hasPercent = true;
                             // Only update UI every 5% to reduce dispatcher overhead
                             if (Math.Abs(percent - lastProgress) >= 5 || percent == 0 || percent == 100)
                             {
@@ -853,16 +1396,20 @@ namespace AeroDebrief.UI.ViewModels
                                 {
                                     ProgressPercent = percent;
                                     StatusMessage = status;
+                                    // Phase 2.5: Update FileSourceViewModel
+                                    FileSource?.UpdateLoadingProgress(status, percent, isIndeterminate: false);
                                 }, System.Windows.Threading.DispatcherPriority.Background);
                             }
                         }
                     }
                     else
                     {
-                        // Status message without percentage
+                        // Status message without percentage - use indeterminate progress
                         System.Windows.Application.Current?.Dispatcher?.InvokeAsync(() =>
                         {
                             StatusMessage = status;
+                            // Phase 2.5: Update FileSourceViewModel with indeterminate progress
+                            FileSource?.UpdateLoadingProgress(status, 0, isIndeterminate: true);
                         }, System.Windows.Threading.DispatcherPriority.Background);
                     }
                 });
@@ -873,6 +1420,9 @@ namespace AeroDebrief.UI.ViewModels
                 
                 Logger.Info("? File load completed - session loaded event should have fired");
                 
+                // Phase 2.5: Mark loading as complete in FileSourceViewModel
+                FileSource?.CompleteLoading(success: true, message: "File loaded successfully");
+                
                 // Session loaded event will trigger next steps (frequency loading, waveform generation)
             }
             catch (Exception ex)
@@ -882,6 +1432,9 @@ namespace AeroDebrief.UI.ViewModels
                 ProgressPercent = 0;
                 IsBuffering = false;
                 CurrentMode = PlayerMode.Idle;
+                
+                // Phase 2.5: Mark loading as failed in FileSourceViewModel
+                FileSource?.CompleteLoading(success: false, message: ex.Message);
             }
         }
 
@@ -899,6 +1452,7 @@ namespace AeroDebrief.UI.ViewModels
             // Clear UI state
             Frequencies.Clear();
             MixerChannels.Clear();
+            FileFormat = string.Empty; // Phase 2.5: Clear file format
         }
 
         #endregion
@@ -966,7 +1520,7 @@ namespace AeroDebrief.UI.ViewModels
         /// Updates pilot selection (for per-pilot filtering).
         /// Called from UI controls when pilot checkboxes are toggled.
         /// </summary>
-        public void UpdatePilotSelection(string pilotGuid, bool isSelected)
+        public void UpdatePilotSelection(String pilotGuid, bool isSelected)
         {
             Logger.Debug($"Pilot selection changed: {pilotGuid} = {isSelected}");
             
@@ -1016,6 +1570,8 @@ namespace AeroDebrief.UI.ViewModels
             _mixerController?.Dispose();
             _sessionManager?.Dispose();
             _frequencyManager?.Dispose();
+            _livePlaybackManager?.Dispose(); // Phase 4
+            _liveAudioService?.Dispose(); // Phase 4: Audio
             
             Logger.Info("? UnifiedPlayerViewModel disposed");
         }
@@ -1082,6 +1638,13 @@ namespace AeroDebrief.UI.ViewModels
                 StatusMessage = $"Playback error: {ex.Message}";
                 PlaybackState = PlaybackState.Stopped;
             };
+
+            // Phase 4: Live playback events
+            _livePlaybackManager.FrequencyDetected += OnLiveFrequencyDetected;
+            _livePlaybackManager.PlayerDetected += OnLivePlayerDetected;
+            _livePlaybackManager.PacketsAvailable += OnLivePacketsAvailable;
+            _livePlaybackManager.DurationUpdated += OnLiveDurationUpdated;
+            _livePlaybackManager.AudioPacketsAvailable += OnLiveAudioPacketsAvailable; // Phase 4: Audio streaming
         }
 
         private async Task LoadFrequenciesAsync()

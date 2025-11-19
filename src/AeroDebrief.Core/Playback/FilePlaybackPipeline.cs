@@ -9,14 +9,15 @@ using NLog;
 namespace AeroDebrief.Core.Playback
 {
     /// <summary>
-    /// Complete playback pipeline using FilePacketSource for memory-efficient streaming.
+    /// Complete playback pipeline using IPacketSource for memory-efficient streaming.
     /// Supports batched packet reading, instant filtering, and low-latency playback.
+    /// Works with both FilePacketSource (.adb) and DuckDBPacketSource (.cvr/.duckdb).
     /// </summary>
     public sealed class FilePlaybackPipeline : IDisposable
     {
         private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
 
-        private readonly FilePacketSource _packetSource;
+        private readonly IPacketSource _packetSource;
         private PacketRouter? _packetRouter;
         private AudioOutputEngine? _audioOutput;
         private IAudioOutputEngine? _customAudioOutput; // NEW: For test injection
@@ -80,29 +81,29 @@ namespace AeroDebrief.Core.Playback
             ?? throw new InvalidOperationException("Pipeline not opened - call OpenAsync first");
 
         /// <summary>
-        /// Creates a new FilePlaybackPipeline with an already-opened FilePacketSource.
-        /// This allows sharing the same FilePacketSource for waveform generation and playback.
+        /// Creates a new FilePlaybackPipeline with an already-opened IPacketSource.
+        /// This allows sharing the same packet source for waveform generation and playback.
         /// </summary>
-        public FilePlaybackPipeline(FilePacketSource packetSource)
+        public FilePlaybackPipeline(IPacketSource packetSource)
         {
             _packetSource = packetSource ?? throw new ArgumentNullException(nameof(packetSource));
-            Logger.Info("FilePlaybackPipeline created with shared FilePacketSource");
+            Logger.Info($"FilePlaybackPipeline created with {packetSource.GetType().Name}");
         }
 
         /// <summary>
         /// Creates a new FilePlaybackPipeline with a custom audio output engine (for testing).
         /// This allows test code to inject TestAudioCapture instead of using production AudioOutputEngine.
         /// </summary>
-        public FilePlaybackPipeline(FilePacketSource packetSource, IAudioOutputEngine audioOutputEngine)
+        public FilePlaybackPipeline(IPacketSource packetSource, IAudioOutputEngine audioOutputEngine)
         {
             _packetSource = packetSource ?? throw new ArgumentNullException(nameof(packetSource));
             _customAudioOutput = audioOutputEngine ?? throw new ArgumentNullException(nameof(audioOutputEngine));
-            Logger.Info("FilePlaybackPipeline created with custom audio output engine (test mode)");
+            Logger.Info($"FilePlaybackPipeline created with {packetSource.GetType().Name} and custom audio output engine (test mode)");
         }
 
         /// <summary>
         /// Initializes the complete playback pipeline components.
-        /// FilePacketSource must already be opened before calling this.
+        /// IPacketSource must already be opened before calling this.
         /// </summary>
         public async Task OpenAsync()
         {
@@ -110,9 +111,9 @@ namespace AeroDebrief.Core.Playback
             {
                 Logger.Info("Initializing FilePlaybackPipeline components...");
                 
-                // Verify FilePacketSource is opened
+                // Verify IPacketSource is opened
                 if (_packetSource.TotalPackets == 0)
-                    throw new InvalidOperationException("FilePacketSource not opened. Call OpenAsync on it first.");
+                    throw new InvalidOperationException("IPacketSource not opened. Call OpenAsync on it first.");
                 
                 // NEW: Create controllers for external integration (e.g., Tacview)
                 Logger.Info("Creating PlaybackController and SeekController for external integration...");
@@ -215,7 +216,7 @@ namespace AeroDebrief.Core.Playback
                 // Start audio output
                 audioOutput.Start();
                 
-                // Start streaming task (FilePacketSource ? PacketRouter ? FrequencyWorkers)
+                // Start streaming task (IPacketSource ? PacketRouter ? FrequencyWorkers)
                 // Uses BATCHED streaming for 100x less async overhead
                 _streamingTask = Task.Run(async () => await StreamingTaskAsync(_playbackCts.Token), _playbackCts.Token);
                 
@@ -335,7 +336,7 @@ namespace AeroDebrief.Core.Playback
         }
 
         /// <summary>
-        /// Streaming task: reads packets from FilePacketSource using batched streaming
+        /// Streaming task: reads packets from IPacketSource using batched streaming
         /// and routes them. Uses batching to reduce async overhead by 100x.
         /// </summary>
         private async Task StreamingTaskAsync(CancellationToken cancellationToken)
