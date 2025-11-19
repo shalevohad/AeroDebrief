@@ -15,13 +15,14 @@ namespace AeroDebrief.UI.Services.Visualization.Graphs
 {
     /// <summary>
     /// Phase 2 implementation: Provides amplitude time series data for visualization.
-    /// Connects to FilePacketSource and AmplitudeExtractor for real data pipeline.
+    /// Connects to IPacketSource and AmplitudeExtractor for real data pipeline.
+    /// Supports DuckDB-based packet sources (DuckDBPacketSource) and legacy FilePacketSource.
     /// </summary>
     public sealed class AmplitudeSeriesProvider : IAmplitudeSeriesProvider
     {
         private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
         
-        private readonly FilePacketSource? _packetSource;
+        private readonly IPacketSource? _packetSource;
         private readonly IAudioProcessingEngine? _audioEngine;
         private readonly AmplitudeExtractor? _extractor;
         
@@ -36,9 +37,9 @@ namespace AeroDebrief.UI.Services.Visualization.Graphs
         /// <summary>
         /// Create provider with real data pipeline dependencies.
         /// </summary>
-        /// <param name="packetSource">Source for reading audio packets</param>
+        /// <param name="packetSource">Source for reading audio packets (FilePacketSource or DuckDBPacketSource)</param>
         /// <param name="audioEngine">Engine for decoding audio</param>
-        public AmplitudeSeriesProvider(FilePacketSource packetSource, IAudioProcessingEngine audioEngine)
+        public AmplitudeSeriesProvider(IPacketSource packetSource, IAudioProcessingEngine audioEngine)
         {
             _packetSource = packetSource ?? throw new ArgumentNullException(nameof(packetSource));
             _audioEngine = audioEngine ?? throw new ArgumentNullException(nameof(audioEngine));

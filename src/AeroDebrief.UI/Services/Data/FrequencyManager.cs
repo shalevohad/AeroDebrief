@@ -57,7 +57,7 @@ namespace AeroDebrief.UI.Services.Data
         /// Loads frequencies from the packet source and groups them by coalition.
         /// This implements the race-condition fix by building complete groups before adding to observable collection.
         /// </summary>
-        public async Task LoadFrequenciesAsync(FilePacketSource source, FilePlaybackPipeline pipeline)
+        public async Task LoadFrequenciesAsync(IPacketSource source, FilePlaybackPipeline pipeline)
         {
             if (source == null) throw new ArgumentNullException(nameof(source));
             if (pipeline == null) throw new ArgumentNullException(nameof(pipeline));

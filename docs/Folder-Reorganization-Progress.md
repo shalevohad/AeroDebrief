@@ -50,8 +50,22 @@ Updated all test files to use new namespace `AeroDebrief.UI.Services.Visualizati
 - ? `ErrorFlowIntegrationTests.cs`
 - ? `MemoryLeakTests.cs`
 
-### 5. Build Status ?
-**BUILD SUCCESSFUL** - All 31 compilation errors resolved!
+### 5. Removed Legacy Code ?
+**Core.Models Cleanup:**
+- ? **Deleted**: `src\AeroDebrief.Core\Models\WaveformVisualization\TransmissionPoint.cs` (unused legacy model)
+- ? **Deleted**: `src\AeroDebrief.Core\Models\WaveformVisualization\` directory (now empty)
+
+**Core.Filtering Cleanup:**
+- ? **Deleted**: `src\AeroDebrief.Core\Filtering\FrequencyFilter.cs` (unused legacy filtering class)
+- ? **Deleted**: `src\AeroDebrief.Core\Filtering\` directory (now empty)
+
+**Verification:**
+- ? No references to `TransmissionPoint` or `WaveformVisualization` namespace remain
+- ? No references to `FrequencyFilter` class remain (replaced by `Func<double, bool>` predicates in `PacketStreamReader`)
+- ? `AudioPacketReader` is deprecated stub, references to frequency filtering there are obsolete
+
+### 6. Build Status ?
+**BUILD SUCCESSFUL** - All 31 compilation errors resolved + legacy cleanup complete!
 
 ---
 
@@ -89,6 +103,13 @@ src\AeroDebrief.UI\
     ??? UnifiedPlayerViewModel.cs
     ??? Player\
         ??? PlayerModeBase.cs
+
+src\AeroDebrief.Core\
+??? Models\
+?   ??? (other model directories)
+?   ??? ? WaveformVisualization\  (REMOVED - legacy waveform system)
+?
+??? ? Filtering\  (REMOVED - legacy filtering replaced by predicates)
 ```
 
 ---
@@ -99,6 +120,8 @@ src\AeroDebrief.UI\
 - Services all mixed together
 - No clear separation between audio, data, visualization
 - Hard to find related files
+- Legacy `TransmissionPoint` model unused but still present
+- Unused `FrequencyFilter` class from old architecture
 
 ### After:
 - **Services/Audio/** - All audio playback services
@@ -107,6 +130,8 @@ src\AeroDebrief.UI\
 - **Controls/Visualization/** - All visualization controls
 - Clear separation of concerns
 - Easier to navigate and understand architecture
+- **Removed legacy unused code** - cleaner codebase
+- **Modern filtering approach** - Uses `Func<double, bool>` predicates instead of dedicated class
 
 ---
 
@@ -123,29 +148,45 @@ src\AeroDebrief.UI\
 ### Test Files Updated (18 files):
 All test files updated from `using AeroDebrief.UI.Services.Graphs;` to `using AeroDebrief.UI.Services.Visualization.Graphs;`
 
+### Legacy Code Removed (4 items):
+1. ? **TransmissionPoint.cs** - Unused model from old waveform visualization system
+2. ? **WaveformVisualization directory** - Empty after cleanup
+3. ? **FrequencyFilter.cs** - Unused legacy filtering class (replaced by predicates)
+4. ? **Filtering directory** - Empty after cleanup
+
 ---
 
 ## ? Ready to Commit
 
-All files have been successfully reorganized and all compilation errors have been resolved. The solution is ready to be committed with the following message:
+All files have been successfully reorganized, all compilation errors have been resolved, and legacy code has been cleaned up. The solution is ready to be committed with the following message:
 
 ```
-refactor: reorganize folder structure for better separation of concerns
+refactor: reorganize folder structure and remove legacy code
 
+Folder Reorganization:
 - Move Services to Audio/Data/Visualization subfolders
 - Move WaveformDisplayPanel to Controls/Visualization
 - Update all namespaces and references in application and test files
-- Improve code discoverability and maintainability
+
+Legacy Code Cleanup:
+- Remove unused TransmissionPoint model (from old waveform system)
+- Remove unused FrequencyFilter class (replaced by Func predicates)
+- Remove empty WaveformVisualization directory
+- Remove empty Filtering directory
 
 Benefits:
 - Clear separation: Audio, Data, Visualization concerns
 - Better developer experience
 - Easier to find related files
 - Follows architectural principles
+- Cleaner codebase with legacy code removed
+- Modern functional approach to filtering
 
 Files affected:
-- 8 main application files
-- 18 test files
+- 8 main application files updated
+- 18 test files updated
+- 2 legacy files removed
+- 2 legacy directories removed
 - Build successful with all errors resolved
 ```
 
@@ -159,5 +200,58 @@ Files affected:
 - All namespaces updated
 - All using statements fixed
 - All 31 compilation errors resolved
+- **Legacy code removed** (TransmissionPoint + FrequencyFilter + 2 empty directories)
 - Build successful
 - Ready for testing and commit
+
+---
+
+## ?? Impact Summary
+
+### Files Reorganized: 6 files
+- WaveformDisplayPanel.xaml[.cs]
+- FrequencyManager.cs
+- CoreApiService.cs
+- ErrorHandlingService.cs
+- IErrorHandlingService.cs
+- All files in Services/Graphs/ ? Services/Visualization/Graphs/
+
+### Files Updated: 26 files
+- 8 main application files
+- 18 test files
+
+### Files Removed: 2 files
+- TransmissionPoint.cs (legacy model)
+- FrequencyFilter.cs (legacy filtering class)
+
+### Directories Removed: 2 directories
+- src\AeroDebrief.Core\Models\WaveformVisualization\
+- src\AeroDebrief.Core\Filtering\
+
+### Total Changes: 34 files affected, cleaner architecture achieved ?
+
+---
+
+## ?? Technical Notes
+
+### Why FrequencyFilter Was Removed:
+The `FrequencyFilter` class was part of the old architecture that used dedicated filtering classes. The current implementation in `PacketStreamReader` uses functional programming with `Func<double, bool>` predicates, which is:
+- More flexible
+- Less code to maintain
+- Easier to compose filters
+- Better performance (no object allocation)
+- More testable
+
+### Current Filtering Approach:
+```csharp
+// Modern approach in PacketStreamReader
+private Func<double, bool>? _frequencyFilter;
+private Func<Coalition, bool>? _coalitionFilter;
+private Func<PlayerInfo, bool>? _playerFilter;
+
+// Can be easily composed:
+if (_frequencyFilter != null && !_frequencyFilter(metadata.Frequency))
+    continue; // Filter out
+```
+
+This approach is cleaner and aligns with modern C# functional programming practices.

@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 using AeroDebrief.Core.Audio;
 using AeroDebrief.Core.IO;
 using AeroDebrief.Core.Playback;
+using AeroDebrief.Core.Storage;
 using NLog;
 
 namespace AeroDebrief.UI.Services
@@ -10,12 +11,15 @@ namespace AeroDebrief.UI.Services
     /// <summary>
     /// Service responsible for managing playback session lifecycle (file loading, pipeline management).
     /// Implements Separation of Concerns by handling ONLY session-related operations.
+    /// Uses unified DuckDB architecture via RecordingFileLoader for all file formats (.cvr, .adb, .duckdb).
     /// </summary>
     public sealed class PlaybackSessionManager : IDisposable
     {
         private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
 
-        private FilePacketSource? _packetSource;
+        private IPacketSource? _packetSource;
+        private DuckDBStore? _duckDbStore;
+        private string? _tempDbPath;
         private FilePlaybackPipeline? _pipeline;
         private bool _disposed;
         private string _currentFilePath = string.Empty;
@@ -23,7 +27,7 @@ namespace AeroDebrief.UI.Services
         /// <summary>
         /// Gets the current packet source.
         /// </summary>
-        public FilePacketSource? PacketSource => _packetSource;
+        public IPacketSource? PacketSource => _packetSource;
 
         /// <summary>
         /// Gets the current playback pipeline.
@@ -72,6 +76,7 @@ namespace AeroDebrief.UI.Services
 
         /// <summary>
         /// Loads a file and creates a playback session.
+        /// Uses unified DuckDB architecture: CVR/ADB/DuckDB ? DuckDBStore ? DuckDBPacketSource ? FilePlaybackPipeline
         /// </summary>
         public async Task LoadFileAsync(string filePath, IProgress<string>? progress = null)
         {
@@ -83,8 +88,9 @@ namespace AeroDebrief.UI.Services
 
             try
             {
-                Logger.Info("======== LOADING FILE (Pure FilePacketSource Architecture) ========");
+                Logger.Info("======== LOADING FILE (Unified DuckDB Architecture) ========");
                 Logger.Info($"File: {System.IO.Path.GetFileName(filePath)}");
+                Logger.Info($"Format: {CvrFormat.GetFormatName(filePath)}");
                 progress?.Report("Initializing...");
 
                 // Unload existing session if any
@@ -95,27 +101,46 @@ namespace AeroDebrief.UI.Services
                     UnloadSession();
                 }
 
-                // STEP 1: Open FilePacketSource (memory-mapped, indexed)
-                Logger.Info("Step 1: Opening FilePacketSource (memory-mapped, shared)...");
+                // STEP 1: Use RecordingFileLoader to handle all formats
+                // - CVR: Decompresses to temp DuckDB
+                // - ADB: Converts to DuckDB (or uses existing conversion)
+                // - DuckDB: Opens directly
+                Logger.Info("Step 1: Opening recording via RecordingFileLoader...");
                 progress?.Report("Opening file...");
-                _packetSource = new FilePacketSource(filePath);
+                
+                var (store, tempPath) = await RecordingFileLoader.OpenAsync(filePath, progress);
+                _duckDbStore = store;
+                _tempDbPath = tempPath;
+                
+                Logger.Info($"Recording opened: {_duckDbStore.TotalPackets:N0} packets");
+
+                // STEP 2: Create DuckDBPacketSource from the store
+                Logger.Info("Step 2: Creating DuckDBPacketSource...");
+                progress?.Report("Loading packet source...");
+                
+                _packetSource = new DuckDBPacketSource(_duckDbStore);
                 await _packetSource.OpenAsync(progress);
-                Logger.Info($"FilePacketSource ready: {_packetSource.TotalPackets} packets, {_packetSource.TotalDuration}");
+                
+                Logger.Info($"DuckDBPacketSource ready: {_packetSource.TotalPackets} packets, {_packetSource.TotalDuration}");
                 progress?.Report($"File ready: {_packetSource.TotalPackets:N0} packets");
 
-                // STEP 2: Create FilePlaybackPipeline (shares packet source)
-                Logger.Info("Step 2: Creating FilePlaybackPipeline...");
+                // STEP 3: Create FilePlaybackPipeline (uses IPacketSource abstraction)
+                Logger.Info("Step 3: Creating FilePlaybackPipeline...");
                 progress?.Report("Initializing playback engine...");
+                
                 _pipeline = new FilePlaybackPipeline(_packetSource);
                 await _pipeline.OpenAsync();
+                
                 Logger.Info($"? FilePlaybackPipeline initialized");
                 progress?.Report("Playback engine ready");
 
                 _currentFilePath = filePath;
 
-                Logger.Info($"- Session loaded successfully");
-                Logger.Info($"-- Memory-mapped packets: {_packetSource.TotalPackets}");
-                Logger.Info($"-- RAM usage: ~10MB (Pure FilePacketSource Architecture)");
+                Logger.Info($"? Session loaded successfully");
+                Logger.Info($"   Source: {CvrFormat.GetFormatName(filePath)}");
+                Logger.Info($"   Storage: DuckDB");
+                Logger.Info($"   Packets: {_packetSource.TotalPackets:N0}");
+                Logger.Info($"   Duration: {_packetSource.TotalDuration}");
                 progress?.Report("Session loaded successfully");
 
                 // Raise event
@@ -132,11 +157,7 @@ namespace AeroDebrief.UI.Services
                 progress?.Report($"Error: {ex.Message}");
 
                 // Clean up on failure
-                _pipeline?.Dispose();
-                _pipeline = null;
-                _packetSource?.Dispose();
-                _packetSource = null;
-                _currentFilePath = string.Empty;
+                CleanupResources();
 
                 SessionError?.Invoke(this, new SessionErrorEventArgs(ex, filePath));
 
@@ -159,19 +180,7 @@ namespace AeroDebrief.UI.Services
 
             try
             {
-                // Stop playback first
-                if (_pipeline != null)
-                {
-                    _ = _pipeline.StopAsync();
-                    _pipeline.Dispose();
-                    _pipeline = null;
-                }
-
-                // Dispose packet source
-                _packetSource?.Dispose();
-                _packetSource = null;
-
-                _currentFilePath = string.Empty;
+                CleanupResources();
 
                 Logger.Info("? Session unloaded");
 
@@ -181,6 +190,34 @@ namespace AeroDebrief.UI.Services
             {
                 Logger.Error(ex, "Error during session unload");
             }
+        }
+
+        private void CleanupResources()
+        {
+            // Stop playback first
+            if (_pipeline != null)
+            {
+                _ = _pipeline.StopAsync();
+                _pipeline.Dispose();
+                _pipeline = null;
+            }
+
+            // Dispose packet source
+            _packetSource?.Dispose();
+            _packetSource = null;
+
+            // Dispose DuckDB store
+            _duckDbStore?.Dispose();
+            _duckDbStore = null;
+
+            // Cleanup temp files (if CVR was decompressed)
+            if (_tempDbPath != null)
+            {
+                RecordingFileLoader.Cleanup(_tempDbPath);
+                _tempDbPath = null;
+            }
+
+            _currentFilePath = string.Empty;
         }
 
         /// <summary>
@@ -315,14 +352,14 @@ namespace AeroDebrief.UI.Services
 
     public class SessionLoadedEventArgs : EventArgs
     {
-        public FilePacketSource PacketSource { get; }
+        public IPacketSource PacketSource { get; }
         public FilePlaybackPipeline Pipeline { get; }
         public string FilePath { get; }
         public TimeSpan TotalDuration { get; }
         public int TotalPackets { get; }
 
         public SessionLoadedEventArgs(
-            FilePacketSource packetSource,
+            IPacketSource packetSource,
             FilePlaybackPipeline pipeline,
             string filePath,
             TimeSpan totalDuration,
