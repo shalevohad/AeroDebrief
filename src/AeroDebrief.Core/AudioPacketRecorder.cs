@@ -11,7 +11,10 @@ using System.Collections.Concurrent;
 using SRSTCPClientStatusMessage = Ciribob.DCS.SimpleRadio.Standalone.Common.Models.EventMessages.TCPClientStatusMessage;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Models.Player;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Models;
-using AeroDebrief.Core.Storage; // Phase 3: DuckDB recording
+using AeroDebrief.Core.Storage;
+using AeroDebrief.Core.Interfaces.Storage;
+using AeroDebrief.Core.Storage.Abstractions;
+using AeroDebrief.Core.Storage.Sqlite;
 
 namespace AeroDebrief.Core{
     public class AudioPacketRecorder : IHandle<SRSTCPClientStatusMessage>, IHandle<NetworkMessage>
@@ -21,8 +24,9 @@ namespace AeroDebrief.Core{
         private TCPClientHandler? _tcpClientHandler;
         private UDPVoiceHandler? _udpVoiceHandler;
         
-        // Phase 3: Replace FileStream with DuckDB recording
-        private DuckDBStore? _recordingStore;
+        // Repository Pattern: Use IUnitOfWork instead of direct store
+        private IUnitOfWork? _recordingUnitOfWork;
+        private readonly IRepositoryFactory _repositoryFactory = new SqliteRepositoryFactory();
         private string? _tempDatabasePath;
         private DateTime _recordingStartTime;
         
@@ -46,7 +50,7 @@ namespace AeroDebrief.Core{
 
         public string? ServerVersion { get; private set; }
         
-        // Phase 3: Events for recording lifecycle
+        // Events for recording lifecycle
         public event Action<string>? LivePlaybackReady;  // Fired when database is ready for concurrent read
         public event Action<string>? RecordingComplete;   // Fired when recording is finalized
 
@@ -193,24 +197,24 @@ namespace AeroDebrief.Core{
             var dir = Path.GetDirectoryName(requestedPath) ?? string.Empty;
             var baseName = Path.GetFileNameWithoutExtension(requestedPath) ?? "recording";
             
-            // Phase 3: Use .duckdb extension for temp, final format determined by settings
+            // Use .db extension for SQLite database
             var sanitizedIp = Sanitize(ipForName);
             var sanitizedBase = Sanitize(baseName);
 
-            var finalName = $"{sanitizedBase}_srv_{sanitizedIp}_{portForName}_t{timestampForName}.duckdb";
+            var finalName = $"{sanitizedBase}_srv_{sanitizedIp}_{portForName}_t{timestampForName}.db";
             var finalPath = string.IsNullOrEmpty(dir) ? finalName : Path.Combine(dir, finalName);
 
-            // Phase 3: Create temporary database for recording
-            _tempDatabasePath = Path.Combine(Path.GetTempPath(), $"aerodebrief_recording_{Guid.NewGuid():N}.duckdb");
+            // Create temporary database for recording
+            _tempDatabasePath = Path.Combine(Path.GetTempPath(), $"aerodebrief_recording_{Guid.NewGuid():N}.db");
             _outputFile = finalPath;
 
-            Logger.Info($"? Phase 3: Starting DuckDB recording");
+            Logger.Info($"? Starting recording with Repository Pattern");
             Logger.Info($"  Temp database: {_tempDatabasePath}");
             Logger.Info($"  Final output: {_outputFile}");
 
             try
             {
-                // Phase 3: Create DuckDB store with recording metadata
+                // Create recording using Repository Pattern
                 var metadata = new RecordingMetadata
                 {
                     Version = Constants.RECORDING_FILE_MAGIC,
@@ -219,8 +223,8 @@ namespace AeroDebrief.Core{
                     StartTime = _recordingStartTime
                 };
 
-                _recordingStore = new DuckDBStore(_tempDatabasePath);
-                await _recordingStore.CreateAsync(metadata);
+                _recordingUnitOfWork = _repositoryFactory.CreateRecording(_tempDatabasePath, metadata);
+                await _recordingUnitOfWork.InitializeAsync(metadata);
 
                 Logger.Info($"? Recording database created successfully");
                 Logger.Info($"   Server: {ipForName}:{portForName}");
@@ -231,7 +235,7 @@ namespace AeroDebrief.Core{
                 _writerTask = Task.Run(() => WriterLoop(_recordingCts.Token));
                 Task.Run(() => RecordingLoop(_recordingCts.Token));
 
-                // Phase 3: Enable live playback if requested
+                // Enable live playback if requested
                 if (settings.GetRecorderSettingBool(RecorderSettingKeys.EnableLivePlayback))
                 {
                     Logger.Info("?? Live playback enabled - database ready for concurrent reads");
@@ -241,8 +245,8 @@ namespace AeroDebrief.Core{
             catch (Exception ex)
             {
                 Logger.Error(ex, "Failed to start recording.");
-                _recordingStore?.Dispose();
-                _recordingStore = null;
+                _recordingUnitOfWork?.Dispose();
+                _recordingUnitOfWork = null;
                 throw;
             }
         }
@@ -277,20 +281,25 @@ namespace AeroDebrief.Core{
                 Logger.Error(ex, "Error during writer task shutdown.");
             }
             
-            // Phase 3: Finalize and optionally compress
+            // Finalize and optionally compress
             try
             {
-                if (_recordingStore != null && !string.IsNullOrEmpty(_tempDatabasePath))
+                if (_recordingUnitOfWork != null && !string.IsNullOrEmpty(_tempDatabasePath))
                 {
                     Logger.Info("Finalizing recording database...");
-                    await _recordingStore.FinalizeAsync();
-                    _recordingStore.Dispose();
-                    _recordingStore = null;
+                    
+                    // Rebuild statistics and finalize using Repository Pattern
+                    await _recordingUnitOfWork.Frequencies.RebuildStatsAsync();
+                    await _recordingUnitOfWork.Players.RebuildStatsAsync();
+                    await _recordingUnitOfWork.Recording.MarkFinalizedAsync();
+                    await _recordingUnitOfWork.Packets.FinalizeAsync();
+                    
+                    _recordingUnitOfWork.Dispose();
+                    _recordingUnitOfWork = null;
 
                     var settings = RecorderSettingsStore.Instance;
 
-                    // Phase 3: Compression is mandatory (controlled by RecordingConstants)
-                    // No user settings - always compress in RELEASE, optional in DEBUG
+                    // Compression is mandatory (controlled by RecordingConstants)
                     bool shouldCompress = RecordingConstants.FORCE_CVR_COMPRESSION;
                     
                     if (shouldCompress)
@@ -323,13 +332,21 @@ namespace AeroDebrief.Core{
                     else
                     {
                         // Keep uncompressed - DEBUG ONLY
-                        if (File.Exists(_outputFile!))
+                        // IMPORTANT: Even in debug mode, never expose .db extension to users
+                        // Use .cvr-debug extension to indicate uncompressed CVR for testing
+                        var debugPath = Path.ChangeExtension(_outputFile!, ".cvr-debug");
+                        
+                        if (File.Exists(debugPath))
                         {
-                            File.Delete(_outputFile!);
+                            File.Delete(debugPath);
                         }
-                        File.Move(_tempDatabasePath, _outputFile!);
-                        Logger.Warn($"??  Recording saved UNCOMPRESSED (debug mode): {_outputFile}");
+                        File.Move(_tempDatabasePath, debugPath);
+                        
+                        Logger.Warn($"??  Recording saved UNCOMPRESSED (debug mode): {debugPath}");
+                        Logger.Warn($"??  Extension: .cvr-debug (internal database, testing only)");
                         Logger.Warn($"??  This should NEVER happen in production builds!");
+                        
+                        _outputFile = debugPath;
                     }
 
                     // Notify listeners
@@ -627,15 +644,17 @@ namespace AeroDebrief.Core{
                     var timeSinceFlush = (DateTime.UtcNow - lastFlushTime).TotalMilliseconds;
                     if (batch.Count > 0 && (batchFilled || timeSinceFlush >= FLUSH_INTERVAL_MS))
                     {
-                        if (_recordingStore != null)
+                        if (_recordingUnitOfWork != null)
                         {
-                            await _recordingStore.InsertPacketsAsync(batch, token);
-                            Logger.Debug($"Inserted batch: {batch.Count} packets (total: {_recordingStore.TotalPackets:N0})");
+                            // Use Repository Pattern: Packets.InsertBatchAsync
+                            await _recordingUnitOfWork.Packets.InsertBatchAsync(batch, token);
+                            var count = await _recordingUnitOfWork.Packets.GetCountAsync(token);
+                            Logger.Debug($"Inserted batch: {batch.Count} packets (total: {count:N0})");
                             batch.Clear();
                             lastFlushTime = DateTime.UtcNow;
                         }
                     }
-                    
+
                     // Small delay if queue is empty to avoid CPU spinning
                     if (_writeQueue.IsEmpty)
                     {
@@ -655,12 +674,13 @@ namespace AeroDebrief.Core{
             }
             
             // Final batch insert before shutting down
-            if (batch.Count > 0 && _recordingStore != null)
+            if (batch.Count > 0 && _recordingUnitOfWork != null)
             {
                 try
                 {
-                    await _recordingStore.InsertPacketsAsync(batch, CancellationToken.None);
-                    Logger.Info($"Final batch inserted: {batch.Count} packets (total: {_recordingStore.TotalPackets:N0})");
+                    await _recordingUnitOfWork.Packets.InsertBatchAsync(batch, CancellationToken.None);
+                    var totalCount = await _recordingUnitOfWork.Packets.GetCountAsync(CancellationToken.None);
+                    Logger.Info($"Final batch inserted: {batch.Count} packets (total: {totalCount:N0})");
                 }
                 catch (Exception ex)
                 {
@@ -668,7 +688,10 @@ namespace AeroDebrief.Core{
                 }
             }
             
-            Logger.Info($"WriterLoop stopped - Total packets recorded: {_recordingStore?.TotalPackets:N0}");
+            var finalTotal = _recordingUnitOfWork != null 
+                ? await _recordingUnitOfWork.Packets.GetCountAsync(CancellationToken.None)
+                : 0;
+            Logger.Info($"WriterLoop stopped - Total packets recorded: {finalTotal:N0}");
         }
 
         // Add this method to handle sync messages

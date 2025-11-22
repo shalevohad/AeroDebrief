@@ -11,12 +11,14 @@ using AeroDebrief.Core.Analysis;
 using AeroDebrief.Core.Playback;
 using AeroDebrief.Core.Models;
 using AeroDebrief.Core.Storage;
+using AeroDebrief.Core.Storage.Abstractions;
 using AeroDebrief.UI.Commands;
 using AeroDebrief.UI.Services;
 using AeroDebrief.UI.Services.Data;
 using AeroDebrief.UI.Services.Audio;
 using AeroDebrief.UI.Services.Visualization.Graphs;
 using NLog;
+using StorageFrequencyInfo = AeroDebrief.Core.Storage.Abstractions.FrequencyInfo;
 
 namespace AeroDebrief.UI.ViewModels
 {
@@ -776,25 +778,17 @@ namespace AeroDebrief.UI.ViewModels
 
         private void OnLivePlayerDetected(object? sender, PlayerDetectedEventArgs e)
         {
-            Logger.Info($"?? LIVE: New player detected - {e.Player.PlayerName} ({GetCoalitionName(e.Player.Coalition)})");
+            Logger.Info($"?? LIVE: New player detected - {e.Player.Name} ({GetCoalitionName((byte)e.Player.Coalition)})");
             
             try
             {
                 // Update UI to show new player
                 System.Windows.Application.Current?.Dispatcher?.InvokeAsync(() =>
                 {
-                    StatusMessage = $"?? LIVE: Player joined - {e.Player.PlayerName}";
+                    StatusMessage = $"?? LIVE: Player joined - {e.Player.Name}";
                     
-                    // Find frequency groups that include this player's frequencies
-                    foreach (var freq in e.Player.Frequencies)
-                    {
-                        var freqViewModel = FindFrequencyViewModel(freq);
-                        if (freqViewModel != null)
-                        {
-                            // Update player count or add player info
-                            freqViewModel.PacketCount++;
-                        }
-                    }
+                    // Player frequency detection would need to be tracked differently
+                    // as PlayerInfo doesn't have a Frequencies collection
                 }, System.Windows.Threading.DispatcherPriority.Normal);
             }
             catch (Exception ex)
@@ -892,7 +886,7 @@ namespace AeroDebrief.UI.ViewModels
         /// <summary>
         /// Helper: Get coalition name from frequency info
         /// </summary>
-        private string GetCoalitionFromFrequency(Core.Storage.FrequencyInfo freq)
+        private string GetCoalitionFromFrequency(StorageFrequencyInfo freq)
         {
             // Try to determine coalition from frequency metadata
             // This is a simplified version - you may need to enhance based on your data

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using AeroDebrief.Core.IO;
+using AeroDebrief.Core.Storage.Abstractions;
 
 namespace AeroDebrief.Core.Interfaces.Storage
 {

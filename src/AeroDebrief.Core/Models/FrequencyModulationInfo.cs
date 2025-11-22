@@ -3,7 +3,8 @@ using Ciribob.DCS.SimpleRadio.Standalone.Common.Models.Player;
 namespace AeroDebrief.Core.Models
 {
     /// <summary>
-    /// Represents a frequency-modulation combination for filtering and display purposes
+    /// Represents a frequency-modulation combination for filtering and display purposes.
+    /// UNIT STANDARD: Frequency stored in Hz for consistency with database.
     /// </summary>
     public record FrequencyModulationInfo(double Frequency, Modulation Modulation)
     {
@@ -18,7 +19,8 @@ namespace AeroDebrief.Core.Models
         public string GetModulationName() => Modulation.ToString();
         
         /// <summary>
-        /// Gets a formatted display string for UI presentation
+        /// Gets a formatted display string for UI presentation.
+        /// Converts internal Hz to display MHz.
         /// </summary>
         public string GetDisplayText()
         {

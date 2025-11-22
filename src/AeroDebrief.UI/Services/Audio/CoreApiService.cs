@@ -3,6 +3,7 @@ using AeroDebrief.Core.Analysis;
 using AeroDebrief.Core.Audio;
 using AeroDebrief.Core.IO;
 using AeroDebrief.Core.Storage;
+using AeroDebrief.Core.Storage.Abstractions;
 using AeroDebrief.Core.Playback;
 using AeroDebrief.UI.ViewModels;
 using AeroDebrief.UI.Models;
@@ -20,8 +21,8 @@ namespace AeroDebrief.UI.Services.Audio
     /// Core service that provides the essential APIs for the SRS Signal Analyzer UI
     /// All audio processing, DSP, FFT, filtering, and decoding is done through this service
     /// 
-    /// NEW ARCHITECTURE (DuckDB Unified):
-    /// - DuckDBPacketSource (memory-efficient, shared for waveform + playback)
+    /// NEW ARCHITECTURE (SQLite Unified):
+    /// - DatabasePacketSource (memory-efficient, shared for waveform + playback)
     /// - FilePlaybackPipeline for playback (batched streaming, instant filtering)
     /// - LiveCharts2 for visualization (no legacy waveform generators)
     /// - 82% less RAM usage (10MB vs 55MB)
@@ -30,10 +31,10 @@ namespace AeroDebrief.UI.Services.Audio
     /// </summary>
     public class AudioSession : IDisposable
     {
-        // NEW: Single DuckDBPacketSource (shared between visualization and playback)
+        // NEW: Single DatabasePacketSource (shared between visualization and playback)
         private FilePlaybackPipeline? _pipeline;
         private IPacketSource? _packetSource;
-        private DuckDBStore? _duckDbStore;  // Track DuckDB store for cleanup
+        private IUnitOfWork? _unitOfWork;  // Track database store for cleanup
         private string? _tempDbPath;  // Track temp file for cleanup
         private bool _disposed;
         
@@ -88,7 +89,7 @@ namespace AeroDebrief.UI.Services.Audio
                 }
 
                 _packetSource?.Dispose();
-                _duckDbStore?.Dispose();
+                _unitOfWork?.Dispose();
                 if (_tempDbPath != null)
                 {
                     RecordingFileLoader.Cleanup(_tempDbPath);
@@ -124,22 +125,24 @@ namespace AeroDebrief.UI.Services.Audio
                 progress?.Report("Opening file...");
                 
                 // RecordingFileLoader handles:
-                // - CVR: Decompress to temp DuckDB
-                // - ADB: Convert to DuckDB (cached)
-                // - DuckDB: Direct open
+                // - CVR: Decompress to temp SQLite DB
+                // - ADB: Convert to SQLite DB (cached)
+                // - DB: Direct open
                 var (store, tempPath) = await RecordingFileLoader.OpenAsync(filePath, progress, cancellationToken);
-                _duckDbStore = store;
+                _unitOfWork = store;
                 _tempDbPath = tempPath;
                 
-                logger.Info($"✅ DuckDB store ready: {store.TotalPackets:N0} packets");
+                // Get packet count for logging
+                var packetCount = await _unitOfWork.Packets.GetCountAsync(cancellationToken);
+                logger.Info($"✅ SQLite store ready: {packetCount:N0} packets");
                 
-                // STEP 2: Create DuckDBPacketSource from the store
-                logger.Info("Step 2: Creating DuckDBPacketSource...");
-                var duckDbSource = new DuckDBPacketSource(store);
-                await duckDbSource.OpenAsync(progress, cancellationToken);
-                _packetSource = duckDbSource;
+                // STEP 2: Create DatabasePacketSource from the store
+                logger.Info("Step 2: Creating DatabasePacketSource...");
+                var databaseSource = new DatabasePacketSource(store);
+                await databaseSource.OpenAsync(progress, cancellationToken);
+                _packetSource = databaseSource;
                 
-                logger.Info($"✅ DuckDBPacketSource ready: {duckDbSource.TotalPackets:N0} packets");
+                logger.Info($"✅ DatabasePacketSource ready: {databaseSource.TotalPackets:N0} packets");
                 progress?.Report($"File ready: {_packetSource.TotalPackets:N0} packets");
                 
                 // STEP 3: Create FilePlaybackPipeline (shares packet source!)
@@ -375,7 +378,7 @@ namespace AeroDebrief.UI.Services.Audio
             }
             
             _packetSource?.Dispose();
-            _duckDbStore?.Dispose();
+            _unitOfWork?.Dispose();
             if (_tempDbPath != null)
             {
                 RecordingFileLoader.Cleanup(_tempDbPath);

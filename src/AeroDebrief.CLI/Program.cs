@@ -151,8 +151,8 @@ namespace AeroDebrief.CLI
                     }
                     else
                     {
-                        Console.WriteLine($"?? Format: DuckDB (Uncompressed)");
-                        Console.WriteLine($"???  Compression: DISABLED (RecordingConstants)");
+                        Console.WriteLine($"?? Format: SQLite (Uncompressed)");
+                        Console.WriteLine($"??  Compression: DISABLED (RecordingConstants)");
                     }
                     Console.ForegroundColor = ConsoleColor.Yellow;
                     Console.WriteLine($"??  Mode: DEBUG (RecordingConstants.FORCE_CVR_COMPRESSION = {RecordingConstants.FORCE_CVR_COMPRESSION})");
@@ -166,7 +166,7 @@ namespace AeroDebrief.CLI
                     Console.ResetColor();
 #endif
                     
-                    Console.WriteLine($"? Recording to: Temporary DuckDB database");
+                    Console.WriteLine($"?? Recording to: Temporary SQLite database");
                     Console.WriteLine();
                     Console.WriteLine("Press Ctrl+C to stop recording and disconnect");
                     Console.WriteLine("???????????????????????????????????????????????????");
@@ -331,27 +331,49 @@ namespace AeroDebrief.CLI
         {
             if (args.Length < 2)
             {
-                Console.WriteLine("Usage: --migrate <adb_file_or_directory> [output_path]");
+                Console.WriteLine("Usage: --migrate <adb_file_or_directory> [output_path] [--compress]");
+                Console.WriteLine();
+                Console.WriteLine("Options:");
+                Console.WriteLine("  --compress    Compress output to CVR format (7z compressed)");
                 Console.WriteLine();
                 Console.WriteLine("Examples:");
                 Console.WriteLine("  AeroDebrief.CLI.exe --migrate recording.adb");
-                Console.WriteLine("  AeroDebrief.CLI.exe --migrate recording.adb output.duckdb");
-                Console.WriteLine(@"  AeroDebrief.CLI.exe --migrate C:\Recordings\");
+                Console.WriteLine("  AeroDebrief.CLI.exe --migrate recording.adb output.db");
+                Console.WriteLine("  AeroDebrief.CLI.exe --migrate recording.adb --compress");
+                Console.WriteLine(@"  AeroDebrief.CLI.exe --migrate C:\Recordings\ --compress");
                 return;
             }
 
             var inputPath = args[1];
-            var outputPath = args.Length > 2 ? args[2] : null;
+            string? outputPath = null;
+            bool compressToCvr = false;
+            
+            // Parse arguments
+            for (int i = 2; i < args.Length; i++)
+            {
+                if (args[i] == "--compress")
+                {
+                    compressToCvr = true;
+                }
+                else if (outputPath == null)
+                {
+                    outputPath = args[i];
+                }
+            }
 
-            Console.WriteLine("?? ADB ? DuckDB Migration Tool");
+            Console.WriteLine("?? ADB ? SQLite Migration Tool");
             Console.WriteLine("=" + new string('=', 60));
             Console.WriteLine("??  WARNING: This is a ONE-WAY migration!");
             Console.WriteLine("??  ADB files will remain, but won't be used after migration.");
+            if (compressToCvr)
+            {
+                Console.WriteLine("?? CVR compression: ENABLED");
+            }
             Console.WriteLine();
-
+            
             try
             {
-                var converter = new AeroDebrief.Core.Storage.AdbToDuckDBConverter();
+                var converter = new AeroDebrief.Core.Storage.AdbToDatabaseConverter();
 
                 // Check if input is a directory or file
                 if (Directory.Exists(inputPath))
@@ -411,7 +433,7 @@ namespace AeroDebrief.CLI
                         Console.Write($"\r{p.Stage,-30} [{p.Percent,3}%] {p.PacketsProcessed:N0} packets");
                     });
 
-                    var result = await converter.ConvertAsync(inputPath, outputPath, progress);
+                    var result = await converter.ConvertAsync(inputPath, outputPath, compressToCvr, progress);
 
                     Console.WriteLine();
                     Console.WriteLine();
@@ -725,25 +747,25 @@ namespace AeroDebrief.CLI
         {
             Console.WriteLine("SRS Recording Client - Usage:");
             Console.WriteLine();
-            Console.WriteLine("Recording Mode (Phase 3 - DuckDB Recording):");
+            Console.WriteLine("Recording Mode (Phase 3 - SQLite Recording):");
             Console.WriteLine("  DCS-SRS-RecordingClient.exe <server_ip> <port>");
             Console.WriteLine("  Example: DCS-SRS-RecordingClient.exe 192.168.1.100 5002");
             Console.WriteLine();
-            Console.WriteLine("  ?? Note: Records directly to DuckDB database");
-            Console.WriteLine("  ?? Output: Compressed CVR format by default");
+            Console.WriteLine("  ?? Note: Records directly to SQLite database");
+            Console.WriteLine("  ??? Output: Compressed CVR format by default");
             Console.WriteLine("  ??  Settings: Edit configs/recorder.cfg to change format");
             Console.WriteLine();
             Console.WriteLine("  Available settings:");
-            Console.WriteLine("    OutputFormat = \"CVR\" (compressed) or \"Uncompressed\" (DuckDB)");
+            Console.WriteLine("    OutputFormat = \"CVR\" (compressed) or \"Uncompressed\" (SQLite)");
             Console.WriteLine("    AutoCompress = true (compress on stop) or false");
             Console.WriteLine("    EnableLivePlayback = false (Phase 4 feature)");
             Console.WriteLine();
             Console.WriteLine("File Migration:");
             Console.WriteLine("  --migrate <adb_file_or_directory> [output_path]");
-            Console.WriteLine("    Convert legacy ADB file(s) to DuckDB format");
+            Console.WriteLine("    Convert legacy ADB file(s) to SQLite format");
             Console.WriteLine("    Examples:");
             Console.WriteLine("      --migrate recording.adb");
-            Console.WriteLine("      --migrate recording.adb output.duckdb");
+            Console.WriteLine("      --migrate recording.adb output.db");
             Console.WriteLine(@"      --migrate C:\Recordings\");
             Console.WriteLine();
             Console.WriteLine("Audio Analysis:");
@@ -760,7 +782,7 @@ namespace AeroDebrief.CLI
             Console.WriteLine("      --csv <output.csv>     : Export results to CSV");
             Console.WriteLine();
             Console.WriteLine("Phase 3 Features:");
-            Console.WriteLine("  ? Direct DuckDB recording (no ADB conversion needed)");
+            Console.WriteLine("  ? Direct SQLite recording (no ADB conversion needed)");
             Console.WriteLine("  ? Automatic CVR compression on stop");
             Console.WriteLine("  ? 60% smaller files with CVR format");
             Console.WriteLine("  ? Real-time metadata indexing");

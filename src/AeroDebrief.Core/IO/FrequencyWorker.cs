@@ -4,6 +4,7 @@ using NLog;
 using AeroDebrief.Core.Audio;
 using AeroDebrief.Core.Interfaces.Audio;
 using AeroDebrief.Core.Models;
+using AeroDebrief.Core.Storage.Abstractions;
 
 namespace AeroDebrief.Core.IO
 {

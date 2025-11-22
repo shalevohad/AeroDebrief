@@ -1,86 +1,78 @@
-using System;
+﻿using System;
 using System.IO;
-using System.IO.Compression;
 using System.Threading;
 using System.Threading.Tasks;
 using NLog;
-using SharpCompress.Archives;
-using SharpCompress.Archives.SevenZip;
-using SharpCompress.Common;
+using AeroDebrief.Core.Interfaces.Storage;
 
 namespace AeroDebrief.Core.Storage
 {
     /// <summary>
     /// Handles CVR (Combat Voice Recording) format:
-    /// - CVR = .cvr file = 7z compressed .duckdb database
+    /// - CVR = .cvr file = Compressed database (.db or .duckdb)
     /// - Provides transparent compression/decompression
     /// - Auto-cleanup of temporary files
+    /// - Uses pluggable IArchiveCodec for compression
     /// </summary>
     public static class CvrFormat
     {
         private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
         
         public const string CVR_EXTENSION = ".cvr";
-        public const string DUCKDB_EXTENSION = ".duckdb";
+        public const string DB_EXTENSION = ".db";
         public const string ADB_EXTENSION = ".adb";
         
         private const string TEMP_FOLDER_PREFIX = "AeroDebrief_";
+        
+        // Default codec - can be replaced via dependency injection in future
+        private static IArchiveCodec _defaultCodec = new Codecs.ZstdArchiveCodec();
 
         /// <summary>
-        /// Compress a DuckDB file into CVR format
+        /// Allows setting a custom codec (useful for testing or switching compression algorithms)
+        /// </summary>
+        public static void SetCodec(IArchiveCodec codec)
+        {
+            _defaultCodec = codec ?? throw new ArgumentNullException(nameof(codec));
+        }
+
+        /// <summary>
+        /// Compress a database file .db into CVR format using the configured codec
         /// </summary>
         public static async Task<string> CompressToCvrAsync(
-            string duckDbPath,
+            string dbPath,
             string? outputCvrPath = null,
             IProgress<int>? progress = null,
             CancellationToken ct = default)
         {
-            if (!File.Exists(duckDbPath))
-                throw new FileNotFoundException($"DuckDB file not found: {duckDbPath}");
+            if (!File.Exists(dbPath))
+                throw new FileNotFoundException($"Database file not found: {dbPath}");
 
-            outputCvrPath ??= Path.ChangeExtension(duckDbPath, CVR_EXTENSION);
+            outputCvrPath ??= Path.ChangeExtension(dbPath, CVR_EXTENSION);
 
-            Logger.Info($"Compressing DuckDB to CVR:");
-            Logger.Info($"  Source: {duckDbPath}");
+            Logger.Info($"Compressing database to CVR:");
+            Logger.Info($"  Source: {dbPath}");
             Logger.Info($"  Output: {outputCvrPath}");
+            Logger.Info($"  Codec: {_defaultCodec.CodecId}");
 
             try
             {
                 progress?.Report(0);
 
-                // Create temp file for 7z archive (SharpCompress doesn't support direct archive creation)
-                var tempArchive = Path.GetTempFileName();
+                // Use pluggable codec for compression
+                // FileShare.ReadWrite allows us to read the file even if another process has it open
+                using (var sourceStream = new FileStream(dbPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                using (var outputStream = File.Create(outputCvrPath))
+                {
+                    await _defaultCodec.CompressAsync(sourceStream, outputStream, ct);
+                }
                 
-                try
-                {
-                    using (var stream = File.OpenWrite(tempArchive))
-                    using (var writer = SharpCompress.Writers.WriterFactory.Open(stream, SharpCompress.Common.ArchiveType.SevenZip, 
-                        new SharpCompress.Writers.WriterOptions(CompressionType.LZMA)))
-                    {
-                        var fileInfo = new FileInfo(duckDbPath);
-                        writer.Write(Path.GetFileName(duckDbPath), File.OpenRead(duckDbPath), fileInfo.LastWriteTime);
-                    }
-                    
-                    progress?.Report(80);
-                    
-                    // Move temp to final destination
-                    if (File.Exists(outputCvrPath))
-                        File.Delete(outputCvrPath);
-                    File.Move(tempArchive, outputCvrPath);
-                }
-                finally
-                {
-                    if (File.Exists(tempArchive))
-                        File.Delete(tempArchive);
-                }
-
                 progress?.Report(100);
 
-                var originalSize = new FileInfo(duckDbPath).Length;
+                var originalSize = new FileInfo(dbPath).Length;
                 var compressedSize = new FileInfo(outputCvrPath).Length;
                 var ratio = (1.0 - (double)compressedSize / originalSize) * 100.0;
 
-                Logger.Info($"? Compression complete:");
+                Logger.Info($"✓ Compression complete:");
                 Logger.Info($"   Original: {originalSize / 1024.0 / 1024.0:F1} MB");
                 Logger.Info($"   Compressed: {compressedSize / 1024.0 / 1024.0:F1} MB");
                 Logger.Info($"   Ratio: {ratio:F1}%");
@@ -95,8 +87,8 @@ namespace AeroDebrief.Core.Storage
         }
 
         /// <summary>
-        /// Decompress a CVR file to a temporary DuckDB file
-        /// Returns the path to the temporary .duckdb file
+        /// Decompress a CVR file to a temporary database file using the configured codec
+        /// Returns the path to the temporary .db or .duckdb file
         /// Caller is responsible for cleanup via CleanupTempFile()
         /// </summary>
         public static async Task<string> DecompressFromCvrAsync(
@@ -107,7 +99,9 @@ namespace AeroDebrief.Core.Storage
             if (!File.Exists(cvrPath))
                 throw new FileNotFoundException($"CVR file not found: {cvrPath}");
 
-            Logger.Info($"Decompressing CVR: {cvrPath}");
+            Logger.Info($"Decompressing CVR to temp database:");
+            Logger.Info($"  Source: {cvrPath}");
+            Logger.Info($"  Codec: {_defaultCodec.CodecId}");
 
             try
             {
@@ -121,36 +115,21 @@ namespace AeroDebrief.Core.Storage
 
                 progress?.Report(20);
 
-                // Extract using 7z
-                using (var archive = SevenZipArchive.Open(cvrPath))
+                // Decompress using pluggable codec
+                var originalFileName = Path.GetFileNameWithoutExtension(cvrPath);
+                var dbPath = Path.Combine(tempDir, originalFileName);
+                
+                using (var sourceStream = File.OpenRead(cvrPath))
+                using (var outputStream = File.Create(dbPath))
                 {
-                    var entry = archive.Entries.GetEnumerator();
-                    if (!entry.MoveNext())
-                        throw new InvalidDataException("CVR file is empty");
-
-                    progress?.Report(40);
-
-                    entry.Current.WriteToDirectory(tempDir, new ExtractionOptions
-                    {
-                        ExtractFullPath = false,
-                        Overwrite = true
-                    });
-
-                    progress?.Report(80);
+                    await _defaultCodec.DecompressAsync(sourceStream, outputStream, ct);
                 }
-
-                // Find the extracted .duckdb file
-                var extractedFiles = Directory.GetFiles(tempDir, "*" + DUCKDB_EXTENSION);
-                if (extractedFiles.Length == 0)
-                    throw new InvalidDataException("CVR file does not contain a .duckdb file");
-
-                var duckDbPath = extractedFiles[0];
 
                 progress?.Report(100);
 
-                Logger.Info($"? Decompressed to: {duckDbPath}");
+                Logger.Info($"✓ Decompressed to: {dbPath}");
 
-                return duckDbPath;
+                return dbPath;
             }
             catch (Exception ex)
             {
@@ -200,22 +179,28 @@ namespace AeroDebrief.Core.Storage
         }
 
         /// <summary>
-        /// Check if a file is in DuckDB format
+        /// Check if a file is in DB format (internal testing formats)
+        /// Includes both .db and .cvr-debug extensions
         /// </summary>
-        public static bool IsDuckDbFile(string filePath)
+        public static bool IsDbFile(string filePath)
         {
-            return Path.GetExtension(filePath).Equals(DUCKDB_EXTENSION, StringComparison.OrdinalIgnoreCase);
+            var ext = Path.GetExtension(filePath);
+            return ext.Equals(DB_EXTENSION, StringComparison.OrdinalIgnoreCase) ||
+                   ext.Equals(".cvr-debug", StringComparison.OrdinalIgnoreCase);
         }
 
         /// <summary>
         /// Get the appropriate file format name for display
-        /// DuckDB is called "CVR (Uncompressed)" to avoid confusing users.
+        /// IMPORTANT: Internal database terminology is hidden from users.
+        /// All formats are presented as variations of CVR (Combat Voice Recording).
         /// </summary>
         public static string GetFormatName(string filePath)
         {
             if (IsCvrFile(filePath)) return "CVR (Combat Voice Recording)";
-            if (IsAdbFile(filePath)) return "ADB (Legacy Format)";
-            if (IsDuckDbFile(filePath)) return "CVR (Uncompressed)";  // User-friendly name
+            if (IsAdbFile(filePath)) return "Legacy Recording Format";
+            if (filePath.EndsWith(".cvr-debug", StringComparison.OrdinalIgnoreCase)) 
+                return "CVR (Uncompressed Debug)";  // Development format
+            if (IsDbFile(filePath)) return "CVR (Uncompressed)";  // Internal format, user-friendly name
             return "Unknown Format";
         }
     }

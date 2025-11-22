@@ -8,11 +8,13 @@ namespace AeroDebrief.Core
     {
         /// <summary>
         /// Phase 3: Force CVR compression for all user recordings.
-        /// Set to false ONLY for development/testing purposes.
-        /// Users MUST have CVR compression enabled for optimal storage.
+        /// MUST be true to ensure users ONLY see .cvr files.
         /// 
-        /// PRODUCTION: true (always compress)
-        /// DEVELOPMENT: false (allow uncompressed for testing)
+        /// Internal database files (.db) must NEVER be exposed to users.
+        /// All recordings MUST be saved as .cvr archives.
+        /// 
+        /// PRODUCTION: true (MANDATORY - always compress)
+        /// DEVELOPMENT: false ONLY for internal testing (never for release)
         /// </summary>
         public const bool FORCE_CVR_COMPRESSION = true;
         

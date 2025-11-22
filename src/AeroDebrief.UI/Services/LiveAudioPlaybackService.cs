@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using AeroDebrief.Core.Audio;
-using AeroDebrief.Core.Storage;
+using AeroDebrief.Core.Storage.Abstractions;
 using NAudio.Wave;
 using NLog;
 
@@ -188,7 +188,7 @@ namespace AeroDebrief.UI.Services
         /// Adds new packets to the jitter buffer.
         /// Called from LivePlaybackManager when new audio arrives.
         /// </summary>
-        public void AddPackets(IReadOnlyList<Core.Storage.RadioPacket> packets)
+        public void AddPackets(IReadOnlyList<RadioPacket> packets)
         {
             if (!_isPlaying || packets.Count == 0)
                 return;
@@ -349,7 +349,7 @@ namespace AeroDebrief.UI.Services
         /// <summary>
         /// Decodes an Opus packet to PCM audio.
         /// </summary>
-        private byte[]? DecodeOpusPacket(Core.Storage.RadioPacket packet)
+        private byte[]? DecodeOpusPacket(RadioPacket packet)
         {
             try
             {

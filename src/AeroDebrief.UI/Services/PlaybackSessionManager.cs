@@ -2,6 +2,7 @@ using System;
 using System.Threading.Tasks;
 using AeroDebrief.Core.Audio;
 using AeroDebrief.Core.Interfaces.Storage;
+using AeroDebrief.Core.Storage.Abstractions;
 using AeroDebrief.Core.IO;
 using AeroDebrief.Core.Playback;
 using AeroDebrief.Core.Storage;
@@ -12,14 +13,14 @@ namespace AeroDebrief.UI.Services
     /// <summary>
     /// Service responsible for managing playback session lifecycle (file loading, pipeline management).
     /// Implements Separation of Concerns by handling ONLY session-related operations.
-    /// Uses unified DuckDB architecture via RecordingFileLoader for all file formats (.cvr, .adb, .duckdb).
+    /// Uses unified SQLite architecture via RecordingFileLoader for all file formats (.cvr, .adb, .db).
     /// </summary>
     public sealed class PlaybackSessionManager : IDisposable
     {
         private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
 
         private IPacketSource? _packetSource;
-        private DuckDBStore? _duckDbStore;
+        private IUnitOfWork? _unitOfWork;
         private string? _tempDbPath;
         private FilePlaybackPipeline? _pipeline;
         private bool _disposed;
@@ -77,7 +78,7 @@ namespace AeroDebrief.UI.Services
 
         /// <summary>
         /// Loads a file and creates a playback session.
-        /// Uses unified DuckDB architecture: CVR/ADB/DuckDB ? DuckDBStore ? DuckDBPacketSource ? FilePlaybackPipeline
+        /// Uses unified SQLite architecture: CVR/ADB/DB ? RecordingFileLoader ? PacketSource ? FilePlaybackPipeline
         /// </summary>
         public async Task LoadFileAsync(string filePath, IProgress<string>? progress = null)
         {
@@ -89,7 +90,7 @@ namespace AeroDebrief.UI.Services
 
             try
             {
-                Logger.Info("======== LOADING FILE (Unified DuckDB Architecture) ========");
+                Logger.Info("======== LOADING FILE (Unified SQLite Architecture) ========");
                 Logger.Info($"File: {System.IO.Path.GetFileName(filePath)}");
                 Logger.Info($"Format: {CvrFormat.GetFormatName(filePath)}");
                 progress?.Report("Initializing...");
@@ -103,26 +104,28 @@ namespace AeroDebrief.UI.Services
                 }
 
                 // STEP 1: Use RecordingFileLoader to handle all formats
-                // - CVR: Decompresses to temp DuckDB
-                // - ADB: Converts to DuckDB (or uses existing conversion)
-                // - DuckDB: Opens directly
+                // - CVR: Decompresses to temp DB
+                // - ADB: Converts to DB (or uses existing conversion)
+                // - DB: Opens directly
                 Logger.Info("Step 1: Opening recording via RecordingFileLoader...");
                 progress?.Report("Opening file...");
                 
                 var (store, tempPath) = await RecordingFileLoader.OpenAsync(filePath, progress);
-                _duckDbStore = store;
+                _unitOfWork = store;
                 _tempDbPath = tempPath;
                 
-                Logger.Info($"Recording opened: {_duckDbStore.TotalPackets:N0} packets");
+                // Get packet count for logging
+                var packetCount = await _unitOfWork.Packets.GetCountAsync();
+                Logger.Info($"Recording opened: {packetCount:N0} packets");
 
-                // STEP 2: Create DuckDBPacketSource from the store
-                Logger.Info("Step 2: Creating DuckDBPacketSource...");
+                // STEP 2: Create PacketSource from the store
+                Logger.Info("Step 2: Creating PacketSource...");
                 progress?.Report("Loading packet source...");
                 
-                _packetSource = new DuckDBPacketSource(_duckDbStore);
+                _packetSource = new DatabasePacketSource(_unitOfWork);
                 await _packetSource.OpenAsync(progress);
                 
-                Logger.Info($"DuckDBPacketSource ready: {_packetSource.TotalPackets} packets, {_packetSource.TotalDuration}");
+                Logger.Info($"PacketSource ready: {_packetSource.TotalPackets} packets, {_packetSource.TotalDuration}");
                 progress?.Report($"File ready: {_packetSource.TotalPackets:N0} packets");
 
                 // STEP 3: Create FilePlaybackPipeline (uses IPacketSource abstraction)
@@ -139,7 +142,7 @@ namespace AeroDebrief.UI.Services
 
                 Logger.Info($"? Session loaded successfully");
                 Logger.Info($"   Source: {CvrFormat.GetFormatName(filePath)}");
-                Logger.Info($"   Storage: DuckDB");
+                Logger.Info($"   Storage: DB");
                 Logger.Info($"   Packets: {_packetSource.TotalPackets:N0}");
                 Logger.Info($"   Duration: {_packetSource.TotalDuration}");
                 progress?.Report("Session loaded successfully");
@@ -207,9 +210,9 @@ namespace AeroDebrief.UI.Services
             _packetSource?.Dispose();
             _packetSource = null;
 
-            // Dispose DuckDB store
-            _duckDbStore?.Dispose();
-            _duckDbStore = null;
+            // Dispose UnitOfWork
+            _unitOfWork?.Dispose();
+            _unitOfWork = null;
 
             // Cleanup temp files (if CVR was decompressed)
             if (_tempDbPath != null)

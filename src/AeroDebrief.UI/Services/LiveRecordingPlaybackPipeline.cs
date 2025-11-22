@@ -4,7 +4,7 @@ using System.Threading.Tasks;
 using AeroDebrief.Core.IO;
 using AeroDebrief.Core.Audio;
 using AeroDebrief.Core.Playback;
-using AeroDebrief.Core.Storage;
+using AeroDebrief.Core.Interfaces.Storage;
 using NLog;
 
 namespace AeroDebrief.UI.Services
@@ -18,7 +18,7 @@ namespace AeroDebrief.UI.Services
     /// 2. Playback Playhead (Dynamic) - Shows audio output position (synced to PlaybackController)
     /// 
     /// INTEGRATION:
-    /// - Uses DuckDBStore as packet source (live recording database)
+    /// - Uses IUnitOfWork as packet source (live recording database)
     /// - Wraps existing FilePlaybackPipeline for audio processing
     /// - Reuses AudioMixerEngine, MasterMixer, AudioOutputEngine
     /// - Provides consistent audio quality and effects
@@ -27,7 +27,7 @@ namespace AeroDebrief.UI.Services
     {
         private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
         
-        private readonly DuckDBStore _liveStore;
+        private readonly IUnitOfWork _liveStore;
         private readonly string _liveDbPath;
         
         // Pipeline components (reuse existing infrastructure)
@@ -99,7 +99,7 @@ namespace AeroDebrief.UI.Services
         /// </summary>
         public event EventHandler<TimeSpan>? PlaybackPositionChanged;
         
-        public LiveRecordingPlaybackPipeline(DuckDBStore liveStore, string liveDbPath)
+        public LiveRecordingPlaybackPipeline(IUnitOfWork liveStore, string liveDbPath)
         {
             _liveStore = liveStore ?? throw new ArgumentNullException(nameof(liveStore));
             _liveDbPath = liveDbPath ?? throw new ArgumentNullException(nameof(liveDbPath));
@@ -123,11 +123,9 @@ namespace AeroDebrief.UI.Services
             {
                 Logger.Info("?? Initializing live recording playback pipeline...");
                 
-                // Get recording metadata
-                var metadata = await _liveStore.GetMetadataAsync(ct);
+                // Phase 5: Get recording metadata using repository pattern
+                var metadata = await _liveStore.Recording.GetMetadataAsync(ct);
                 RecordingStart = metadata.StartTime;
-                
-                Logger.Info($"   Recording started: {RecordingStart:o}");
                 
                 // Open the live database as a FilePacketSource
                 // This allows us to reuse all existing playback infrastructure

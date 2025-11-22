@@ -165,9 +165,23 @@ namespace AeroDebrief.Core.IO
             
             try
             {
+                var position = _fileStream?.Position ?? -1;
                 if (AudioPacketMetadata.TryReadMetadata(_reader, out var metadata))
                 {
                     return metadata;
+                }
+                else
+                {
+                    // TryReadMetadata returned false - log for debugging
+                    if (position == PacketsStartPosition)
+                    {
+                        Logger.Warn($"TryReadMetadata returned false at first packet position {position}. This suggests a packet format issue.");
+                    }
+                    else
+                    {
+                        var bytesRemaining = _fileStream?.Length - position ?? 0;
+                        Logger.Warn($"TryReadMetadata returned false at position {position}. Bytes remaining: {bytesRemaining}");
+                    }
                 }
             }
             catch (EndOfStreamException)

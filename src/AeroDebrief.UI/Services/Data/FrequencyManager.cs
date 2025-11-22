@@ -285,12 +285,23 @@ namespace AeroDebrief.UI.Services.Data
 
         /// <summary>
         /// Generates a consistent frequency ID for color assignment.
-        /// Format: "FrequencyMHz-Modulation" (e.g., "251.0-AM")
+        /// Format: "FrequencyMHz-Modulation" (e.g., "127.5-AM")
+        /// Converts internal Hz to MHz for human-readable IDs.
         /// </summary>
         private string GetFrequencyId(double frequencyHz, string modulation)
         {
-            var frequencyMHz = frequencyHz / 1_000_000.0;
-            return $"{frequencyMHz:F1}-{modulation}";
+            var frequencyMhz = frequencyHz / 1_000_000.0;
+            return $"{frequencyMhz:F1}-{modulation}";
+        }
+
+        /// <summary>
+        /// Produces a human-friendly frequency string in MHz.
+        /// Converts internal Hz to display MHz.
+        /// </summary>
+        private string FormatFrequencyForDisplay(double frequencyHz)
+        {
+            var frequencyMhz = frequencyHz / 1_000_000.0;
+            return $"{frequencyMhz:F3} MHz";
         }
 
         private string GetCoalitionNameFromPlayers(List<AeroDebrief.Core.Models.PlayerFrequencyInfo> players)
