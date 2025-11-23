@@ -48,21 +48,27 @@ namespace AeroDebrief.UI.Services.Visualization.Graphs
             _packetSource = packetSource ?? throw new ArgumentNullException(nameof(packetSource));
             _audioEngine = audioEngine ?? throw new ArgumentNullException(nameof(audioEngine));
             
-            // Create amplitude extractor
+            // Read scale preference from settings
+            var useDbScale = Core.Settings.PlayerSettingsStore.Instance.GetUseDbScale();
+            
+            // Create amplitude extractor with configured scale
             _extractor = new AmplitudeExtractor(
                 _audioEngine,
                 sampleRate: 48000,
                 windowSizeMs: 10,
-                hopSizeMs: 5
+                hopSizeMs: 5,
+                useDbScale: useDbScale  // Read from settings
             );
             
-            Logger.Info("AmplitudeSeriesProvider initialized (real data pipeline)");
+            var scaleMode = useDbScale ? "dBFS" : "linear (0-1)";
+            Logger.Info($"AmplitudeSeriesProvider initialized (real data pipeline, {scaleMode} amplitude scale)");
         }
 
         /// <summary>
         /// Get amplitude series for the specified time range.
         /// Phase 2: Returns real data if dependencies provided, otherwise synthetic data.
         /// X-axis uses time offset in seconds from recording start (0:00:00).
+        /// Phase 13: Progressive rendering - yields data in batches for immediate UI feedback.
         /// </summary>
         public async IAsyncEnumerable<(string key, IEnumerable<ObservablePoint> points)> GetSeriesAsync(
             DateTime start, 
@@ -74,6 +80,7 @@ namespace AeroDebrief.UI.Services.Visualization.Graphs
             if (_packetSource != null && _extractor != null)
             {
                 // Real implementation: Use packet source and extractor
+                // Phase 13: Stream results as they're processed (progressive rendering)
                 await foreach (var series in GetRealDataAsync(start, end, ct))
                 {
                     if (ct.IsCancellationRequested)
@@ -82,7 +89,7 @@ namespace AeroDebrief.UI.Services.Visualization.Graphs
                         yield break;
                     }
                     
-                    yield return series;
+                    yield return series; // Stream each series as soon as it's ready!
                 }
             }
             else
@@ -106,6 +113,7 @@ namespace AeroDebrief.UI.Services.Visualization.Graphs
         /// Get real amplitude data from packet source.
         /// Groups packets by frequency and pilot, extracts amplitudes.
         /// X-axis uses time offset in seconds from recording start.
+        /// Phase 13: Progressive rendering - yields batches immediately instead of waiting for all packets.
         /// </summary>
         private async IAsyncEnumerable<(string key, IEnumerable<ObservablePoint> points)> GetRealDataAsync(
             DateTime start,
@@ -115,25 +123,65 @@ namespace AeroDebrief.UI.Services.Visualization.Graphs
             if (_packetSource == null || _extractor == null)
                 yield break;
             
-            Logger.Info($"Extracting real amplitude data from {start:HH:mm:ss} to {end:HH:mm:ss}");
+            // CRITICAL: Ensure we're using UTC times to match database timestamps
+            // RecordingStart from database is stored as UTC, so all comparisons must use UTC
+            var startUtc = start.Kind == DateTimeKind.Utc ? start : start.ToUniversalTime();
+            var endUtc = end.Kind == DateTimeKind.Utc ? end : end.ToUniversalTime();
+            
+            Logger.Info($"Extracting real amplitude data from {startUtc:yyyy-MM-dd HH:mm:ss} UTC to {endUtc:yyyy-MM-dd HH:mm:ss} UTC");
+            Logger.Info($"Progressive rendering enabled: Graph will update as packets are processed");
             
             var recordingStart = _packetSource.RecordingStart;
-            var timeOffset = start - recordingStart;
+            var timeOffset = startUtc - recordingStart;
+            
+            Logger.Debug($"Recording start: {recordingStart:yyyy-MM-dd HH:mm:ss} (Kind={recordingStart.Kind})");
+            Logger.Debug($"Time offset for packet query: {timeOffset.TotalSeconds:F1} seconds");
             
             // Group packets by frequency and transmitter as we read them
             var packetGroups = new Dictionary<(double frequency, string transmitter), List<AudioPacketMetadata>>();
+            
+            var packetCount = 0;
+            var filteredOutCount = 0;
+            var batchesYielded = 0;
+            DateTime? firstPacketTime = null;
+            DateTime? lastPacketTime = null;
+            
+            // Phase 13: Smaller batch size for more responsive UI updates
+            const int BATCH_SIZE = 500; // Process 500 packets, then update UI (was 1000)
             
             await foreach (var radioPacket in _packetSource.ReadRange(timeOffset, ct))
             {
                 if (ct.IsCancellationRequested)
                     yield break;
                 
+                packetCount++;
+                
                 // Convert RadioPacket to AudioPacketMetadata
                 var metadata = radioPacket.ToMetadata();
                 
-                // Filter by time range
-                if (metadata.Timestamp < start || metadata.Timestamp > end)
+                // Track first and last packet times for debugging
+                if (firstPacketTime == null)
+                    firstPacketTime = metadata.Timestamp;
+                lastPacketTime = metadata.Timestamp;
+                
+                // CRITICAL: Ensure packet timestamp is UTC for comparison
+                var packetTimestamp = metadata.Timestamp.Kind == DateTimeKind.Utc 
+                    ? metadata.Timestamp 
+                    : metadata.Timestamp.ToUniversalTime();
+                
+                // Filter by time range (using UTC times)
+                if (packetTimestamp < startUtc || packetTimestamp > endUtc)
+                {
+                    filteredOutCount++;
+                    
+                    // Log first few filtered packets for debugging
+                    if (filteredOutCount <= 3)
+                    {
+                        Logger.Debug($"Packet filtered out: {packetTimestamp:yyyy-MM-dd HH:mm:ss} (Kind={packetTimestamp.Kind}) is outside range {startUtc:yyyy-MM-dd HH:mm:ss} to {endUtc:yyyy-MM-dd HH:mm:ss}");
+                    }
+                    
                     continue;
+                }
                 
                 // Group by frequency and transmitter
                 var key = (metadata.Frequency, metadata.TransmitterGuid);
@@ -143,27 +191,52 @@ namespace AeroDebrief.UI.Services.Visualization.Graphs
                 }
                 packetGroups[key].Add(metadata);
                 
-                // Process in batches to avoid memory buildup (every 1000 packets)
-                if (packetGroups.Values.Sum(list => list.Count) >= 1000)
+                // Phase 13: PROGRESSIVE RENDERING - Yield batches immediately!
+                // Process in smaller batches and update UI more frequently
+                var totalPacketsInBatch = packetGroups.Values.Sum(list => list.Count);
+                if (totalPacketsInBatch >= BATCH_SIZE)
                 {
+                    batchesYielded++;
+                    Logger.Debug($"Processing batch #{batchesYielded} ({totalPacketsInBatch} packets, {packetGroups.Count} series)");
+                    
+                    // Process and yield this batch immediately
                     await foreach (var series in ProcessPacketBatch(packetGroups, recordingStart, ct))
                     {
-                        yield return series;
+                        yield return series; // ? UI updates immediately!
                     }
+                    
+                    // Clear for next batch
                     packetGroups.Clear();
+                    
+                    // Yield to UI thread so user sees updates
+                    await Task.Yield();
                 }
             }
             
-            // Process remaining packets
+            Logger.Info($"Scanned {packetCount} packets from packet source");
+            Logger.Info($"Filtered out {filteredOutCount} packets (outside time range)");
+            Logger.Info($"Kept {packetCount - filteredOutCount} packets for visualization");
+            Logger.Info($"Yielded {batchesYielded} progressive batches for responsive UI");
+            
+            if (firstPacketTime.HasValue && lastPacketTime.HasValue)
+            {
+                Logger.Info($"Packet time range in file: {firstPacketTime.Value:yyyy-MM-dd HH:mm:ss} to {lastPacketTime.Value:yyyy-MM-dd HH:mm:ss}");
+                Logger.Info($"Requested time range:      {startUtc:yyyy-MM-dd HH:mm:ss} to {endUtc:yyyy-MM-dd HH:mm:ss}");
+            }
+            
+            Logger.Debug($"Grouped into {packetGroups.Count} frequency/pilot combinations");
+            
+            // Phase 13: Process final remaining packets
             if (packetGroups.Count > 0)
             {
+                Logger.Debug($"Processing final batch ({packetGroups.Values.Sum(list => list.Count)} packets)");
                 await foreach (var series in ProcessPacketBatch(packetGroups, recordingStart, ct))
                 {
-                    yield return series;
+                    yield return series; // ? Final UI update!
                 }
             }
             
-            Logger.Info("Real amplitude extraction complete");
+            Logger.Info($"Real amplitude extraction complete - processed {batchesYielded + (packetGroups.Count > 0 ? 1 : 0)} total batches");
         }
         
         /// <summary>

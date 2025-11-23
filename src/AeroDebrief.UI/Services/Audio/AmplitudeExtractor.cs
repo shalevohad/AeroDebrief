@@ -11,7 +11,7 @@ namespace AeroDebrief.UI.Services.Audio
 {
     /// <summary>
     /// Extracts amplitude envelopes from audio packets for visualization.
-    /// Computes instantaneous peak amplitude and converts to dBFS scale.
+    /// Computes instantaneous peak amplitude in linear scale (0.0 to 1.0).
     /// Uses time offset from recording start (in seconds) for X-axis values.
     /// Phase 2: Real implementation for amplitude timeline generation.
     /// </summary>
@@ -28,45 +28,58 @@ namespace AeroDebrief.UI.Services.Audio
         private readonly int _windowSizeSamples;
         private readonly int _hopSizeSamples;
         
+        // Scale mode for amplitude display
+        private readonly bool _useDbScale;
+        
         /// <summary>
         /// Create amplitude extractor with specified parameters.
         /// /// <param name="audioEngine">Audio processing engine for decoding</param>
         /// <param name="sampleRate">Audio sample rate (typically 48000 Hz)</param>
         /// <param name="windowSizeMs">Peak detection window size in milliseconds (default 10ms)</param>
         /// <param name="hopSizeMs">Hop size between windows in milliseconds (default 5ms)</param>
+        /// <param name="useDbScale">Use dB scale (true) or linear amplitude scale 0-1 (false, default)</param>
         public AmplitudeExtractor(
             IAudioProcessingEngine audioEngine,
             int sampleRate = 48000,
             int windowSizeMs = 10,
-            int hopSizeMs = 5)
+            int hopSizeMs = 5,
+            bool useDbScale = false)
         {
             _audioEngine = audioEngine ?? throw new ArgumentNullException(nameof(audioEngine));
             _sampleRate = sampleRate;
             _windowSizeMs = windowSizeMs;
             _hopSizeMs = hopSizeMs;
+            _useDbScale = useDbScale;
             
             _windowSizeSamples = (sampleRate * windowSizeMs) / 1000;
             _hopSizeSamples = (sampleRate * hopSizeMs) / 1000;
             
-            Logger.Info($"AmplitudeExtractor initialized: {sampleRate}Hz, {windowSizeMs}ms window, {hopSizeMs}ms hop (peak amplitude, time-offset mode)");
+            var scaleMode = _useDbScale ? "dBFS" : "linear (0-1)";
+            Logger.Info($"AmplitudeExtractor initialized: {sampleRate}Hz, {windowSizeMs}ms window, {hopSizeMs}ms hop, scale={scaleMode} (peak amplitude, time-offset mode)");
             Logger.Debug($"Window: {_windowSizeSamples} samples, Hop: {_hopSizeSamples} samples");
+            
+            // Enable caching in the audio engine for performance
+            _audioEngine.EnableAmplitudeCache();
+            Logger.Info("Amplitude caching enabled in audio engine");
         }
         
         /// <summary>
-        /// Extract amplitude envelope from a single audio packet.
+        /// Extract amplitude envelope from a single audio packet using cached decoding.
         /// Returns peak amplitude points per window using sliding window.
         /// X-axis uses time offset in seconds from recording start.
+        /// Phase 13: Now uses cached decoding for better performance on repeated queries.
         /// </summary>
         /// <param name="packet">Audio packet to process</param>
         /// <param name="recordingStart">Recording start time for offset calculation</param>
-        /// <returns>Sequence of amplitude points (time offset in seconds, dBFS)</returns>
+        /// <returns>Sequence of amplitude points (time offset in seconds, amplitude in linear or dBFS scale)</returns>
         public IEnumerable<ObservablePoint> ExtractEnvelope(AudioPacketMetadata packet, DateTime recordingStart)
         {
             if (packet?.AudioPayload == null || packet.AudioPayload.Length == 0)
             {
                 Logger.Trace($"Empty packet, returning silence point");
                 var timeOffset = (packet?.Timestamp ?? recordingStart) - recordingStart;
-                yield return new ObservablePoint(timeOffset.TotalSeconds, DbFSConverter.MinDbFS);
+                var silenceValue = _useDbScale ? DbFSConverter.MinDbFS : 0.0;
+                yield return new ObservablePoint(timeOffset.TotalSeconds, silenceValue);
                 yield break;
             }
             
@@ -83,25 +96,27 @@ namespace AeroDebrief.UI.Services.Audio
         /// <summary>
         /// Internal method to process a packet and return points.
         /// Separated to allow proper exception handling without yield issues.
+        /// Phase 13: Uses cached decoding for performance.
         /// </summary>
         private List<ObservablePoint> ProcessPacket(AudioPacketMetadata packet, DateTime recordingStart)
         {
             try
             {
-                // Decode packet to PCM float samples
-                var samples = _audioEngine.DecodePacketToFloat(packet);
+                // Decode packet to PCM float samples (WITH CACHING)
+                var samples = _audioEngine.DecodePacketToFloatCached(packet);
                 
                 if (samples == null || samples.Length == 0)
                 {
                     Logger.Warn($"Failed to decode packet from {packet.TransmitterGuid}");
                     var timeOffset = packet.Timestamp - recordingStart;
-                    return new List<ObservablePoint> { new ObservablePoint(timeOffset.TotalSeconds, DbFSConverter.MinDbFS) };
+                    var silenceValue = _useDbScale ? DbFSConverter.MinDbFS : 0.0;
+                    return new List<ObservablePoint> { new ObservablePoint(timeOffset.TotalSeconds, silenceValue) };
                 }
                 
                 // Extract peak amplitude values using sliding window
                 var peakValues = ComputePeakAmplitudeEnvelope(samples);
                 
-                // Convert to dBFS and create time series
+                // Convert to appropriate scale and create time series
                 var packetDuration = TimeSpan.FromSeconds((double)samples.Length / _sampleRate);
                 var pointCount = peakValues.Count;
                 
@@ -113,23 +128,29 @@ namespace AeroDebrief.UI.Services.Audio
                 for (int i = 0; i < pointCount; i++)
                 {
                     var peakAmplitude = peakValues[i];
-                    var dbFS = DbFSConverter.LinearToDbFS(peakAmplitude);
+                    
+                    // Convert to appropriate scale (dBFS or linear)
+                    var amplitudeValue = _useDbScale 
+                        ? DbFSConverter.LinearToDbFS(peakAmplitude)
+                        : peakAmplitude; // Use linear amplitude directly (0.0 to 1.0)
                     
                     // Calculate time offset for this point within the packet
                     var pointOffsetMs = i * _hopSizeMs;
                     var timeOffsetSeconds = baseTimeOffset + (pointOffsetMs / 1000.0);
                     
-                    points.Add(new ObservablePoint(timeOffsetSeconds, dbFS));
+                    points.Add(new ObservablePoint(timeOffsetSeconds, amplitudeValue));
                 }
                 
-                Logger.Trace($"Extracted {pointCount} peak amplitude points from packet at offset {baseTimeOffset:F3}s, duration {packetDuration.TotalMilliseconds:F1}ms");
+                var scaleType = _useDbScale ? "dBFS" : "linear";
+                Logger.Trace($"Extracted {pointCount} peak amplitude points ({scaleType}) from packet at offset {baseTimeOffset:F3}s, duration {packetDuration.TotalMilliseconds:F1}ms");
                 return points;
             }
             catch (Exception ex)
             {
                 Logger.Error(ex, $"Error extracting amplitude from packet {packet.PacketId}");
                 var timeOffset = packet.Timestamp - recordingStart;
-                return new List<ObservablePoint> { new ObservablePoint(timeOffset.TotalSeconds, DbFSConverter.MinDbFS) };
+                var silenceValue = _useDbScale ? DbFSConverter.MinDbFS : 0.0;
+                return new List<ObservablePoint> { new ObservablePoint(timeOffset.TotalSeconds, silenceValue) };
             }
         }
         
@@ -178,7 +199,7 @@ namespace AeroDebrief.UI.Services.Audio
         /// </summary>
         /// <param name="packets">Sequence of audio packets</param>
         /// <param name="recordingStart">Recording start time for offset calculation</param>
-        /// <returns>Amplitude points in time order (time offset in seconds, dBFS)</returns>
+        /// <returns>Amplitude points in time order (time offset in seconds, amplitude in linear or dBFS scale)</returns>
         public IEnumerable<ObservablePoint> ExtractEnvelopeFromPackets(IEnumerable<AudioPacketMetadata> packets, DateTime recordingStart)
         {
             var packetCount = 0;
@@ -195,7 +216,8 @@ namespace AeroDebrief.UI.Services.Audio
                 }
             }
             
-            Logger.Debug($"Extracted {pointCount} peak amplitude points from {packetCount} packets");
+            var scaleType = _useDbScale ? "dBFS" : "linear";
+            Logger.Debug($"Extracted {pointCount} peak amplitude points ({scaleType}) from {packetCount} packets");
         }
         
         /// <summary>

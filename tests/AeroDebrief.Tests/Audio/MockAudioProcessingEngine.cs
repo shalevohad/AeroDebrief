@@ -1,8 +1,10 @@
 using AeroDebrief.Core;
 using AeroDebrief.Core.Audio;
 using AeroDebrief.Core.Interfaces.Audio;
+using AeroDebrief.Core.Models;
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Linq;
 
 namespace AeroDebrief.Tests.Audio
@@ -10,11 +12,13 @@ namespace AeroDebrief.Tests.Audio
     /// <summary>
     /// Mock implementation of IAudioProcessingEngine for testing.
     /// Simulates audio processing without actual decoding.
+    /// Phase 13: Added cache methods support.
     /// </summary>
     public class MockAudioProcessingEngine : IAudioProcessingEngine
     {
         private readonly ConcurrentDictionary<string, float> _transmitterVolumes = new();
         private float _masterVolume = 1.0f;
+        private bool _cacheEnabled;
         public bool IsInitialized { get; private set; }
         public int ProcessedPacketCount { get; private set; }
         public bool IsDisposed { get; private set; }
@@ -96,7 +100,35 @@ namespace AeroDebrief.Tests.Audio
             var transmitterVolume = GetTransmitterVolume(transmitterGuid);
             return transmitterVolume * _masterVolume;
         }
-
+        
+        // Phase 13: Cache methods (mock implementation)
+        public void EnableAmplitudeCache()
+        {
+            _cacheEnabled = true;
+        }
+        
+        public void DisableAmplitudeCache()
+        {
+            _cacheEnabled = false;
+        }
+        
+        public CacheStatistics? GetCacheStatistics()
+        {
+            return _cacheEnabled ? new CacheStatistics { TotalEntries = 0, TotalCacheHits = 0, TotalCacheMisses = 0 } : null;
+        }
+        
+        public float[] DecodePacketToFloatCached(AudioPacketMetadata packet)
+        {
+            // Mock: Just call the non-cached version
+            return DecodePacketToFloat(packet);
+        }
+        
+        public IEnumerable<CachedAmplitudeData> QueryAmplitudeData(double frequency, string transmitterGuid, DateTime startTime, DateTime endTime)
+        {
+            // Mock: Return empty collection
+            return Enumerable.Empty<CachedAmplitudeData>();
+        }
+        
         public void Dispose()
         {
             IsDisposed = true;

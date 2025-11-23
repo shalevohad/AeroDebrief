@@ -261,7 +261,11 @@ namespace AeroDebrief.Core.Audio
                     maxAmplitude = Math.Max(maxAmplitude, absSample);
                 }
 
-                Logger.Debug($"[WASAPI] Writing {audioData.Length} bytes, amplitude: {maxAmplitude}/32767");
+                // Only log when there's actual audio signal (reduces spam from silence)
+                if (maxAmplitude > 1000) // Threshold: ~3% of max amplitude
+                {
+                    Logger.Debug($"[WASAPI] Writing {audioData.Length} bytes, amplitude: {maxAmplitude}/32767");
+                }
 #endif
 
                 if (_waveProvider != null && !_isSeekInProgress)

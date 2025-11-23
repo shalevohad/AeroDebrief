@@ -377,6 +377,36 @@
                                        FontSize="11"
                                        Margin="0,4,0,0"
                                        TextWrapping="Wrap"/>
+                            
+                            <!-- Amplitude Scale Selection -->
+                            <Separator Margin="0,20,0,16"/>
+                            
+                            <TextBlock Text="Graph Visualization"
+                                       FontSize="14"
+                                       FontWeight="SemiBold"
+                                       Margin="0,0,0,8"/>
+                            
+                            <CheckBox Content="Use dB scale for amplitude graphs"
+                                      IsChecked="{Binding UseDbScale, Mode=TwoWay}"
+                                      Style="{StaticResource ModernCheckBox}"
+                                      Margin="0,0,0,4"/>
+                            
+                            <TextBlock Style="{StaticResource BodyTextStyle}"
+                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                       FontSize="11"
+                                       Margin="28,2,0,0"
+                                       TextWrapping="Wrap">
+                                <Run Text="When checked: Y-axis shows decibels (dBFS) from -120 to 0 dB"/>
+                                <LineBreak/>
+                                <Run Text="When unchecked: Y-axis shows linear amplitude from 0.0 to 1.0"/>
+                            </TextBlock>
+                            
+                            <TextBlock Text="File must be reloaded for changes to take effect"
+                                       Style="{StaticResource BodyTextStyle}"
+                                       Foreground="{StaticResource WarningBrush}"
+                                       FontSize="11"
+                                       Margin="28,6,0,0"
+                                       TextWrapping="Wrap"/>
                         </StackPanel>
                         
                         <!-- Advanced Settings -->

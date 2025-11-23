@@ -23,6 +23,9 @@ namespace AeroDebrief.UI.ViewModels
         private double _agcTargetDB;
         private double _agcMaxBoostDB;
         private double _agcMaxCutDB;
+        
+        // Visualization Settings
+        private bool _useDbScale;
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -115,6 +118,15 @@ namespace AeroDebrief.UI.ViewModels
             get => _agcMaxCutDB;
             set => SetProperty(ref _agcMaxCutDB, value);
         }
+        
+        /// <summary>
+        /// Use dB scale for amplitude visualization (true) or linear amplitude scale 0-1 (false)
+        /// </summary>
+        public bool UseDbScale
+        {
+            get => _useDbScale;
+            set => SetProperty(ref _useDbScale, value);
+        }
 
         /// <summary>
         /// Path to configuration file (read-only)
@@ -143,6 +155,9 @@ namespace AeroDebrief.UI.ViewModels
             _agcTargetDB = Constants.AGC_TARGET_DB;
             _agcMaxBoostDB = Constants.AGC_MAX_BOOST_DB;
             _agcMaxCutDB = Constants.AGC_MAX_CUT_DB;
+            
+            // Visualization Defaults
+            _useDbScale = false; // Linear amplitude scale by default
         }
 
         /// <summary>
@@ -164,6 +179,9 @@ namespace AeroDebrief.UI.ViewModels
             AGCTargetDB = store.GetAGCTargetDB();
             AGCMaxBoostDB = store.GetAGCMaxBoostDB();
             AGCMaxCutDB = store.GetAGCMaxCutDB();
+            
+            // Load Visualization settings
+            UseDbScale = store.GetUseDbScale();
         }
 
         /// <summary>
@@ -182,6 +200,9 @@ namespace AeroDebrief.UI.ViewModels
             
             // Save AGC settings
             store.SaveAGCSettings(AGCTargetDB, AGCMaxBoostDB, AGCMaxCutDB, AGCEnabled);
+            
+            // Save Visualization settings
+            store.SetUseDbScale(UseDbScale);
         }
 
         /// <summary>
@@ -198,6 +219,9 @@ namespace AeroDebrief.UI.ViewModels
             
             // Reset AGC to defaults
             ResetAGCToDefaults();
+            
+            // Reset Visualization settings to defaults
+            UseDbScale = false; // Linear amplitude scale by default
         }
         
         /// <summary>

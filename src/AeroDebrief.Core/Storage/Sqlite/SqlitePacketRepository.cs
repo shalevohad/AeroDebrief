@@ -61,8 +61,26 @@ namespace AeroDebrief.Core.Storage.Sqlite
 
             if (info == null)
             {
-                Logger.Warn("recording_info table is empty - database may be incomplete. Using defaults.");
-                _recordingStart = DateTime.UtcNow;
+                Logger.Warn("recording_info table is empty - inferring start time from first packet");
+                
+                // CRITICAL FIX: Read actual recording start from first packet timestamp
+                // instead of using DateTime.UtcNow which would be completely wrong!
+                var firstPacket = await _connection.QuerySingleOrDefaultAsync<dynamic>(
+                    "SELECT timestamp_utc FROM packets ORDER BY relative_ms ASC LIMIT 1");
+                
+                if (firstPacket != null && !string.IsNullOrEmpty(firstPacket.timestamp_utc))
+                {
+                    _recordingStart = DateTime.Parse(firstPacket.timestamp_utc, null,
+                        System.Globalization.DateTimeStyles.RoundtripKind);
+                    Logger.Info($"Inferred recording start from first packet: {_recordingStart:yyyy-MM-dd HH:mm:ss} (Kind={_recordingStart.Kind})");
+                }
+                else
+                {
+                    // Absolute fallback if no packets exist
+                    Logger.Error("No packets found in database - using current time as last resort");
+                    _recordingStart = DateTime.UtcNow;
+                }
+                
                 _isLive = false;
                 return;
             }
@@ -71,7 +89,7 @@ namespace AeroDebrief.Core.Storage.Sqlite
                 System.Globalization.DateTimeStyles.RoundtripKind);
             _isLive = info.is_live != 0;
             
-            Logger.Debug($"Loaded recording metadata: Start={_recordingStart}, IsLive={_isLive}");
+            Logger.Debug($"Loaded recording metadata: Start={_recordingStart:yyyy-MM-dd HH:mm:ss} (Kind={_recordingStart.Kind}), IsLive={_isLive}");
         }
 
         /// <summary>

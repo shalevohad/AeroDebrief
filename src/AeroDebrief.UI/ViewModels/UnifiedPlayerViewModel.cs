@@ -524,8 +524,42 @@ namespace AeroDebrief.UI.ViewModels
             // Initialize Tacview integration now that we have PlaybackController
             InitializeTacviewIntegration(e);
             
-            // Auto-start frequency analysis
+            // CRITICAL: Initialize AmplitudeSeriesProvider with real data pipeline FIRST
+            // This must happen before LoadFrequenciesAsync so the graph has access to packet data
+            InitializeGraphDataProvider(e);
+            
+            // Auto-start frequency analysis (which will use the initialized provider for graph data)
             _ = LoadFrequenciesAsync();
+        }
+        
+        /// <summary>
+        /// Initialize the amplitude provider with the real data pipeline.
+        /// Must be called after session is loaded but before graph data is requested.
+        /// </summary>
+        private void InitializeGraphDataProvider(SessionLoadedEventArgs sessionArgs)
+        {
+            try
+            {
+                Logger.Info("Initializing graph data provider with real packet source...");
+                
+                // Get packet source from the session
+                var packetSource = sessionArgs.PacketSource;
+                
+                // Create an audio processing engine for amplitude extraction
+                var audioEngine = new AudioProcessingEngine();
+                
+                // Create a new amplitude provider with real data pipeline
+                var amplitudeProvider = new AmplitudeSeriesProvider(packetSource, audioEngine);
+                
+                // Update the graph view model with the new provider
+                _graphViewModel.UpdateAmplitudeProvider(amplitudeProvider);
+                
+                Logger.Info("? Graph data provider initialized and ready");
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, "Failed to initialize graph data provider");
+            }
         }
         
         /// <summary>
@@ -1719,7 +1753,18 @@ namespace AeroDebrief.UI.ViewModels
                 var recordingStart = _sessionManager.Pipeline!.RecordingStart;
                 var recordingEnd = recordingStart.Add(TotalDuration);
                 
-                Logger.Info($"Phase 12: Using ACTUAL recording timestamps: {recordingStart:yyyy-MM-dd HH:mm:ss} to {recordingEnd:yyyy-MM-dd HH:mm:ss}");
+                // Ensure times are UTC for consistency with database
+                if (recordingStart.Kind != DateTimeKind.Utc)
+                {
+                    Logger.Warn($"RecordingStart is not UTC (Kind={recordingStart.Kind}), converting to UTC");
+                    recordingStart = recordingStart.ToUniversalTime();
+                    recordingEnd = recordingStart.Add(TotalDuration);
+                }
+                
+                Logger.Info($"Phase 12: Using ACTUAL recording timestamps:");
+                Logger.Info($"  Start: {recordingStart:yyyy-MM-dd HH:mm:ss} (Kind={recordingStart.Kind})");
+                Logger.Info($"  End:   {recordingEnd:yyyy-MM-dd HH:mm:ss} (Kind={recordingEnd.Kind})");
+                Logger.Info($"  Duration: {TotalDuration}");
                 
                 try
                 {
