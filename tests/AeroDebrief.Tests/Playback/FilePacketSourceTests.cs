@@ -1,5 +1,6 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using AeroDebrief.Core.IO;
+using AeroDebrief.Core.Storage.Abstractions;
 using AeroDebrief.Tests.TestHelpers;
 using System;
 using System.IO;

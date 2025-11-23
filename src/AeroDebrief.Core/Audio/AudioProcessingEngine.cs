@@ -6,6 +6,7 @@ using AeroDebrief.Core.Models;
 using AeroDebrief.Core.Helpers;
 using System;
 using System.Linq;
+using AeroDebrief.Core.Interfaces.Audio;
 
 namespace AeroDebrief.Core.Audio
 {
@@ -20,6 +21,9 @@ namespace AeroDebrief.Core.Audio
         private float _masterVolume = 1.0f;
         private bool _disposed;
         
+        // NEW: Amplitude data cache for efficient querying
+        private AmplitudeDataCache? _amplitudeCache;
+        
         // NEW: Crossfade settings for smooth packet transitions
         private const int CrossfadeSamples = 240; // 5ms crossfade at 48kHz (reduced from 10ms for tighter feel)
         private const double MaxGapForCrossfade = 0.1; // 100ms - apply crossfade if gap is smaller
@@ -28,7 +32,7 @@ namespace AeroDebrief.Core.Audio
         {
             Logger.Info("Audio processing engine initialized with crossfade support");
         }
-
+        
         public void SetMasterVolume(float volume)
         {
             _masterVolume = Math.Clamp(volume, 0.0f, Constants.MAX_VOLUME);
@@ -500,6 +504,125 @@ namespace AeroDebrief.Core.Audio
 
             _disposed = true;
             Logger.Debug("AudioProcessingEngine disposed");
+        }
+
+        /// <summary>
+        /// Enable amplitude caching for efficient repeated queries.
+        /// This dramatically improves performance when graph is reloaded or panned.
+        /// </summary>
+        public void EnableAmplitudeCache()
+        {
+            if (_amplitudeCache == null)
+            {
+                _amplitudeCache = new AmplitudeDataCache();
+                Logger.Info("Amplitude caching enabled for query optimization");
+            }
+        }
+        
+        /// <summary>
+        /// Disable amplitude caching to free memory.
+        /// </summary>
+        public void DisableAmplitudeCache()
+        {
+            if (_amplitudeCache != null)
+            {
+                var stats = _amplitudeCache.GetStatistics();
+                Logger.Info($"Disabling amplitude cache. Final stats: {stats}");
+                
+                _amplitudeCache.Dispose();
+                _amplitudeCache = null;
+            }
+        }
+        
+        /// <summary>
+        /// Get cache statistics for monitoring.
+        /// </summary>
+        public CacheStatistics? GetCacheStatistics()
+        {
+            return _amplitudeCache?.GetStatistics();
+        }
+        
+        /// <summary>
+        /// Decode packet with caching support.
+        /// If caching is enabled, this will check cache first before decoding.
+        /// </summary>
+        public float[] DecodePacketToFloatCached(AudioPacketMetadata packet)
+        {
+            // Check cache first if enabled
+            if (_amplitudeCache != null && 
+                _amplitudeCache.TryGetAmplitudeData(packet.Frequency, packet.TransmitterGuid, packet.Timestamp, out var cachedData))
+            {
+                Logger.Trace($"Cache HIT for packet: {packet.Frequency}Hz, {packet.TransmitterGuid}, {packet.Timestamp}");
+                return cachedData!.DecodedSamples;
+            }
+            
+            // Cache miss or caching disabled - decode normally
+            Logger.Trace($"Cache MISS for packet: {packet.Frequency}Hz, {packet.TransmitterGuid}, {packet.Timestamp}");
+            var decodedSamples = DecodePacketToFloat(packet);
+            
+            // Store in cache if enabled
+            if (_amplitudeCache != null && decodedSamples != null && decodedSamples.Length > 0)
+            {
+                // Calculate amplitude envelope for caching
+                var amplitudeEnvelope = ExtractAmplitudeEnvelope(decodedSamples, 480, 240); // 10ms window, 5ms hop
+                _amplitudeCache.StoreAmplitudeData(packet.Frequency, packet.TransmitterGuid, packet.Timestamp, decodedSamples, amplitudeEnvelope);
+            }
+            
+            return decodedSamples;
+        }
+        
+        /// <summary>
+        /// Query decoded packets for a specific frequency/transmitter within a time range.
+        /// This is MUCH faster than re-reading and re-decoding packets from the database.
+        /// </summary>
+        public IEnumerable<CachedAmplitudeData> QueryAmplitudeData(double frequency, string transmitterGuid, DateTime startTime, DateTime endTime)
+        {
+            if (_amplitudeCache == null)
+            {
+                Logger.Warn("QueryAmplitudeData called but caching is not enabled. Call EnableAmplitudeCache() first.");
+                return Enumerable.Empty<CachedAmplitudeData>();
+            }
+            
+            return _amplitudeCache.QueryTimeRange(frequency, transmitterGuid, startTime, endTime);
+        }
+        
+        /// <summary>
+        /// Extract amplitude envelope from decoded samples using sliding window.
+        /// </summary>
+        private float[] ExtractAmplitudeEnvelope(float[] samples, int windowSize, int hopSize)
+        {
+            if (samples == null || samples.Length == 0)
+            {
+                return Array.Empty<float>();
+            }
+            
+            var envelope = new List<float>();
+            
+            for (int start = 0; start < samples.Length; start += hopSize)
+            {
+                var end = Math.Min(start + windowSize, samples.Length);
+                var windowLength = end - start;
+                
+                if (windowLength < windowSize / 2)
+                {
+                    break; // Skip partial windows
+                }
+                
+                // Find peak amplitude in window
+                float peakAmplitude = 0.0f;
+                for (int i = start; i < end; i++)
+                {
+                    var abs = Math.Abs(samples[i]);
+                    if (abs > peakAmplitude)
+                    {
+                        peakAmplitude = abs;
+                    }
+                }
+                
+                envelope.Add(peakAmplitude);
+            }
+            
+            return envelope.ToArray();
         }
     }
 }

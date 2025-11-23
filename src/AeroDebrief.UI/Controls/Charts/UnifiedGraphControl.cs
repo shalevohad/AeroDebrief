@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using AeroDebrief.UI.ViewModels;
 using AeroDebrief.UI.Services;
+using AeroDebrief.UI.Services.Visualization.Graphs;
 
 namespace AeroDebrief.UI.Controls.Charts
 {

@@ -30,6 +30,7 @@ See [Release Notes](docs/RELEASE-NOTES-v2.0.md) for detailed changelog and [Live
 - Frequency and presence analysis for live sessions
 - Recording of received audio packets with per-player metadata
 - Integration points and export support for third-party tools (for example TacView)
+- **SQLite-based storage** with efficient Repository Pattern architecture
 - **GPU-accelerated waveform rendering** (10-50x faster than CPU)
 - **Multi-frequency visualization** with individual channel controls
 - **Advanced analytics** with real-time presence graphs and statistics
@@ -128,12 +129,14 @@ Key Capabilities:
 * Audio Playback - High-performance playback engine with seeking and timeline control
 * Frequency Analysis - Real-time analysis of active frequencies and communication patterns
 * Signal Processing - Audio mixing, filtering, and frequency-based waveform generation
-* File Management - Read/write custom .srs recording format with efficient packet storage
+* **SQLite Storage** - Efficient database storage with Repository Pattern and Unit of Work
+* **Dapper ORM** - Lightweight micro-ORM for high-performance data access
+* File Management - Read/write custom recording formats (.db, .cvr) with efficient packet storage
 * **GPU Acceleration** - Hardware-accelerated waveform rendering with automatic CPU fallback
 
-Core Components: AudioPacketReader, AudioPacketRecorder, AudioProcessingEngine, PlaybackController, FrequencyAnalyzer, GpuWaveformGenerator, FilteredWaveformGenerator, FrequencyChannelMixer
+Core Components: AudioPacketReader, AudioPacketRecorder, AudioProcessingEngine, PlaybackController, FrequencyAnalyzer, GpuWaveformGenerator, FilteredWaveformGenerator, FrequencyChannelMixer, SqliteRepositoryFactory, DatabasePacketSource
 
-Technologies: NAudio, OPUS codec, Vortice.Direct3D11 (GPU compute), .NET 9
+Technologies: NAudio, OPUS codec, Vortice.Direct3D11 (GPU compute), SQLite, Dapper, .NET 9
 
 ### AeroDebrief.UI - WPF User Interface
 
@@ -234,7 +237,9 @@ See [GPU-Waveform-Rendering-Implementation.md](docs/GPU-Waveform-Rendering-Imple
 ### Multi-Frequency Recording
 * Captures all active SRS frequencies simultaneously
 * Preserves metadata (modulation, coalition, player information)
-* Efficient binary format (.srs) with OPUS compression
+* Efficient SQLite storage with Dapper ORM
+* WAL mode for concurrent read/write access during live recording
+* Zstandard compression for CVR archives (67-75% size reduction)
 
 ### Advanced Waveform Visualization
 * Per-frequency waveform rendering with color coding

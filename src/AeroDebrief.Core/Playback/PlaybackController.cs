@@ -1,3 +1,5 @@
+using AeroDebrief.Core.Interfaces.Playback;
+using AeroDebrief.Core.Models;
 using NLog;
 
 namespace AeroDebrief.Core.Playback

@@ -7,7 +7,7 @@ using LiveChartsCore;
 using LiveChartsCore.SkiaSharpView;
 using LiveChartsCore.Defaults;
 using AeroDebrief.UI.ViewModels;
-using AeroDebrief.UI.Services.Graphs;
+using AeroDebrief.UI.Services.Visualization.Graphs;
 using AeroDebrief.UI.Services;
 using AeroDebrief.UI.Charts;
 

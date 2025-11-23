@@ -1,6 +1,6 @@
 using System;
 using System.Linq;
-using AeroDebrief.UI.Services.Graphs;
+using AeroDebrief.UI.Services.Visualization.Graphs;
 using LiveChartsCore.Defaults;
 using NLog;
 using Xunit;

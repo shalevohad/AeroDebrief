@@ -1,11 +1,13 @@
 using Xunit;
 using FluentAssertions;
 using AeroDebrief.UI.Services;
+using AeroDebrief.UI.Services.Visualization.Graphs;
 using AeroDebrief.UI.ViewModels;
 using AeroDebrief.Tests.TestHelpers;
 using NLog;
 using System;
 using System.Threading.Tasks;
+using AeroDebrief.UI.Interfaces.Visualization;
 
 namespace AeroDebrief.Tests.Phase9.Integration
 {

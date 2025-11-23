@@ -92,16 +92,16 @@ namespace AeroDebrief.Core{
         public static readonly DateTime MaxValidTimestamp = new DateTime(2100, 1, 1, 0, 0, 0, DateTimeKind.Utc);
         
         /// <summary>
-        /// Minimum valid radio frequency: 1 MHz (1,000,000 Hz)
+        /// Minimum valid radio frequency: 1 MHz = 1,000,000 Hz
         /// Below typical radio communication frequencies.
         /// </summary>
-        public const double MinValidFrequencyHz = 1_000_000.0;
+        public const double MinValidFrequencyHz = 1_000_000.0;  // 1 MHz in Hz
         
         /// <summary>
-        /// Maximum valid radio frequency: 2 GHz (2,000,000,000 Hz)
+        /// Maximum valid radio frequency: 2000 MHz = 2,000,000,000 Hz (2 GHz)
         /// Above typical radio communication frequencies.
         /// </summary>
-        public const double MaxValidFrequencyHz = 2_000_000_000.0;
+        public const double MaxValidFrequencyHz = 2_000_000_000.0;  // 2000 MHz in Hz
         
         /// <summary>
         /// Maximum audio payload size per packet: 10 MB (10,485,760 bytes)

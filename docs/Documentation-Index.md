@@ -9,17 +9,34 @@ All documentation for Phases 3 & 4 of the LiveCharts2 integration project.
 ## ?? Start Here
 
 ### For Quick Overview
-1. **[README-Phase3-4-Complete.md](README-Phase3-4-Complete.md)** ? START HERE
-   - Quick start guide
-   - Golden rules
-   - Common tasks
-   - Current status
+1. **[DuckDB-Quick-Reference.md](DuckDB-Quick-Reference.md)** ? **QUICK START**
+   - At-a-glance status
+   - Common commands
+   - Key classes
+   - Troubleshooting
 
-2. **[CHECKPOINT-Phase5-Ready.md](CHECKPOINT-Phase5-Ready.md)**
-   - Current checkpoint
-   - What's complete
-   - What's next
-   - Quick reference
+2. **[DuckDB-Implementation-Complete-Plan.md](DuckDB-Implementation-Complete-Plan.md)** ?? **COMPLETE PLAN**
+   - Full status overview
+   - What's done vs planned
+   - Detailed phase breakdown
+   - Next steps
+
+3. **[DuckDB-Implementation-Roadmap.md](DuckDB-Implementation-Roadmap.md)** ??? **VISUAL ROADMAP**
+   - Timeline visualization
+   - Progress dashboard
+   - Architecture diagrams
+   - Data flow charts
+
+### For DuckDB Recording (Phases 1-3 Complete)
+4. **[DuckDB-Phase3-Summary.md](DuckDB-Phase3-Summary.md)** ? **LATEST**
+   - Phase 3 completion summary
+   - Recording implementation
+   - Mandatory compression
+
+5. **[Phase3-Mandatory-Compression.md](Phase3-Mandatory-Compression.md)** ?? **IMPORTANT**
+   - Compression policy
+   - Code-level control
+   - Developer guide
 
 ---
 
@@ -102,8 +119,20 @@ All documentation for Phases 3 & 4 of the LiveCharts2 integration project.
     - Technical challenges
     - Success criteria
 
+12. **[DuckDB-Implementation-Complete-Plan.md](DuckDB-Implementation-Complete-Plan.md)** ?? **COMPLETE PLAN**
+    - Full status overview
+    - What's done vs planned
+    - Detailed phase breakdown
+    - Next steps
+
+13. **[DuckDB-Implementation-Roadmap.md](DuckDB-Implementation-Roadmap.md)** ??? **VISUAL ROADMAP**
+    - Timeline visualization
+    - Progress dashboard
+    - Architecture diagrams
+    - Data flow charts
+
 ### Master Plan
-12. **[AeroDebrief-Rewrite-Plan-LiveCharts2.md](AeroDebrief-Rewrite-Plan-LiveCharts2.md)**
+14. **[AeroDebrief-Rewrite-Plan-LiveCharts2.md](AeroDebrief-Rewrite-Plan-LiveCharts2.md)**
     - Original 11-phase plan
     - Phase descriptions
     - Dependencies

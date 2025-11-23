@@ -174,6 +174,9 @@ namespace AeroDebrief.UI.ViewModels
         /// <summary>Raised when recording state changes</summary>
         public event Action<bool>? RecordingStateChanged;
 
+        /// <summary>Phase 4: Raised when live playback is ready (recording has started)</summary>
+        public event Action<string>? LivePlaybackReady;
+
         #endregion
 
         #region Commands
@@ -233,6 +236,9 @@ namespace AeroDebrief.UI.ViewModels
                 
                 // Wire up connection events
                 _recorder.ConnectionStatusChanged += OnConnectionStatusChanged;
+                
+                // Phase 4: Wire up live playback event
+                _recorder.LivePlaybackReady += OnLivePlaybackReady;
 
                 await _recorder.ConnectAsync(ServerIp, ServerPort);
 
@@ -586,6 +592,17 @@ namespace AeroDebrief.UI.ViewModels
                 
                 Logger.Warn($"Disconnected from server: {status.Error}");
             }
+        }
+
+        /// <summary>
+        /// Phase 4: Handle live playback ready event from recorder
+        /// </summary>
+        private void OnLivePlaybackReady(string liveDatabasePath)
+        {
+            Logger.Info($"?? Live playback ready: {liveDatabasePath}");
+            
+            // Forward event to UnifiedPlayerViewModel
+            LivePlaybackReady?.Invoke(liveDatabasePath);
         }
 
         #endregion

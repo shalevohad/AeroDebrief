@@ -22,6 +22,7 @@ namespace AeroDebrief.Core.Settings
         MasterVolume,
         EnableDebugLogging,
         LastRecordingFile,
+        RecentRecordingFiles,  // Phase 2.5: JSON array of recent recording files
         EnableFrequencyFilterByDefault,
         ThemeFile,
         
@@ -30,6 +31,9 @@ namespace AeroDebrief.Core.Settings
         AGC_MaxBoostDB,
         AGC_MaxCutDB,
         AGC_Enabled,
+        
+        // Visualization Settings
+        UseDbScale,  // Use dB scale (true) or linear amplitude scale (false) for graphs
         
         // Window Settings
         WindowWidth,
@@ -59,6 +63,7 @@ namespace AeroDebrief.Core.Settings
             { PlayerSettingKeys.MasterVolume.ToString(), "100" },
             { PlayerSettingKeys.EnableDebugLogging.ToString(), "true" },
             { PlayerSettingKeys.LastRecordingFile.ToString(), "" },
+            { PlayerSettingKeys.RecentRecordingFiles.ToString(), "[]" }, // Default to empty JSON array
             { PlayerSettingKeys.EnableFrequencyFilterByDefault.ToString(), "false" },
             { PlayerSettingKeys.ThemeFile.ToString(), "light.json" },
             
@@ -67,6 +72,9 @@ namespace AeroDebrief.Core.Settings
             { PlayerSettingKeys.AGC_MaxBoostDB.ToString(), "20.0" },     // Max boost in dB
             { PlayerSettingKeys.AGC_MaxCutDB.ToString(), "-10.0" },      // Max cut in dB
             { PlayerSettingKeys.AGC_Enabled.ToString(), "true" },        // AGC enabled by default
+            
+            // Visualization Settings
+            { PlayerSettingKeys.UseDbScale.ToString(), "false" },        // Use linear amplitude scale by default
             
             // Window Settings
             { PlayerSettingKeys.WindowWidth.ToString(), "950" },
@@ -226,6 +234,7 @@ namespace AeroDebrief.Core.Settings
             SetPlayerSetting(PlayerSettingKeys.MasterVolume, int.Parse(defaultPlayerSettings[PlayerSettingKeys.MasterVolume.ToString()]));
             SetPlayerSetting(PlayerSettingKeys.EnableDebugLogging, bool.Parse(defaultPlayerSettings[PlayerSettingKeys.EnableDebugLogging.ToString()]));
             SetPlayerSetting(PlayerSettingKeys.LastRecordingFile, defaultPlayerSettings[PlayerSettingKeys.LastRecordingFile.ToString()]);
+            SetPlayerSetting(PlayerSettingKeys.RecentRecordingFiles, defaultPlayerSettings[PlayerSettingKeys.RecentRecordingFiles.ToString()]); // Parse JSON array
             SetPlayerSetting(PlayerSettingKeys.EnableFrequencyFilterByDefault, bool.Parse(defaultPlayerSettings[PlayerSettingKeys.EnableFrequencyFilterByDefault.ToString()]));
             // Theme default
             SetPlayerSetting(PlayerSettingKeys.ThemeFile, defaultPlayerSettings[PlayerSettingKeys.ThemeFile.ToString()]);
@@ -235,6 +244,9 @@ namespace AeroDebrief.Core.Settings
             SetPlayerSetting(PlayerSettingKeys.AGC_MaxBoostDB, double.Parse(defaultPlayerSettings[PlayerSettingKeys.AGC_MaxBoostDB.ToString()]));
             SetPlayerSetting(PlayerSettingKeys.AGC_MaxCutDB, double.Parse(defaultPlayerSettings[PlayerSettingKeys.AGC_MaxCutDB.ToString()]));
             SetPlayerSetting(PlayerSettingKeys.AGC_Enabled, bool.Parse(defaultPlayerSettings[PlayerSettingKeys.AGC_Enabled.ToString()]));
+            
+            // Visualization defaults
+            SetPlayerSetting(PlayerSettingKeys.UseDbScale, bool.Parse(defaultPlayerSettings[PlayerSettingKeys.UseDbScale.ToString()]));
             
             // Window defaults
             SetPlayerSetting(PlayerSettingKeys.WindowWidth, int.Parse(defaultPlayerSettings[PlayerSettingKeys.WindowWidth.ToString()]));
@@ -516,6 +528,20 @@ namespace AeroDebrief.Core.Settings
             SetPlayerSetting(PlayerSettingKeys.AGC_MaxBoostDB, maxBoostDB);
             SetPlayerSetting(PlayerSettingKeys.AGC_MaxCutDB, maxCutDB);
             SetPlayerSetting(PlayerSettingKeys.AGC_Enabled, enabled);
+        }
+        
+        /// <summary>
+        /// Get whether to use dB scale for amplitude visualization (true) or linear amplitude 0-1 (false)
+        /// </summary>
+        public bool GetUseDbScale() => 
+            GetPlayerSettingBool(PlayerSettingKeys.UseDbScale);
+        
+        /// <summary>
+        /// Set whether to use dB scale for amplitude visualization
+        /// </summary>
+        public void SetUseDbScale(bool useDbScale)
+        {
+            SetPlayerSetting(PlayerSettingKeys.UseDbScale, useDbScale);
         }
     }
 }

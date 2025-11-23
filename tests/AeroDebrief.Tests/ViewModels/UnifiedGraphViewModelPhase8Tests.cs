@@ -1,3 +1,4 @@
+using AeroDebrief.UI.Interfaces.Visualization;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -5,7 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Xunit;
 using AeroDebrief.UI.Models;
-using AeroDebrief.UI.Services.Graphs;
+using AeroDebrief.UI.Services.Visualization.Graphs;
 using AeroDebrief.UI.ViewModels;
 using LiveChartsCore.Defaults;
 

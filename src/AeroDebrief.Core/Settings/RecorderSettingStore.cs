@@ -13,7 +13,15 @@ namespace AeroDebrief.Core{
         ServerIp,
         ServerPort,
         RecordingFile,
-        ThemeFile
+        ThemeFile,
+        
+        // Phase 3: DuckDB Recording Settings (DEBUG only)
+        EnableLivePlayback  // bool - Enable concurrent read during recording (Phase 4)
+        
+        // REMOVED: OutputFormat and AutoCompress
+        // These settings are now controlled by RecordingConstants
+        // - RELEASE builds: Compression is MANDATORY (always CVR)
+        // - DEBUG builds: Compression is OPTIONAL (controlled by RecordingConstants.ALLOW_COMPRESSION_OVERRIDE)
     }
 
     public class RecorderSettingsStore
@@ -30,7 +38,13 @@ namespace AeroDebrief.Core{
             { RecorderSettingKeys.ServerIp.ToString(), "127.0.0.1" },
             { RecorderSettingKeys.ServerPort.ToString(), "5002" },
             { RecorderSettingKeys.RecordingFile.ToString(), "recorded_audio.raw" },
-            { RecorderSettingKeys.ThemeFile.ToString(), "light.json" }
+            { RecorderSettingKeys.ThemeFile.ToString(), "light.json" },
+            
+            // Phase 3: DuckDB Recording Defaults
+            { RecorderSettingKeys.EnableLivePlayback.ToString(), "false" }  // Phase 4 feature
+            
+            // REMOVED: OutputFormat and AutoCompress are now code-level constants
+            // Compression is MANDATORY in RELEASE builds (RecordingConstants.FORCE_CVR_COMPRESSION)
         };
 
         public string ConfigFileName { get; } = CFG_FILE_NAME;
@@ -95,6 +109,7 @@ namespace AeroDebrief.Core{
                 SetRecorderSetting(RecorderSettingKeys.ServerPort, int.Parse(defaultRecorderSettings[RecorderSettingKeys.ServerPort.ToString()]));
                 SetRecorderSetting(RecorderSettingKeys.RecordingFile, defaultRecorderSettings[RecorderSettingKeys.RecordingFile.ToString()]);
                 SetRecorderSetting(RecorderSettingKeys.ThemeFile, defaultRecorderSettings[RecorderSettingKeys.ThemeFile.ToString()]);
+                SetRecorderSetting(RecorderSettingKeys.EnableLivePlayback, bool.Parse(defaultRecorderSettings[RecorderSettingKeys.EnableLivePlayback.ToString()]));
                 Save();
             }
             catch (ParserException ex)
@@ -118,6 +133,8 @@ namespace AeroDebrief.Core{
                 SetRecorderSetting(RecorderSettingKeys.ServerPort, int.Parse(defaultRecorderSettings[RecorderSettingKeys.ServerPort.ToString()]));
                 SetRecorderSetting(RecorderSettingKeys.RecordingFile, defaultRecorderSettings[RecorderSettingKeys.RecordingFile.ToString()]);
                 SetRecorderSetting(RecorderSettingKeys.ThemeFile, defaultRecorderSettings[RecorderSettingKeys.ThemeFile.ToString()]);
+                // Phase 3: Initialize new settings
+                SetRecorderSetting(RecorderSettingKeys.EnableLivePlayback, bool.Parse(defaultRecorderSettings[RecorderSettingKeys.EnableLivePlayback.ToString()]));
                 Save();
             }
         }

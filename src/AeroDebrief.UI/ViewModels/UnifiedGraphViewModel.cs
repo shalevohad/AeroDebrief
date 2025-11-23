@@ -1,22 +1,26 @@
+using AeroDebrief.UI.Interfaces.Visualization;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
+using AeroDebrief.Core.IO;
+using AeroDebrief.UI.Charts;
+using AeroDebrief.UI.Commands;
+using AeroDebrief.UI.Models;
+using AeroDebrief.UI.Services;
+using AeroDebrief.UI.Services.Visualization.Graphs;
 using LiveChartsCore;
+using LiveChartsCore.Defaults;
 using LiveChartsCore.SkiaSharpView;
 using LiveChartsCore.SkiaSharpView.Painting;
-using LiveChartsCore.Defaults;
-using AeroDebrief.UI.Services.Graphs;
-using AeroDebrief.UI.Services;
-using AeroDebrief.UI.Charts;
-using AeroDebrief.UI.Models;
-using AeroDebrief.UI.Commands;
 using SkiaSharp;
+using NLog;
 
 namespace AeroDebrief.UI.ViewModels
 {
@@ -513,6 +517,15 @@ namespace AeroDebrief.UI.ViewModels
             => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 
         /// <summary>
+        /// Update the amplitude provider (used when switching data sources or loading a new file).
+        /// </summary>
+        public void UpdateAmplitudeProvider(IAmplitudeSeriesProvider amplitudeProvider)
+        {
+            _amplitudeProvider = amplitudeProvider ?? throw new ArgumentNullException(nameof(amplitudeProvider));
+            _logger.Info("Amplitude provider updated");
+        }
+
+        /// <summary>
         /// Load amplitude data for the specified time range.
         /// Phase 4: Creates series with colors and markers, applies density management.
         /// Phase 8: Tile-based loading for improved performance with large data ranges.
@@ -591,6 +604,28 @@ namespace AeroDebrief.UI.ViewModels
             {
                 // Clear flag to allow viewport changes to trigger tile loading
                 _isLoadingData = false;
+            }
+        }
+
+        /// <summary>
+        /// Phase 4: Refresh data for live recording.
+        /// Extends the time range and loads new packets without clearing existing data.
+        /// </summary>
+        public void RefreshLiveData()
+        {
+            try
+            {
+                // Simply trigger a redraw - the data will be automatically loaded
+                // when the viewport is updated
+                _logger.Debug("?? LIVE: Refreshing graph data");
+                
+                // Notify that series collection changed (triggers redraw)
+                OnPropertyChanged(nameof(Series));
+                OnPropertyChanged(nameof(TotalPoints));
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex, "Failed to refresh live data");
             }
         }
 
@@ -949,52 +984,64 @@ namespace AeroDebrief.UI.ViewModels
         /// </summary>
         private async Task LoadRawDataAsync(DateTime start, DateTime end, CancellationToken cancellationToken)
         {
-            _logger.Info("Loading raw data (non-tiled)");
+            _logger.Info("Loading raw data (non-tiled) with progressive rendering");
             
-            await foreach (var (key, points) in _amplitudeProvider.GetSeriesAsync(start, end, cancellationToken))
+            IsLoadingTiles = true;
+            LoadingStatusText = "Loading data...";
+            var seriesCount = 0;
+            
+            try
             {
-                if (cancellationToken.IsCancellationRequested)
-                    break;
-
-                var parsed = ParseSeriesKey(key);
-                if (parsed.frequencyId == null)
+                await foreach (var (key, points) in _amplitudeProvider.GetSeriesAsync(start, end, cancellationToken))
                 {
-                    _logger.Warn($"Invalid series key format: {key}");
-                    continue;
+                    if (cancellationToken.IsCancellationRequested)
+                        break;
+
+                    var parsed = ParseSeriesKey(key);
+                    if (parsed.frequencyId == null)
+                    {
+                        _logger.Warn($"Invalid series key format: {key}");
+                        continue;
+                    }
+
+                    var pointsList = points.ToList();
+                    _totalPoints += pointsList.Count;
+
+                    if (!_frequencyPilots.ContainsKey(parsed.frequencyId))
+                    {
+                        _frequencyPilots[parsed.frequencyId] = new HashSet<string>();
+                    }
+
+                    if (parsed.pilotId != null)
+                    {
+                        _frequencyPilots[parsed.frequencyId].Add(parsed.pilotId);
+                    }
+
+                    var series = CreateLineSeries(parsed.frequencyId, parsed.pilotId ?? "FREQ", pointsList);
+                    _allSeries[key] = series;
+
+                    var shouldCollapse = _frequencyPilots[parsed.frequencyId].Count > MaxPilotsPerFrequency;
+                    var initialVisibility = !shouldCollapse;
+                    _seriesVisibility[key] = initialVisibility;
+                    
+                    series.IsVisible = initialVisibility;
+                    Series.Add(series);
+                    
+                    seriesCount++;
+                    if (seriesCount % 5 == 0)
+                    {
+                        LoadingStatusText = $"Loaded {seriesCount} series ({_totalPoints:N0} points)...";
+                        await Task.Yield();
+                    }
                 }
 
-                var pointsList = points.ToList();
-                _totalPoints += pointsList.Count;
-
-                // Track pilots per frequency
-                if (!_frequencyPilots.ContainsKey(parsed.frequencyId))
-                {
-                    _frequencyPilots[parsed.frequencyId] = new HashSet<string>();
-                }
-
-                if (parsed.pilotId != null)
-                {
-                    _frequencyPilots[parsed.frequencyId].Add(parsed.pilotId);
-                }
-
-                // Create series
-                var series = CreateLineSeries(parsed.frequencyId, parsed.pilotId ?? "FREQ", pointsList);
-                _allSeries[key] = series;
-
-                // Determine initial visibility
-                var shouldCollapse = _frequencyPilots[parsed.frequencyId].Count > MaxPilotsPerFrequency;
-                var initialVisibility = !shouldCollapse;
-                _seriesVisibility[key] = initialVisibility;
-                
-                // Phase 7: Add series to collection with IsVisible set
-                series.IsVisible = initialVisibility;
-                Series.Add(series);
+                _logger.Info($"Loaded {_allSeries.Count} series, {_totalPoints:N0} points");
+                VisibleSeriesCount = Series.Count(s => s.IsVisible);
             }
-
-            _logger.Info($"Loaded {_allSeries.Count} series, {_totalPoints:N0} points");
-            
-            // Update visible count based on IsVisible property
-            VisibleSeriesCount = Series.Count(s => s.IsVisible);
+            finally
+            {
+                IsLoadingTiles = false;
+            }
         }
 
         /// <summary>
