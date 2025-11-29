@@ -6,6 +6,10 @@
     "PreFlight": {
       "commandName": "Project",
       "commandLineArgs": "88.99.165.102 5072"
+    },
+    "Migrate ADB to CVR": {
+      "commandName": "Project",
+      "commandLineArgs": "--migrate \"C:\\Users\\Ohad\\source\\repos\\AeroDebrief\\Records\\recorded_audio_srv_88.99.165.102_5072_t20251106T200937Z.adb\" --compress"
     }
   }
 }

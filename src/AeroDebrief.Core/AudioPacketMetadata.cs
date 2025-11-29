@@ -116,7 +116,16 @@ namespace AeroDebrief.Core
                 
                 double frequency = reader.ReadDouble();
                 
-                // Validate frequency - must be reasonable (typically 30 MHz to 400 MHz for radios)
+                // UNIT STANDARD: Store frequencies in Hz internally for precision and consistency
+                // ADB files may store in either Hz or MHz, so normalize to Hz
+                // If frequency < 1000, assume it's in MHz and convert to Hz
+                if (frequency < 1000.0)
+                {
+                    frequency = frequency * 1_000_000.0;  // Convert MHz to Hz
+                }
+                
+                // Validate frequency - must be reasonable (typically 1 MHz to 2000 MHz = 1,000,000 Hz to 2,000,000,000 Hz)
+                // After normalization, all frequencies should be in Hz
                 if (frequency < Constants.MinValidFrequencyHz || frequency > Constants.MaxValidFrequencyHz || double.IsNaN(frequency) || double.IsInfinity(frequency))
                 {
                     return false;

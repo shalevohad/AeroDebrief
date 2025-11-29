@@ -15,6 +15,8 @@ WindowStartupLocation="CenterScreen">
         <!-- Menu Bar -->
         <Menu DockPanel.Dock="Top" Background="{StaticResource PrimaryBackgroundBrush}">
             <MenuItem Header="_File">
+                <MenuItem Header="_Open Recording..." Click="OpenRecording_Click" InputGestureText="Ctrl+O"/>
+                <Separator/>
                 <MenuItem Header="E_xit" Click="Exit_Click"/>
             </MenuItem>
             <MenuItem Header="_Help">
@@ -22,7 +24,52 @@ WindowStartupLocation="CenterScreen">
             </MenuItem>
         </Menu>
         
+        <!-- Status Bar (Phase 2.5) -->
+        <StatusBar DockPanel.Dock="Bottom" 
+                   Background="{StaticResource PrimaryBackgroundBrush}" 
+                   Height="24"
+                   DataContext="{Binding DataContext, ElementName=UnifiedPlayer}">
+            <StatusBar.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                    </Grid>
+                </ItemsPanelTemplate>
+            </StatusBar.ItemsPanel>
+            
+            <!-- Status Message -->
+            <StatusBarItem Grid.Column="0">
+                <TextBlock Text="{Binding StatusMessage, FallbackValue='Ready'}" 
+                           Foreground="{StaticResource TextPrimaryBrush}"/>
+            </StatusBarItem>
+            
+            <!-- File Format -->
+            <StatusBarItem Grid.Column="1">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="Format: " 
+                               Foreground="{StaticResource TextPrimaryBrush}"
+                               Visibility="{Binding FileFormat, Converter={StaticResource StringToVisibilityConverter}}"/>
+                    <TextBlock Text="{Binding FileFormat}" 
+                               Foreground="{StaticResource AccentBrush}"
+                               FontWeight="SemiBold"
+                               Visibility="{Binding FileFormat, Converter={StaticResource StringToVisibilityConverter}}"/>
+                </StackPanel>
+            </StatusBarItem>
+            
+            <!-- File Name -->
+            <StatusBarItem Grid.Column="2" Margin="10,0,0,0">
+                <TextBlock Text="{Binding CurrentSourceName}" 
+                           Foreground="{StaticResource TextPrimaryBrush}"
+                           FontWeight="Medium"/>
+            </StatusBarItem>
+        </StatusBar>
+        
         <!-- Unified Player Control -->
         <controls:UnifiedPlayerControl x:Name="UnifiedPlayer"/>
+
     </DockPanel>
 </Window>

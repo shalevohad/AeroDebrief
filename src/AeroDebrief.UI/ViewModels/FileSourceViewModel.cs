@@ -6,6 +6,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using AeroDebrief.Core.Settings;
+using AeroDebrief.Core.Storage;
 using AeroDebrief.UI.Commands;
 using Microsoft.Win32;
 using NLog;
@@ -15,6 +16,7 @@ namespace AeroDebrief.UI.ViewModels
     /// <summary>
     /// View model for file-based playback source.
     /// Manages file selection, loading, and recent files.
+    /// Supports CVR, ADB (legacy), and DuckDB formats.
     /// </summary>
     public class FileSourceViewModel : ViewModelBase, IDisposable
     {
@@ -24,6 +26,11 @@ namespace AeroDebrief.UI.ViewModels
         private string _fileInfo = "No file selected";
         private bool _isLoading;
         private ObservableCollection<string> _recentFiles = new();
+        
+        // Phase 2.5: Loading status tracking
+        private string _loadingStatus = string.Empty;
+        private double _loadingProgress = 0.0;
+        private bool _isIndeterminate = false;
 
         #region Properties
 
@@ -54,6 +61,33 @@ namespace AeroDebrief.UI.ViewModels
         {
             get => _isLoading;
             set => SetProperty(ref _isLoading, value);
+        }
+        
+        /// <summary>
+        /// Phase 2.5: Current loading status message (e.g., "Opening file...", "Analyzing frequencies...")
+        /// </summary>
+        public string LoadingStatus
+        {
+            get => _loadingStatus;
+            set => SetProperty(ref _loadingStatus, value);
+        }
+        
+        /// <summary>
+        /// Phase 2.5: Loading progress percentage (0.0 to 100.0)
+        /// </summary>
+        public double LoadingProgress
+        {
+            get => _loadingProgress;
+            set => SetProperty(ref _loadingProgress, value);
+        }
+        
+        /// <summary>
+        /// Phase 2.5: Whether the progress bar should be indeterminate
+        /// </summary>
+        public bool IsIndeterminate
+        {
+            get => _isIndeterminate;
+            set => SetProperty(ref _isIndeterminate, value);
         }
 
         /// <summary>Recent files (most recent first)</summary>
@@ -123,15 +157,14 @@ namespace AeroDebrief.UI.ViewModels
         {
             try
             {
-                var settings = PlayerSettingsStore.Instance;
-                var showLegacy = true; // TODO: Load from settings when extended
+                // Use RecordingFileLoader to get the updated file filters (Phase 2.5)
+                // This hides DuckDB from users but still allows all formats
+                var fileFilters = RecordingFileLoader.GetFileFilters();
                 
                 var dialog = new OpenFileDialog
                 {
                     Title = "Select Recording File",
-                    Filter = showLegacy 
-                        ? "Recording Files (*.adb;*.raw)|*.adb;*.raw|All Files (*.*)|*.*"
-                        : "ADB Files (*.adb)|*.adb|All Files (*.*)|*.*",
+                    Filter = fileFilters,
                     FilterIndex = 1
                 };
 
@@ -164,6 +197,9 @@ namespace AeroDebrief.UI.ViewModels
             try
             {
                 IsLoading = true;
+                IsIndeterminate = true;
+                LoadingStatus = "Initializing...";
+                LoadingProgress = 0;
                 FileInfo = "Loading...";
                 
                 Logger.Info($"Loading file: {SelectedFilePath}");
@@ -172,6 +208,8 @@ namespace AeroDebrief.UI.ViewModels
                 if (!File.Exists(SelectedFilePath))
                 {
                     FileInfo = "File not found";
+                    LoadingStatus = "File not found";
+                    IsLoading = false;
                     Logger.Warn($"File not found: {SelectedFilePath}");
                     return;
                 }
@@ -180,9 +218,14 @@ namespace AeroDebrief.UI.ViewModels
                 if (!IsValidRecordingFile(SelectedFilePath))
                 {
                     FileInfo = "Invalid file format";
+                    LoadingStatus = "Invalid file format";
+                    IsLoading = false;
                     Logger.Warn($"Invalid file format: {SelectedFilePath}");
                     return;
                 }
+                
+                // Update status to show file is being prepared
+                LoadingStatus = "Preparing file...";
 
                 // Save as last used file
                 SaveLastFileToSettings();
@@ -241,7 +284,7 @@ namespace AeroDebrief.UI.ViewModels
                 OnPropertyChanged(nameof(HasRecentFiles));
                 
                 var settings = PlayerSettingsStore.Instance;
-                settings.SetPlayerSetting(PlayerSettingKeys.LastAnalysisFile, string.Empty);
+                settings.SetPlayerSetting(PlayerSettingKeys.RecentRecordingFiles, string.Empty);
 
                 Logger.Info("Cleared recent files");
             }
@@ -286,8 +329,10 @@ namespace AeroDebrief.UI.ViewModels
         {
             try
             {
+                // Check if file extension is supported
+                var supportedExtensions = RecordingFileLoader.GetSupportedExtensions();
                 var extension = Path.GetExtension(filePath).ToLowerInvariant();
-                return extension == ".adb" || extension == ".raw";
+                return supportedExtensions.Contains(extension);
             }
             catch
             {
@@ -300,15 +345,9 @@ namespace AeroDebrief.UI.ViewModels
             try
             {
                 var settings = PlayerSettingsStore.Instance;
-                var last = settings.GetPlayerSettingString(PlayerSettingKeys.LastRecordingFile);
-                if (!string.IsNullOrEmpty(last) && File.Exists(last))
-                {
-                    SelectedFilePath = last;
-                    AddToRecentFiles(last);
-                }
-
-                // Load recent files list
-                var recentRaw = settings.GetPlayerSettingString(PlayerSettingKeys.LastAnalysisFile);
+                
+                // First, load the recent files list from JSON
+                var recentRaw = settings.GetPlayerSettingString(PlayerSettingKeys.RecentRecordingFiles);
                 if (!string.IsNullOrEmpty(recentRaw))
                 {
                     try
@@ -316,14 +355,50 @@ namespace AeroDebrief.UI.ViewModels
                         var arr = System.Text.Json.JsonSerializer.Deserialize<string[]>(recentRaw);
                         if (arr != null)
                         {
+                            // Clear and reload all recent files
+                            RecentFiles.Clear();
                             foreach (var r in arr.Take(5))
-                                AddToRecentFiles(r);
+                            {
+                                // Only add files that actually exist
+                                if (!string.IsNullOrEmpty(r) && File.Exists(r))
+                                {
+                                    RecentFiles.Add(r);
+                                }
+                            }
+                            OnPropertyChanged(nameof(HasRecentFiles));
                         }
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        Logger.Warn(ex, "Failed to deserialize recent files list");
+                    }
+                }
+                
+                // Then, load the last opened file
+                var last = settings.GetPlayerSettingString(PlayerSettingKeys.LastRecordingFile);
+                if (!string.IsNullOrEmpty(last) && File.Exists(last))
+                {
+                    SelectedFilePath = last;
+                    
+                    // Make sure the last file is at the top of recent files
+                    // Remove it if it exists, then add to beginning
+                    var existing = RecentFiles.FirstOrDefault(r => string.Equals(r, last, StringComparison.OrdinalIgnoreCase));
+                    if (existing != null)
+                    {
+                        RecentFiles.Remove(existing);
+                    }
+                    RecentFiles.Insert(0, last);
+                    
+                    // Trim to 5 max
+                    while (RecentFiles.Count > 5)
+                    {
+                        RecentFiles.RemoveAt(RecentFiles.Count - 1);
+                    }
+                    
+                    OnPropertyChanged(nameof(HasRecentFiles));
                 }
 
-                Logger.Debug("Loaded last file from settings");
+                Logger.Debug($"Loaded recent files from settings: {RecentFiles.Count} files");
             }
             catch (Exception ex)
             {
@@ -341,14 +416,23 @@ namespace AeroDebrief.UI.ViewModels
                     settings.SaveLastRecordingFile(SelectedFilePath);
                 }
 
-                // Save recent files list as JSON
+                // Save recent files list as JSON using the new RecentRecordingFiles key
                 try
                 {
                     var arr = RecentFiles.Take(5).ToArray();
                     var json = System.Text.Json.JsonSerializer.Serialize(arr);
-                    settings.SetPlayerSetting(PlayerSettingKeys.LastAnalysisFile, json);
+                    settings.SetPlayerSetting(PlayerSettingKeys.RecentRecordingFiles, json);
+                    
+                    Logger.Debug($"Saved {arr.Length} recent files to settings");
+                    for (int i = 0; i < arr.Length; i++)
+                    {
+                        Logger.Debug($"  [{i}] {Path.GetFileName(arr[i])}");
+                    }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    Logger.Warn(ex, "Failed to save recent files list");
+                }
 
                 Logger.Debug($"Saved last file to settings: {SelectedFilePath}");
             }
@@ -363,22 +447,80 @@ namespace AeroDebrief.UI.ViewModels
             try
             {
                 if (string.IsNullOrEmpty(path)) return;
-                // Remove existing entry
+                
+                // Don't add non-existent files
+                if (!File.Exists(path))
+                {
+                    Logger.Debug($"Skipping non-existent file from recent list: {path}");
+                    return;
+                }
+                
+                // Remove existing entry (case-insensitive)
                 var existing = RecentFiles.FirstOrDefault(r => string.Equals(r, path, StringComparison.OrdinalIgnoreCase));
-                if (existing != null) RecentFiles.Remove(existing);
+                if (existing != null)
+                {
+                    RecentFiles.Remove(existing);
+                }
 
+                // Add to beginning (most recent first)
                 RecentFiles.Insert(0, path);
 
-                // Trim to 5
-                while (RecentFiles.Count > 5) RecentFiles.RemoveAt(RecentFiles.Count - 1);
+                // Trim to 5 maximum
+                while (RecentFiles.Count > 5)
+                {
+                    RecentFiles.RemoveAt(RecentFiles.Count - 1);
+                }
                 
                 // Notify that HasRecentFiles may have changed
                 OnPropertyChanged(nameof(HasRecentFiles));
                 
                 // Save to settings
                 SaveLastFileToSettings();
+                
+                Logger.Debug($"Added to recent files: {Path.GetFileName(path)} (Total: {RecentFiles.Count})");
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Logger.Warn(ex, $"Failed to add file to recent list: {path}");
+            }
+        }
+
+        #endregion
+
+        #region Public Methods for External Updates
+
+        /// <summary>
+        /// Phase 2.5: Updates the loading status and progress from external code (e.g., UnifiedPlayerViewModel)
+        /// </summary>
+        public void UpdateLoadingProgress(string status, double progress, bool isIndeterminate = false)
+        {
+            LoadingStatus = status;
+            LoadingProgress = progress;
+            IsIndeterminate = isIndeterminate;
+            FileInfo = status; // Also update FileInfo for backward compatibility
+        }
+
+        /// <summary>
+        /// Phase 2.5: Completes the loading process and updates the file info display
+        /// </summary>
+        public void CompleteLoading(bool success, string? message = null)
+        {
+            IsLoading = false;
+            IsIndeterminate = false;
+            LoadingProgress = success ? 100.0 : 0.0;
+            
+            if (success)
+            {
+                LoadingStatus = message ?? "File loaded successfully";
+                FileInfo = !string.IsNullOrEmpty(SelectedFilePath) 
+                    ? $"Loaded: {Path.GetFileName(SelectedFilePath)}" 
+                    : "File loaded";
+            }
+            else
+            {
+                LoadingStatus = message ?? "Load failed";
+                FileInfo = message ?? "Load failed";
+            }
         }
 
         #endregion

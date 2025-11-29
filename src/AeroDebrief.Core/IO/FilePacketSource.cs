@@ -2,6 +2,9 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using NLog;
+using AeroDebrief.Core.Interfaces.Storage;
+using AeroDebrief.Core.Models;
+using AeroDebrief.Core.Storage.Abstractions;
 
 namespace AeroDebrief.Core.IO
 {
@@ -9,7 +12,7 @@ namespace AeroDebrief.Core.IO
     /// High-performance packet source using memory-mapped files and PTS-sorted secondary index.
     /// Supports efficient seeking and range queries for large recording files.
     /// </summary>
-    public sealed class FilePacketSource : IDisposable
+    public sealed class FilePacketSource : IPacketSource
     {
         private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
 
@@ -515,75 +518,6 @@ namespace AeroDebrief.Core.IO
 
             _disposed = true;
             Logger.Debug("FilePacketSource disposed");
-        }
-    }
-
-    /// <summary>
-    /// Radio packet structure for playback - contains all metadata from AudioPacketMetadata
-    /// </summary>
-    public class RadioPacket
-    {
-        public DateTime Timestamp { get; set; }
-        public double Frequency { get; set; }
-        public byte Modulation { get; set; }
-        public byte Encryption { get; set; }
-        public uint TransmitterUnitId { get; set; }
-        public ulong PacketId { get; set; }
-        public string TransmitterGuid { get; set; } = string.Empty;
-        public int Coalition { get; set; }
-        public byte[] AudioPayload { get; set; } = Array.Empty<byte>();
-        
-        // Enhanced fields from AudioPacketMetadata
-        public PlayerInfo? PlayerData { get; set; }
-        public int SampleRate { get; set; } = Constants.OUTPUT_SAMPLE_RATE;
-        public int ChannelCount { get; set; } = 1;
-        
-        /// <summary>
-        /// Creates a RadioPacket from AudioPacketMetadata
-        /// </summary>
-        public static RadioPacket FromMetadata(AudioPacketMetadata metadata)
-        {
-            return new RadioPacket
-            {
-                Timestamp = metadata.Timestamp,
-                Frequency = metadata.Frequency,
-                Modulation = metadata.Modulation,
-                Encryption = metadata.Encryption,
-                TransmitterUnitId = metadata.TransmitterUnitId,
-                PacketId = metadata.PacketId,
-                TransmitterGuid = metadata.TransmitterGuid,
-                Coalition = metadata.Coalition,
-                AudioPayload = metadata.AudioPayload,
-                PlayerData = metadata.PlayerData,
-                SampleRate = metadata.SampleRate,
-                ChannelCount = metadata.ChannelCount
-            };
-        }
-        
-        /// <summary>
-        /// Converts RadioPacket back to AudioPacketMetadata
-        /// </summary>
-        public AudioPacketMetadata ToMetadata()
-        {
-            return new AudioPacketMetadata(
-                Timestamp,
-                Frequency,
-                Modulation,
-                Encryption,
-                TransmitterUnitId,
-                PacketId,
-                TransmitterGuid,
-                PlayerData ?? new PlayerInfo 
-                { 
-                    Name = TransmitterGuid,
-                    TransmitterGuid = TransmitterGuid,
-                    Coalition = Coalition 
-                },
-                SampleRate,
-                ChannelCount,
-                Coalition,
-                AudioPayload
-            );
         }
     }
 

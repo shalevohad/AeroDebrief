@@ -12,6 +12,31 @@ namespace AeroDebrief.UI.Helpers
     /// </summary>
     
     /// <summary>
+    /// Converts a boolean value to Visibility
+    /// (true -> Visible, false -> Collapsed)
+    /// </summary>
+    public class BoolToVisibilityConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            if (value is bool boolValue)
+            {
+                return boolValue ? Visibility.Visible : Visibility.Collapsed;
+            }
+            return Visibility.Collapsed;
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            if (value is Visibility visibility)
+            {
+                return visibility == Visibility.Visible;
+            }
+            return false;
+        }
+    }
+
+    /// <summary>
     /// Converts a boolean value to Visibility, inverting the logic
     /// (true -> Collapsed, false -> Visible)
     /// </summary>
@@ -56,31 +81,6 @@ namespace AeroDebrief.UI.Helpers
             if (value is bool boolValue)
             {
                 return !boolValue;
-            }
-            return false;
-        }
-    }
-
-    /// <summary>
-    /// Converts a boolean value to Visibility
-    /// (true -> Visible, false -> Collapsed)
-    /// </summary>
-    public class BoolToVisibilityConverter : IValueConverter
-    {
-        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
-        {
-            if (value is bool boolValue)
-            {
-                return boolValue ? Visibility.Visible : Visibility.Collapsed;
-            }
-            return Visibility.Collapsed;
-        }
-
-        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
-        {
-            if (value is Visibility visibility)
-            {
-                return visibility == Visibility.Visible;
             }
             return false;
         }
@@ -149,7 +149,7 @@ namespace AeroDebrief.UI.Helpers
                 return hasItems ? Visibility.Visible : Visibility.Collapsed;
             }
             
-            return Visibility.Visible;
+            return Visibility.Collapsed;
         }
 
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
@@ -205,6 +205,70 @@ namespace AeroDebrief.UI.Helpers
                 }
             }
             return string.Empty;
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            throw new NotImplementedException();
+        }
+    }
+
+    /// <summary>
+    /// Phase 2.5: Converts a string to Visibility
+    /// Returns Visible if string is not null/empty, Collapsed otherwise
+    /// </summary>
+    public class StringToVisibilityConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            if (value is string str)
+            {
+                return string.IsNullOrWhiteSpace(str) ? Visibility.Collapsed : Visibility.Visible;
+            }
+            return Visibility.Collapsed;
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            throw new NotImplementedException();
+        }
+    }
+
+    /// <summary>
+    /// Phase 5.1: Converts a boolean to Cursor
+    /// Used for pan cursor feedback (true = Hand cursor, false = Arrow)
+    /// </summary>
+    public class BoolToCursorConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            if (value is bool isPanning && isPanning)
+            {
+                return System.Windows.Input.Cursors.Hand;
+            }
+            return System.Windows.Input.Cursors.Arrow;
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            throw new NotImplementedException();
+        }
+    }
+
+    /// <summary>
+    /// Phase 5.1: Converts zoom level to Visibility
+    /// Shows zoom badge when zoom level > 1.1x (not showing full recording)
+    /// </summary>
+    public class ZoomLevelToVisibilityConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            if (value is double zoomLevel)
+            {
+                // Show badge when zoomed in more than 10%
+                return zoomLevel > 1.1 ? Visibility.Visible : Visibility.Collapsed;
+            }
+            return Visibility.Collapsed;
         }
 
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)

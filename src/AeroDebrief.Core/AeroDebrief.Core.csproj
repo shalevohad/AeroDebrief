@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
@@ -7,11 +7,11 @@
     <Platforms>x64</Platforms>
     <RootNamespace>AeroDebrief.Core</RootNamespace>
     <AssemblyName>AeroDebrief.Core</AssemblyName>
-    <Version>1.0.0</Version>
+    <Version>2.0.0</Version>
     <Authors>Shalev Ohad</Authors>
     <Company>AeroDebrief</Company>
     <Product>AeroDebrief</Product>
-    <Description>Core library for AeroDebrief - DCS SRS Recording and Playback</Description>
+    <Description>Core library for AeroDebrief - DCS SRS Recording and Playback with SQLite storage</Description>
     <NoWarn>CA1416;CA2022;CS1998;CS8618;CS8600;CS8602;CS8603;CS8604;CS8619;CS0414;CS0169;CS9191</NoWarn>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
@@ -21,13 +21,20 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- SQLite + Dapper for Repository Pattern -->
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.0" />
+    <PackageReference Include="Dapper" Version="2.1.35" />
+    
+    <!-- Existing packages -->
     <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
-    <PackageReference Include="NLog" Version="6.0.0" />
+    <PackageReference Include="NLog" Version="6.0.6" />
+    <PackageReference Include="SharpCompress" Version="0.41.0" />
     <PackageReference Include="sharpconfig" Version="3.2.9.1" />
-    <PackageReference Include="System.Drawing.Common" Version="8.0.0" />
+    <PackageReference Include="System.Drawing.Common" Version="10.0.0" />
     <PackageReference Include="Vortice.Direct3D11" Version="3.5.0" />
     <PackageReference Include="Vortice.D3DCompiler" Version="3.5.0" />
     <PackageReference Include="Vortice.DXGI" Version="3.5.0" />
+    <PackageReference Include="ZstdSharp.Port" Version="0.8.6" />
   </ItemGroup>
 
   <ItemGroup>
@@ -41,6 +48,19 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Link>Shaders\%(Filename)%(Extension)</Link>
     </None>
+  </ItemGroup>
+  
+  <!-- Copy SQLite schema to output directory -->
+  <ItemGroup>
+    <None Include="Storage\Schema.sqlite.sql">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>Storage\Schema.sqlite.sql</Link>
+    </None>
+  </ItemGroup>
+  
+  <ItemGroup>
+    <Folder Include="Filtering\" />
+    <Folder Include="Models\WaveformVisualization\" />
   </ItemGroup>
 
 </Project>

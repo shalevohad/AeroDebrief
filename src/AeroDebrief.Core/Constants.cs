@@ -92,16 +92,16 @@ namespace AeroDebrief.Core{
         public static readonly DateTime MaxValidTimestamp = new DateTime(2100, 1, 1, 0, 0, 0, DateTimeKind.Utc);
         
         /// <summary>
-        /// Minimum valid radio frequency: 1 MHz (1,000,000 Hz)
+        /// Minimum valid radio frequency: 1 MHz = 1,000,000 Hz
         /// Below typical radio communication frequencies.
         /// </summary>
-        public const double MinValidFrequencyHz = 1_000_000.0;
+        public const double MinValidFrequencyHz = 1_000_000.0;  // 1 MHz in Hz
         
         /// <summary>
-        /// Maximum valid radio frequency: 2 GHz (2,000,000,000 Hz)
+        /// Maximum valid radio frequency: 2000 MHz = 2,000,000,000 Hz (2 GHz)
         /// Above typical radio communication frequencies.
         /// </summary>
-        public const double MaxValidFrequencyHz = 2_000_000_000.0;
+        public const double MaxValidFrequencyHz = 2_000_000_000.0;  // 2000 MHz in Hz
         
         /// <summary>
         /// Maximum audio payload size per packet: 10 MB (10,485,760 bytes)
@@ -177,12 +177,6 @@ namespace AeroDebrief.Core{
         public const bool USE_LAYERED_WAVEFORM_RENDERING = true;
         
         /// <summary>
-        /// Enable GPU compositor for final layer blending (Phase 3).
-        /// Set to false to use CPU compositor fallback.
-        /// </summary>
-        public const bool USE_GPU_COMPOSITOR = true;
-        
-        /// <summary>
         /// Enable adaptive resolution switching based on zoom level (Phase 3).
         /// Set to false to use fixed resolution.
         /// </summary>
@@ -233,6 +227,78 @@ namespace AeroDebrief.Core{
 #else
         public const bool LOG_GPU_WAVEFORM_DETAILS = false;
 #endif
+        
+        #endregion
+        
+        #region Tile-Based Data Loading Constants (Phase 8)
+        
+        /// <summary>
+        /// Default memory budget for tile cache in megabytes.
+        /// This is the maximum amount of RAM that can be used for caching amplitude tiles.
+        /// Value: 500 MB (allows ~10-20 minutes of high-resolution data in memory)
+        /// </summary>
+        public const long TILE_CACHE_MEMORY_BUDGET_MB = 500;
+        
+        /// <summary>
+        /// Default memory budget for tile cache in bytes.
+        /// Calculated from TILE_CACHE_MEMORY_BUDGET_MB for direct comparisons.
+        /// </summary>
+        public const long TILE_CACHE_MEMORY_BUDGET_BYTES = TILE_CACHE_MEMORY_BUDGET_MB * 1024 * 1024;
+        
+        /// <summary>
+        /// Default tile size in minutes.
+        /// Each tile represents this duration of amplitude data.
+        /// Value: 5 minutes (balance between granularity and overhead)
+        /// - Too small (1 min): Too many tiles, more overhead
+        /// - Too large (15 min): Less granular eviction, larger memory chunks
+        /// </summary>
+        public const int TILE_SIZE_MINUTES = 5;
+        
+        /// <summary>
+        /// Preload buffer multiplier for smooth scrolling.
+        /// Tiles within ±(viewport width × multiplier) are kept loaded.
+        /// Value: 1.0 (±1 viewport width)
+        /// - Total loaded range: 3× viewport (1 visible + 1 before + 1 after)
+        /// </summary>
+        public const double TILE_PRELOAD_BUFFER_MULTIPLIER = 1.0;
+        
+        /// <summary>
+        /// Target cache hit rate (percentage).
+        /// If hit rate falls below this, consider increasing memory budget.
+        /// Value: 0.70 (70% hit rate)
+        /// </summary>
+        public const double TILE_CACHE_TARGET_HIT_RATE = 0.70;
+        
+        /// <summary>
+        /// Memory size per AmplitudePoint in bytes.
+        /// Used for memory usage calculations.
+        /// Structure: DateTime (8 bytes) + double (8 bytes) = 16 bytes
+        /// </summary>
+        public const int AMPLITUDE_POINT_SIZE_BYTES = 16;
+        
+        /// <summary>
+        /// Zoom level threshold for Layer0 (10ms resolution).
+        /// Zoom levels >= this value use highest detail.
+        /// </summary>
+        public const double ZOOM_THRESHOLD_LAYER0 = 10.0;
+        
+        /// <summary>
+        /// Zoom level threshold for Layer1 (50ms resolution).
+        /// Zoom levels >= this value and < Layer0 threshold use high detail.
+        /// </summary>
+        public const double ZOOM_THRESHOLD_LAYER1 = 5.0;
+        
+        /// <summary>
+        /// Zoom level threshold for Layer2 (250ms resolution).
+        /// Zoom levels >= this value and < Layer1 threshold use medium detail.
+        /// </summary>
+        public const double ZOOM_THRESHOLD_LAYER2 = 2.0;
+        
+        /// <summary>
+        /// Zoom level below Layer2 threshold uses Layer3 (1s resolution).
+        /// Provides overview with lowest memory footprint.
+        /// </summary>
+        // Layer3 is used for zoom < ZOOM_THRESHOLD_LAYER2
         
         #endregion
     }

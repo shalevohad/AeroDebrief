@@ -23,6 +23,12 @@ namespace AeroDebrief.UI.ViewModels
         private double _agcTargetDB;
         private double _agcMaxBoostDB;
         private double _agcMaxCutDB;
+        
+        // Visualization Settings
+        private bool _useDbScale;
+        
+        // Cache Settings
+        private int _tempCacheExpirationDays;
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -115,6 +121,24 @@ namespace AeroDebrief.UI.ViewModels
             get => _agcMaxCutDB;
             set => SetProperty(ref _agcMaxCutDB, value);
         }
+        
+        /// <summary>
+        /// Use dB scale for amplitude visualization (true) or linear amplitude scale 0-1 (false)
+        /// </summary>
+        public bool UseDbScale
+        {
+            get => _useDbScale;
+            set => SetProperty(ref _useDbScale, value);
+        }
+        
+        /// <summary>
+        /// Number of days before cached temp files are automatically deleted (0 = disabled)
+        /// </summary>
+        public int TempCacheExpirationDays
+        {
+            get => _tempCacheExpirationDays;
+            set => SetProperty(ref _tempCacheExpirationDays, value);
+        }
 
         /// <summary>
         /// Path to configuration file (read-only)
@@ -143,6 +167,12 @@ namespace AeroDebrief.UI.ViewModels
             _agcTargetDB = Constants.AGC_TARGET_DB;
             _agcMaxBoostDB = Constants.AGC_MAX_BOOST_DB;
             _agcMaxCutDB = Constants.AGC_MAX_CUT_DB;
+            
+            // Visualization Defaults
+            _useDbScale = false; // Linear amplitude scale by default
+            
+            // Cache Defaults
+            _tempCacheExpirationDays = 7; // 7 days by default
         }
 
         /// <summary>
@@ -164,6 +194,12 @@ namespace AeroDebrief.UI.ViewModels
             AGCTargetDB = store.GetAGCTargetDB();
             AGCMaxBoostDB = store.GetAGCMaxBoostDB();
             AGCMaxCutDB = store.GetAGCMaxCutDB();
+            
+            // Load Visualization settings
+            UseDbScale = store.GetUseDbScale();
+            
+            // Load Cache settings
+            TempCacheExpirationDays = store.GetPlayerSettingInt(PlayerSettingKeys.TempCacheExpirationDays);
         }
 
         /// <summary>
@@ -182,6 +218,12 @@ namespace AeroDebrief.UI.ViewModels
             
             // Save AGC settings
             store.SaveAGCSettings(AGCTargetDB, AGCMaxBoostDB, AGCMaxCutDB, AGCEnabled);
+            
+            // Save Visualization settings
+            store.SetUseDbScale(UseDbScale);
+            
+            // Save Cache settings
+            store.SetPlayerSetting(PlayerSettingKeys.TempCacheExpirationDays, TempCacheExpirationDays);
         }
 
         /// <summary>
@@ -198,8 +240,14 @@ namespace AeroDebrief.UI.ViewModels
             
             // Reset AGC to defaults
             ResetAGCToDefaults();
+            
+            // Reset Visualization settings to defaults
+            UseDbScale = false; // Linear amplitude scale by default
+            
+            // Reset Cache settings to defaults
+            TempCacheExpirationDays = 7; // 7 days by default
         }
-        
+
         /// <summary>
         /// Reset AGC settings to default values
         /// </summary>

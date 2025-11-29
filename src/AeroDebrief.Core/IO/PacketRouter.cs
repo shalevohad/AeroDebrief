@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using NLog;
+using AeroDebrief.Core.Storage.Abstractions;
 
 namespace AeroDebrief.Core.IO
 {

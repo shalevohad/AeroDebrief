@@ -6,7 +6,9 @@ xmlns:converters="clr-namespace:AeroDebrief.UI.Converters">
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="Styles/ModernStyles.xaml"/>
+                <ResourceDictionary Source="/AeroDebrief.UI;component/Styles/ModernStyles.xaml"/>
+                <ResourceDictionary Source="/AeroDebrief.UI;component/Styles/Animations.xaml"/>
+                <ResourceDictionary Source="/AeroDebrief.UI;component/Styles/HighContrastStyles.xaml"/>
             </ResourceDictionary.MergedDictionaries>
             
             <!-- Emoji Font Family for Icon Support -->
@@ -17,6 +19,8 @@ xmlns:converters="clr-namespace:AeroDebrief.UI.Converters">
             <helpers:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
             <helpers:FileNameConverter x:Key="FileNameConverter"/>
             <helpers:FilePathConverter x:Key="FilePathConverter"/>
+            <helpers:BoolToCursorConverter x:Key="BoolToCursorConverter"/>
+            <helpers:ZoomLevelToVisibilityConverter x:Key="ZoomLevelToVisibilityConverter"/>
             <converters:ModeColorConverter x:Key="ModeColorConverter"/>
             <converters:StringToVisibilityConverter x:Key="StringToVisibilityConverter"/>
         </ResourceDictionary>

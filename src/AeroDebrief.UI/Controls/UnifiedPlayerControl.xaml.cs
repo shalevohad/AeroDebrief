@@ -4,35 +4,21 @@ using System.Windows.Controls;
 using AeroDebrief.UI.ViewModels;
 using AeroDebrief.UI.Controls.Player;
 using AeroDebrief.UI.Events;
+using AeroDebrief.UI.Services.Visualization.Graphs;
 
 namespace AeroDebrief.UI.Controls
 {
     /// <summary>
-    /// Unified player control - refactored to use independent, reusable components.
-    /// This control now acts as a thin orchestrator that composes and coordinates
-    /// the individual player components.
+    /// Unified player control with LiveCharts2 integration (Phase 1).
+    /// Features modern, smooth design matching existing UI style.
     /// </summary>
-    /// <remarks>
-    /// Component Architecture:
-    /// - PlayerHeaderControl: Status display and source selection
-    /// - TransportControlsPanel: Play/Pause/Stop controls
-    /// - WaveformDisplayPanel: Waveform visualization with zoom
-    /// - FrequencyMixerPanel: Frequency selection and mixing
-    /// - FileSourcePanelOverlay: File selection slide-in panel
-    /// 
-    /// This refactoring achieves:
-    /// - 82% reduction in control complexity (from 850+ to ~150 lines)
-    /// - 100% component reusability
-    /// - Clear separation of concerns
-    /// - Independent testability
-    /// - Easy maintenance and extension
-    /// </remarks>
     public partial class UnifiedPlayerControl : UserControl
     {
         #region Fields
 
         private bool _fileLoadedEventSubscribed = false;
         private bool _serverConnectionEventSubscribed = false;
+        private readonly NLog.Logger _logger = NLog.LogManager.GetCurrentClassLogger();
 
         #endregion
 
@@ -42,18 +28,24 @@ namespace AeroDebrief.UI.Controls
         {
             InitializeComponent();
             
-            // Subscribe to DataContext changes to wire up events
+            // Subscribe to PlayerHeaderControl events in code-behind
+            // (cannot be done in XAML due to custom generic event handlers)
+            PlayerHeader.SourceTypeSelected += OnSourceTypeSelected;
+            PlayerHeader.FilePanelRequested += OnFilePanelRequested;
+            PlayerHeader.ServerPanelRequested += OnServerPanelRequested;
+            
+            // Subscribe to lifecycle events
             this.DataContextChanged += UnifiedPlayerControl_DataContextChanged;
             this.Loaded += UnifiedPlayerControl_Loaded;
+            
+            // Initialize LiveCharts visibility based on feature flag
+            InitializeLiveChartsVisibility();
         }
 
         #endregion
 
         #region Properties
 
-        /// <summary>
-        /// Gets or sets the view model for this control.
-        /// </summary>
         public UnifiedPlayerViewModel? ViewModel
         {
             get => DataContext as UnifiedPlayerViewModel;
@@ -64,15 +56,11 @@ namespace AeroDebrief.UI.Controls
 
         #region Lifecycle Event Handlers
 
-        /// <summary>
-        /// Handles control loaded event.
-        /// </summary>
         private void UnifiedPlayerControl_Loaded(object sender, RoutedEventArgs e)
         {
             // Initialize FileSourcePanel content
             if (ViewModel?.FileSource != null && FileOverlay != null)
             {
-                // Create FileSourcePanel and set as overlay content
                 var fileSourcePanel = new FileSourcePanel
                 {
                     DataContext = ViewModel.FileSource
@@ -83,7 +71,6 @@ namespace AeroDebrief.UI.Controls
             // Initialize ServerSourcePanel content
             if (ViewModel?.ServerSource != null && ServerOverlay != null)
             {
-                // Create ServerSourcePanel and set as overlay content
                 var serverSourcePanel = new ServerSourcePanel
                 {
                     DataContext = ViewModel.ServerSource
@@ -92,9 +79,6 @@ namespace AeroDebrief.UI.Controls
             }
         }
 
-        /// <summary>
-        /// Handles DataContext changes to subscribe to FileLoaded event.
-        /// </summary>
         private void UnifiedPlayerControl_DataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
         {
             // Unsubscribe from old ViewModel
@@ -116,13 +100,11 @@ namespace AeroDebrief.UI.Controls
             // Subscribe to new ViewModel
             var newViewModel = e.NewValue as UnifiedPlayerViewModel;
             
-            // Subscribe to file loaded events
             if (newViewModel?.FileSource != null && !_fileLoadedEventSubscribed)
             {
                 newViewModel.FileSource.FileLoaded += OnFileLoaded;
                 _fileLoadedEventSubscribed = true;
                 
-                // Update FileSourcePanel content if overlay exists
                 if (FileOverlay != null)
                 {
                     var fileSourcePanel = new FileSourcePanel
@@ -133,13 +115,11 @@ namespace AeroDebrief.UI.Controls
                 }
             }
             
-            // Subscribe to server connection events
             if (newViewModel?.ServerSource != null && !_serverConnectionEventSubscribed)
             {
                 newViewModel.ServerSource.ConnectionStateChanged += OnServerConnected;
                 _serverConnectionEventSubscribed = true;
                 
-                // Update ServerSourcePanel content if overlay exists
                 if (ServerOverlay != null)
                 {
                     var serverSourcePanel = new ServerSourcePanel
@@ -151,28 +131,74 @@ namespace AeroDebrief.UI.Controls
             }
         }
 
-        /// <summary>
-        /// Handler for when a file is successfully loaded.
-        /// Auto-closes the file source panel.
-        /// </summary>
         private void OnFileLoaded(string filePath)
         {
-            // Marshal to UI thread since this event can come from background threads
             Dispatcher.BeginInvoke(() =>
             {
                 FileOverlay?.Close();
+                
+                // Phase 12: Connect UnifiedGraph to real recording data
+                try
+                {
+                    var playbackController = ViewModel?.PlaybackController;
+                    
+                    if (playbackController != null && UnifiedGraph != null)
+                    {
+                        // TODO: Implement ConnectPlayheadToPlayback method in UnifiedGraphControl
+                        // For now, this is handled through the GraphViewModel binding
+                        _logger.Info("Phase 12: UnifiedGraph ready for playback (playhead sync via binding)");
+                    }
+                    else
+                    {
+                        _logger.Error($"Phase 12: Failed to initialize UnifiedGraph - PlaybackController: {playbackController != null}, UnifiedGraph: {UnifiedGraph != null}");
+                    }
+
+                    // Phase 12: Connect GraphViewModel to real recording data source
+                    if (ViewModel?.SessionManager != null && ViewModel?.GraphViewModel != null)
+                    {
+                        var packetSource = ViewModel.SessionManager.PacketSource;
+
+                        if (packetSource != null)
+                        {
+                            _logger.Info("Phase 12: Connecting GraphViewModel to recording data source");
+                            
+                            // Create an AudioProcessingEngine for amplitude extraction
+                            var audioEngine = new Core.Audio.AudioProcessingEngine();
+                            
+                            // Create new AmplitudeSeriesProvider with real data pipeline
+                            var amplitudeProvider = new AmplitudeSeriesProvider(packetSource, audioEngine);
+                            
+                            _logger.Info($"Phase 12: Recording data sources ready - PacketSource: {packetSource.TotalPackets} packets, Duration: {packetSource.TotalDuration}");
+                            
+                            // Connect the real data source to the GraphViewModel
+                            ViewModel.GraphViewModel.SetDataSource(amplitudeProvider);
+                            _logger.Info("? Phase 12: GraphViewModel connected to real recording data successfully!");
+                            
+                            // NOTE: LoadDataAsync() will be called by UnifiedPlayerViewModel.LoadFrequenciesAsync()
+                            // We only set up the data source here, the actual loading happens in the ViewModel
+                            _logger.Info("Phase 12: Data source connected. UnifiedPlayerViewModel will handle graph data loading.");
+                        }
+                        else
+                        {
+                            _logger.Warn("Phase 12: Cannot connect GraphViewModel - PacketSource is null");
+                        }
+                    }
+                    else
+                    {
+                        _logger.Warn($"Phase 12: Cannot access SessionManager or GraphViewModel - SessionManager: {ViewModel?.SessionManager != null}, GraphViewModel: {ViewModel?.GraphViewModel != null}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.Error(ex, "Phase 12: Error initializing graph with real recording data");
+                }
             });
         }
         
-        /// <summary>
-        /// Handler for when server connection state changes.
-        /// Auto-closes the server panel when connected.
-        /// </summary>
         private void OnServerConnected(bool isConnected)
         {
             if (isConnected)
             {
-                // Marshal to UI thread since this event can come from background threads (network handlers)
                 Dispatcher.BeginInvoke(() =>
                 {
                     ServerOverlay?.Close();
@@ -182,11 +208,49 @@ namespace AeroDebrief.UI.Controls
 
         #endregion
 
+        #region LiveCharts Integration (Phase 12)
+
+        private void InitializeLiveChartsVisibility()
+        {
+            // Phase 12: UnifiedGraph is now always visible (replaced legacy waveform)
+            _logger.Info("Phase 12: UnifiedGraphControl initialized as primary waveform display");
+        }
+
+        #endregion
+
+        #region Zoom Control Handlers (Phase 12)
+
+        private void ZoomIn_Click(object sender, RoutedEventArgs e)
+        {
+            if (ViewModel?.GraphViewModel != null)
+            {
+                ViewModel.GraphViewModel.ZoomIn(0.5); // Zoom in by 2x
+                _logger.Debug("UnifiedGraph: Zoom in");
+            }
+        }
+
+        private void ZoomOut_Click(object sender, RoutedEventArgs e)
+        {
+            if (ViewModel?.GraphViewModel != null)
+            {
+                ViewModel.GraphViewModel.ZoomOut(2.0); // Zoom out by 2x
+                _logger.Debug("UnifiedGraph: Zoom out");
+            }
+        }
+
+        private void ZoomReset_Click(object sender, RoutedEventArgs e)
+        {
+            if (ViewModel?.GraphViewModel != null)
+            {
+                ViewModel.GraphViewModel.ResetViewport();
+                _logger.Debug("UnifiedGraph: Zoom reset");
+            }
+        }
+
+        #endregion
+
         #region PlayerHeaderControl Event Handlers
 
-        /// <summary>
-        /// Handles source type selection from header control.
-        /// </summary>
         private void OnSourceTypeSelected(object sender, Events.SourceTypeSelectedEventArgs e)
         {
             if (ViewModel == null) return;
@@ -194,7 +258,6 @@ namespace AeroDebrief.UI.Controls
             switch (e.SourceType)
             {
                 case Player.SourceType.Server:
-                    // Connect to SRS Server
                     if (ViewModel.ServerSource?.ConnectCommand?.CanExecute(null) == true)
                     {
                         ViewModel.ServerSource.ConnectCommand.Execute(null);
@@ -202,23 +265,16 @@ namespace AeroDebrief.UI.Controls
                     break;
 
                 case Player.SourceType.File:
-                    // Show file source panel
                     FileOverlay?.Open();
                     break;
             }
         }
 
-        /// <summary>
-        /// Handles file panel request from header control.
-        /// </summary>
         private void OnFilePanelRequested(object sender, RoutedEventArgs e)
         {
             FileOverlay?.Open();
         }
 
-        /// <summary>
-        /// Handles server panel request from header control.
-        /// </summary>
         private void OnServerPanelRequested(object sender, RoutedEventArgs e)
         {
             ServerOverlay?.Open();
@@ -228,10 +284,6 @@ namespace AeroDebrief.UI.Controls
 
         #region TransportControlsPanel Event Handlers
 
-        /// <summary>
-        /// Handles play request from transport controls.
-        /// Delegates to ViewModel PlayCommand.
-        /// </summary>
         private void OnPlayRequested(object sender, RoutedEventArgs e)
         {
             if (ViewModel?.PlayCommand?.CanExecute(null) == true)
@@ -240,10 +292,6 @@ namespace AeroDebrief.UI.Controls
             }
         }
 
-        /// <summary>
-        /// Handles pause request from transport controls.
-        /// Delegates to ViewModel PauseCommand.
-        /// </summary>
         private void OnPauseRequested(object sender, RoutedEventArgs e)
         {
             if (ViewModel?.PauseCommand?.CanExecute(null) == true)
@@ -252,10 +300,6 @@ namespace AeroDebrief.UI.Controls
             }
         }
 
-        /// <summary>
-        /// Handles stop request from transport controls.
-        /// Delegates to ViewModel StopCommand.
-        /// </summary>
         private void OnStopRequested(object sender, RoutedEventArgs e)
         {
             if (ViewModel?.StopCommand?.CanExecute(null) == true)
@@ -266,72 +310,30 @@ namespace AeroDebrief.UI.Controls
 
         #endregion
 
-        #region WaveformDisplayPanel Event Handlers
-
-        /// <summary>
-        /// Handles seek request from waveform display.
-        /// Delegates to ViewModel SeekCommand.
-        /// </summary>
-        private void OnSeekRequested(object sender, Events.SeekRequestedEventArgs e)
-        {
-            if (ViewModel?.SeekCommand?.CanExecute(e.NormalizedPosition) == true)
-            {
-                ViewModel.SeekCommand.Execute(e.NormalizedPosition);
-            }
-        }
-
-        /// <summary>
-        /// Handles zoom changes from waveform display.
-        /// Updates ViewModel zoom properties.
-        /// </summary>
-        private void OnZoomChanged(object sender, Events.ZoomChangedEventArgs e)
-        {
-            if (ViewModel == null) return;
-
-            // Update ViewModel zoom properties (already bound via TwoWay binding)
-            // This event can be used for additional logic if needed
-        }
-
-        /// <summary>
-        /// Handles waveform size changes for GPU compositor updates.
-        /// </summary>
-        private async void OnWaveformSizeChanged(object sender, Events.WaveformSizeChangedEventArgs e)
-        {
-            if (ViewModel == null || e.NewWidth <= 0 || e.NewHeight <= 0)
-                return;
-
-            try
-            {
-                var waveformWidth = (int)e.NewWidth;
-                var waveformHeight = (int)e.NewHeight;
-
-                // Update waveform with new dimensions for GPU compositor
-                await ViewModel.UpdateWaveformAsync(waveformWidth, waveformHeight);
-            }
-            catch (Exception ex)
-            {
-                var logger = NLog.LogManager.GetCurrentClassLogger();
-                logger.Error(ex, "Failed to update waveform on size change");
-            }
-        }
-
-        #endregion
-
         #region FrequencyMixerPanel Event Handlers
 
-        /// <summary>
-        /// Handles frequency selection changes from mixer panel.
-        /// Delegates to ViewModel for mixer updates and waveform regeneration.
-        /// </summary>
         private void OnFrequencySelectionChanged(object sender, Events.FrequencySelectionChangedEventArgs e)
         {
-            ViewModel?.OnFrequencySelectionChanged(e.Frequency, e.IsSelected);
+            // Update ViewModel (audio mixer state) - route through public method
+            // Extract frequency value from FrequencyViewModel
+            ViewModel?.HandleFrequencySelectionChanged(e.Frequency.Frequency, e.IsSelected);
+            
+            // Phase 12: Sync to UnifiedGraphViewModel (bidirectional audio sync)
+            if (ViewModel?.GraphViewModel != null)
+            {
+                try
+                {
+                    // Use frequency value directly - GraphViewModel handles key format internally
+                    ViewModel.GraphViewModel.SetFrequencyVisibility(e.Frequency.Frequency, e.IsSelected);
+                    _logger.Debug($"Phase 12: Synced frequency {e.Frequency.Frequency} MHz visibility to {e.IsSelected}");
+                }
+                catch (Exception ex)
+                {
+                    _logger.Error(ex, $"Phase 12: Failed to sync frequency visibility for {e.Frequency.Frequency}");
+                }
+            }
         }
 
-        /// <summary>
-        /// Handles mixer value changes (volume, pan) from mixer panel.
-        /// Updates ViewModel channel settings.
-        /// </summary>
         private void OnMixerValueChanged(object sender, Events.MixerValueChangedEventArgs e)
         {
             if (ViewModel == null) return;
@@ -347,7 +349,6 @@ namespace AeroDebrief.UI.Controls
                     ViewModel.UpdateChannelPan(frequency.Frequency, e.Value);
                     break;
                 case "Reset":
-                    // Reset all mixer values to defaults
                     ViewModel.UpdateChannelGain(frequency.Frequency, 1.0f);
                     ViewModel.UpdateChannelPan(frequency.Frequency, 0.0f);
                     ViewModel.UpdateChannelMute(frequency.Frequency, false);
@@ -356,10 +357,6 @@ namespace AeroDebrief.UI.Controls
             }
         }
 
-        /// <summary>
-        /// Handles mixer boolean changes (mute, solo) from mixer panel.
-        /// Updates ViewModel channel settings and handles solo logic.
-        /// </summary>
         private void OnMixerBooleanChanged(object sender, Events.MixerBooleanChangedEventArgs e)
         {
             if (ViewModel == null) return;
@@ -382,25 +379,16 @@ namespace AeroDebrief.UI.Controls
                     {
                         ViewModel.UpdatePilotSelection(e.Player.TransmitterGuid, e.Value);
                     }
-                    else
-                    {
-                        var logger = NLog.LogManager.GetCurrentClassLogger();
-                        logger.Warn("PilotSelected event received but player info not available");
-                    }
                     break;
             }
         }
 
-        /// <summary>
-        /// Handles solo logic: mute all other frequencies when one is soloed.
-        /// </summary>
         private void HandleSoloLogic(FrequencyViewModel frequency, bool isSoloed)
         {
             if (ViewModel == null) return;
 
             if (isSoloed)
             {
-                // Mute all other frequencies
                 foreach (var group in ViewModel.Frequencies)
                 {
                     foreach (var freq in group.Frequencies)
@@ -415,7 +403,6 @@ namespace AeroDebrief.UI.Controls
             }
             else
             {
-                // Check if any other frequency is still soloed
                 bool anySoloed = false;
                 foreach (var group in ViewModel.Frequencies)
                 {
@@ -430,7 +417,6 @@ namespace AeroDebrief.UI.Controls
                     if (anySoloed) break;
                 }
 
-                // If no frequencies are soloed, unmute all
                 if (!anySoloed)
                 {
                     foreach (var group in ViewModel.Frequencies)
@@ -449,23 +435,16 @@ namespace AeroDebrief.UI.Controls
 
         #region FileSourcePanelOverlay Event Handlers
 
-        /// <summary>
-        /// Handles file source panel closed event.
-        /// </summary>
         private void OnFileSourcePanelClosed(object sender, EventArgs e)
         {
-            // Panel closed - can add additional logic if needed
+            // Panel closed
         }
 
-        /// <summary>
-        /// Handles server source panel closed event.
-        /// </summary>
         private void OnServerSourcePanelClosed(object sender, EventArgs e)
         {
-            // Panel closed - can add additional logic if needed
+            // Panel closed
         }
 
         #endregion
-
     }
 }
