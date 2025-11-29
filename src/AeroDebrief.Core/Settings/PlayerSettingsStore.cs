@@ -35,6 +35,9 @@ namespace AeroDebrief.Core.Settings
         // Visualization Settings
         UseDbScale,  // Use dB scale (true) or linear amplitude scale (false) for graphs
         
+        // Cache Settings
+        TempCacheExpirationDays,  // Number of days before cached temp files are automatically deleted
+        
         // Window Settings
         WindowWidth,
         WindowHeight,
@@ -75,6 +78,9 @@ namespace AeroDebrief.Core.Settings
             
             // Visualization Settings
             { PlayerSettingKeys.UseDbScale.ToString(), "false" },        // Use linear amplitude scale by default
+            
+            // Cache Settings
+            { PlayerSettingKeys.TempCacheExpirationDays.ToString(), "30" }, // Keep cached files for 30 days by default
             
             // Window Settings
             { PlayerSettingKeys.WindowWidth.ToString(), "950" },

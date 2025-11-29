@@ -414,10 +414,52 @@
                             <TextBlock Style="{StaticResource SubHeaderTextStyle}" 
                                        Text="Advanced Settings"/>
                             
+                            <!-- Cache Settings -->
+                            <TextBlock Text="Temporary Cache" 
+                                       Style="{StaticResource BodyTextStyle}"
+                                       FontWeight="SemiBold"
+                                       Margin="0,12,0,4"/>
+                            
+                            <TextBlock Text="Auto-delete cached temp files older than (days):"
+                                       Style="{StaticResource BodyTextStyle}"
+                                       Margin="0,8,0,4"/>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <Slider x:Name="CacheExpirationSlider"
+                                        Minimum="0"
+                                        Maximum="60"
+                                        Value="{Binding TempCacheExpirationDays, Mode=TwoWay}"
+                                        TickFrequency="1"
+                                        IsSnapToTickEnabled="True"
+                                        Style="{StaticResource ModernSlider}"/>
+                                <TextBlock Grid.Column="1"
+                                           Text="{Binding ElementName=CacheExpirationSlider, Path=Value, StringFormat={}{0:F0} days}"
+                                           Style="{StaticResource MonospaceTextStyle}"
+                                           Width="70"
+                                           TextAlignment="Right"
+                                           Margin="8,0,0,0"
+                                           VerticalAlignment="Center"/>
+                            </Grid>
+                            <TextBlock Text="Decompressed/converted files are cached in temp folder for faster reopening. Set to 0 to disable auto-cleanup."
+                                       Style="{StaticResource BodyTextStyle}"
+                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                       FontSize="11"
+                                       Margin="0,4,0,0"
+                                       TextWrapping="Wrap"/>
+                            
+                            <Button Content="Clear Cache Now"
+                                    Click="ClearCache_Click"
+                                    Style="{StaticResource ModernSecondaryButton}"
+                                    HorizontalAlignment="Left"
+                                    Margin="0,8,0,0"/>
+                            
                             <!-- Configuration File Location -->
                             <TextBlock Text="Configuration File" 
                                        Style="{StaticResource BodyTextStyle}"
-                                       Margin="0,12,0,4"/>
+                                       Margin="0,24,0,4"/>
                             <TextBox x:Name="ConfigPathTextBox"
                                      IsReadOnly="True"
                                      Text="{Binding ConfigFilePath, Mode=OneWay}"

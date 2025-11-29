@@ -84,6 +84,20 @@ namespace AeroDebrief.Core.Storage.Abstractions
         /// Number of audio channels
         /// </summary>
         public byte ChannelCount { get; set; }
+        
+        // Phase 2.1: Pre-computed amplitude data
+        /// <summary>
+        /// Pre-computed amplitude data (float32 array as byte BLOB)
+        /// NULL for legacy recordings, populated for new recordings.
+        /// Each float represents peak amplitude in a time window (linear 0.0-1.0 scale).
+        /// </summary>
+        public byte[]? AmplitudeData { get; set; }
+        
+        /// <summary>
+        /// Time resolution of amplitude data in milliseconds (typically 5ms)
+        /// NULL for legacy recordings without amplitude data.
+        /// </summary>
+        public int? AmplitudeResolutionMs { get; set; }
 
         // Computed Properties
         /// <summary>

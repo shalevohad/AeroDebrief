@@ -15,6 +15,7 @@ namespace AeroDebrief.Core.Interfaces.Storage
     /// - Stream packets with filtering (time, frequency, player, coalition)
     /// - Packet count queries
     /// - Schema initialization and finalization
+    /// - Phase 2.1: Optional amplitude precomputation during recording
     /// 
     /// Used by:
     /// - AudioPacketRecorder for saving packets during recording
@@ -37,6 +38,13 @@ namespace AeroDebrief.Core.Interfaces.Storage
         /// Insert a batch of packets (optimized bulk operation)
         /// </summary>
         Task InsertBatchAsync(IEnumerable<AudioPacketMetadata> packets, CancellationToken ct = default);
+        
+        /// <summary>
+        /// Phase 2.1: Enable amplitude precomputation during recording.
+        /// Should be called after InitializeAsync.
+        /// Optional - if not called, amplitude will be computed on-demand during playback.
+        /// </summary>
+        void EnableAmplitudePrecomputation();
 
         /// <summary>
         /// Stream packets with optional filtering

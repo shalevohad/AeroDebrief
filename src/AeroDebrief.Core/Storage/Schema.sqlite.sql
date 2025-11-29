@@ -10,6 +10,7 @@
 --   - frequency: Hz (e.g., 127500000.0 for 127.5 MHz)
 --   - relative_ms: milliseconds since recording start
 --   - sample_rate: Hz (typically 48000)
+--   - amplitude_data: Pre-computed peak amplitude (LINEAR 0.0-1.0) for visualization
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS packets (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -32,6 +33,13 @@ CREATE TABLE IF NOT EXISTS packets (
     -- Audio data (BLOB with efficient storage)
     audio_data BLOB NOT NULL,
     sample_rate INTEGER NOT NULL DEFAULT 48000,
+    
+    -- Phase 2.1: Pre-computed amplitude data for visualization
+    -- Format: BLOB of float32 values (4 bytes each)
+    -- Resolution: Configurable (default 5ms = 200 Hz)
+    -- NULL for legacy recordings (computed on-demand)
+    amplitude_data BLOB,
+    amplitude_resolution_ms INTEGER DEFAULT 5,
     
     -- Additional metadata
     encryption INTEGER DEFAULT 0,

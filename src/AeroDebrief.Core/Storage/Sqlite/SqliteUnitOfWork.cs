@@ -94,6 +94,10 @@ namespace AeroDebrief.Core.Storage.Sqlite
                 else
                 {
                     Logger.Debug("Opening existing database...");
+                    
+                    // Phase 2.1: Run migrations for existing databases
+                    await RunMigrationsAsync(ct).ConfigureAwait(false);
+                    
                     await Packets.OpenAsync(ct).ConfigureAwait(false);
                 }
 
@@ -268,6 +272,68 @@ namespace AeroDebrief.Core.Storage.Sqlite
             }
             
             return statements;
+        }
+
+        /// <summary>
+        /// Phase 2.1: Run database migrations for schema updates.
+        /// Adds amplitude_data and amplitude_resolution_ms columns if they don't exist.
+        /// </summary>
+        private async Task RunMigrationsAsync(CancellationToken ct = default)
+        {
+            try
+            {
+                Logger.Debug("Checking for required database migrations...");
+
+                // Check if amplitude_data column exists
+                var tableInfo = await _connection.QueryAsync<dynamic>(
+                    "PRAGMA table_info(packets)"
+                ).ConfigureAwait(false);
+
+                bool hasAmplitudeData = false;
+                bool hasAmplitudeResolution = false;
+
+                foreach (var column in tableInfo)
+                {
+                    string columnName = column.name;
+                    if (columnName == "amplitude_data")
+                        hasAmplitudeData = true;
+                    if (columnName == "amplitude_resolution_ms")
+                        hasAmplitudeResolution = true;
+                }
+
+                // Migration: Add amplitude columns if missing
+                if (!hasAmplitudeData)
+                {
+                    Logger.Info("Running migration: Adding amplitude_data column...");
+                    await _connection.ExecuteAsync(
+                        "ALTER TABLE packets ADD COLUMN amplitude_data BLOB"
+                    ).ConfigureAwait(false);
+                    Logger.Info("? amplitude_data column added");
+                }
+
+                if (!hasAmplitudeResolution)
+                {
+                    Logger.Info("Running migration: Adding amplitude_resolution_ms column...");
+                    await _connection.ExecuteAsync(
+                        "ALTER TABLE packets ADD COLUMN amplitude_resolution_ms INTEGER DEFAULT 5"
+                    ).ConfigureAwait(false);
+                    Logger.Info("? amplitude_resolution_ms column added");
+                }
+
+                if (hasAmplitudeData && hasAmplitudeResolution)
+                {
+                    Logger.Debug("Database schema is up-to-date");
+                }
+                else
+                {
+                    Logger.Info("? Database migrations completed successfully");
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, "Failed to run database migrations");
+                throw;
+            }
         }
 
         /// <summary>

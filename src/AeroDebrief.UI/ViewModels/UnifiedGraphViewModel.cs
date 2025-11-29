@@ -37,6 +37,10 @@ namespace AeroDebrief.UI.ViewModels
     public class UnifiedGraphViewModel : INotifyPropertyChanged, IDisposable
     {
         public ObservableCollection<ISeries> Series { get; } = new();
+        
+        // Phase 5.1: Axes for LiveCharts2 - required for rendering
+        public IEnumerable<Axis> XAxes { get; set; }
+        public IEnumerable<Axis> YAxes { get; set; }
 
         private DateTime _start = DateTime.Now;
         private DateTime _end;
@@ -120,6 +124,52 @@ namespace AeroDebrief.UI.ViewModels
             _mixerController = mixerController;
             _tileManager = tileManager;
             _errorHandler = errorHandler;
+            
+            // Phase 5.1: Initialize axes for LiveCharts2
+            // X-axis uses seconds as double values (not DateTime ticks)
+            XAxes = new List<Axis>
+            {
+                new Axis
+                {
+                    Name = "Time",
+                    NameTextSize = 14,
+                    NamePaint = new SolidColorPaint(SKColors.White),
+                    LabelsRotation = 0,
+                    TextSize = 18, // Even larger for better visibility
+                    LabelsPaint = new SolidColorPaint(SKColors.White),
+                    SeparatorsPaint = new SolidColorPaint(SKColors.Gray) { StrokeThickness = 1 },
+                    // Custom labeling: Show UTC time at edges, relative time in middle
+                    Labeler = value => FormatTimeLabel(value),
+                    ShowSeparatorLines = true,
+                    IsVisible = true, // Explicitly set visible
+                    MinStep = 1,
+                    ForceStepToMin = false,
+                }
+            };
+            
+            YAxes = new List<Axis>
+            {
+                new Axis
+                {
+                    Name = "Amplitude",
+                    NameTextSize = 14,
+                    NamePaint = new SolidColorPaint(SKColors.White),
+                    LabelsRotation = 0,
+                    TextSize = 18, // Even larger for better visibility
+                    LabelsPaint = new SolidColorPaint(SKColors.White),
+                    SeparatorsPaint = new SolidColorPaint(SKColors.Gray) { StrokeThickness = 1 },
+                    // Symmetric waveform: -1 to +1 for proper audio visualization
+                    MinLimit = -1.0,
+                    MaxLimit = 1.0,
+                    // Format with sign to show positive/negative
+                    Labeler = value => value >= 0 ? $"+{value:F1}" : $"{value:F1}",
+                    ShowSeparatorLines = true,
+                    IsVisible = true, // Explicitly set visible
+                    ForceStepToMin = false,
+                    // Zero step to ensure we always have a label/line at 0
+                    ZeroPaint = new SolidColorPaint(SKColors.White) { StrokeThickness = 3 },
+                }
+            };
             
             // Phase 8: DISABLE tile-based loading temporarily - it causes infinite loops
             // The tile system needs pre-generated tiles, not on-demand generation from amplitude provider
@@ -512,9 +562,57 @@ namespace AeroDebrief.UI.ViewModels
             }
         }
 
+        /// <summary>
+        /// Phase 5.1: Format time label for X-axis.
+        /// Shows UTC time at edges (start/end) and relative time in middle.
+        /// </summary>
+        private string FormatTimeLabel(double seconds)
+        {
+            try
+            {
+                // Calculate viewport range (what we're currently showing)
+                var viewportDuration = (ViewportEnd - ViewportStart).TotalSeconds;
+                var fullDuration = (End - Start).TotalSeconds;
+                
+                // If we're showing the full recording or close to it, show relative times
+                if (Math.Abs(viewportDuration - fullDuration) < 1.0)
+                {
+                    // Full view: Show relative time for all labels except edges
+                    if (seconds < 1.0)
+                    {
+                        // Start edge: Show UTC start time
+                        return Start.ToString("HH:mm:ss");
+                    }
+                    else if (seconds > fullDuration - 1.0)
+                    {
+                        // End edge: Show UTC end time
+                        return End.ToString("HH:mm:ss");
+                    }
+                    else
+                    {
+                        // Middle: Show relative time
+                        return TimeSpan.FromSeconds(seconds).ToString(@"m\:ss");
+                    }
+                }
+                else
+                {
+                    // Zoomed in: Show all as relative time for clarity
+                    return TimeSpan.FromSeconds(seconds).ToString(@"m\:ss");
+                }
+            }
+            catch
+            {
+                // Fallback to simple relative time
+                return TimeSpan.FromSeconds(seconds).ToString(@"m\:ss");
+            }
+        }
+
         public event PropertyChangedEventHandler? PropertyChanged;
-        private void OnPropertyChanged([CallerMemberName] string? name = null) 
-            => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+
+        protected virtual void OnPropertyChanged([CallerMemberName] string? propertyName = null)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
 
         /// <summary>
         /// Update the amplitude provider (used when switching data sources or loading a new file).
@@ -1046,6 +1144,7 @@ namespace AeroDebrief.UI.ViewModels
 
         /// <summary>
         /// Phase 4: Creates a LineSeries with appropriate colors and markers.
+        /// Phase 5.1: Transform amplitude data to symmetric waveform (-1 to +1).
         /// </summary>
         private LineSeries<ObservablePoint> CreateLineSeries(
             string frequencyId, 
@@ -1053,13 +1152,19 @@ namespace AeroDebrief.UI.ViewModels
             IEnumerable<ObservablePoint> points)
         {
             var color = ChartColors.GetColorForFrequency(frequencyId);
+            
+            // Transform amplitude data from 0-1 to -1 to +1 for waveform visualization
+            // This creates a symmetric waveform around zero
+            var transformedPoints = points.Select(p => 
+                new ObservablePoint(p.X, (p.Y * 2.0) - 1.0)).ToArray();
+            
             // Note: Custom markers via SKPath not directly supported in LiveCharts2
             // Using default circle geometry with size variation for different pilots
 
             return new LineSeries<ObservablePoint>
             {
                 Name = $"{frequencyId}-{pilotId}",
-                Values = points.ToArray(),
+                Values = transformedPoints,
                 Stroke = new SolidColorPaint(color) { StrokeThickness = 2 },
                 Fill = null,
                 GeometrySize = 8,
@@ -1087,7 +1192,7 @@ namespace AeroDebrief.UI.ViewModels
                 {
                     // Extract frequency: "F251.0" -> "251.0"
                     var freqStr = parts[0].Substring(1); // Remove "F" prefix
-                    
+                   
                     // Extract pilot: "P1" -> "P1" (keep the P prefix for consistency)
                     var pilotStr = parts.Length > 1 ? parts[1] : null;
                     

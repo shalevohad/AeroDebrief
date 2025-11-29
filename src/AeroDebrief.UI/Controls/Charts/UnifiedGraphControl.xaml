@@ -9,13 +9,38 @@
              mc:Ignorable="d" 
              d:DesignHeight="450" d:DesignWidth="800"
              d:DataContext="{d:DesignInstance Type=vm:UnifiedGraphViewModel, IsDesignTimeCreatable=False}"
-             Focusable="True">
+             Focusable="True"
+             Background="Transparent">
     
     <Grid>
         <!-- Main Chart -->
-        <lvc:CartesianChart Series="{Binding Series}"
+        <lvc:CartesianChart x:Name="MainChart"
+                           Series="{Binding Series}"
+                           XAxes="{Binding XAxes}"
+                           YAxes="{Binding YAxes}"
                            TooltipPosition="Hidden"
-                           Background="Transparent"/>
+                           Background="Transparent"
+                           MouseWheel="OnChartMouseWheel"
+                           MouseDown="OnChartMouseDown"
+                           MouseMove="OnChartMouseMove"
+                           MouseUp="OnChartMouseUp"/>
+        
+        <!-- Phase 5.1: Zoom Level Indicator Badge -->
+        <Border HorizontalAlignment="Left"
+                VerticalAlignment="Top"
+                Margin="10"
+                Background="#DD000000"
+                CornerRadius="4"
+                Padding="8,4"
+                Visibility="{Binding ZoomLevel, Converter={StaticResource ZoomLevelToVisibilityConverter}}">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="??" FontSize="14" Margin="0,0,4,0" Foreground="White"/>
+                <TextBlock Foreground="White" FontSize="12" FontWeight="SemiBold">
+                    <Run Text="Zoom: "/>
+                    <Run Text="{Binding ZoomLevel, StringFormat='{}{0:F1}x', Mode=OneWay}"/>
+                </TextBlock>
+            </StackPanel>
+        </Border>
         
         <!-- Phase 9 Step 1: Loading Spinner Overlay -->
         <charts:LoadingSpinnerOverlay DataContext="{Binding}"

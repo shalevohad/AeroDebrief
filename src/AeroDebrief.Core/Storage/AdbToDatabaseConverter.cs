@@ -97,9 +97,14 @@ namespace AeroDebrief.Core.Storage
                 // Create database using repository pattern
                 using (var uow = _repositoryFactory.CreateRecording(outputDbPath, metadata))
                 {
+                    // Phase 2.1: Enable amplitude precomputation during ADB conversion
+                    Logger.Info("Enabling amplitude precomputation for ADB conversion...");
+                    uow.Packets.EnableAmplitudePrecomputation();
+                    Logger.Info("? Amplitude precomputation enabled - ADB packets will include amplitude_data");
+                    
                     progress?.Report(new ConversionProgress
                     {
-                        Stage = "Converting packets",
+                        Stage = "Converting packets (with amplitude computation)",
                         Percent = 10
                     });
 
@@ -148,7 +153,7 @@ namespace AeroDebrief.Core.Storage
                                 var progressPercent = 10 + (int)(70 * totalPackets / Math.Max(1, totalPackets + 1000));
                                 progress?.Report(new ConversionProgress
                                 {
-                                    Stage = "Converting packets",
+                                    Stage = "Converting packets (computing amplitude)",
                                     Percent = Math.Min(80, progressPercent),
                                     PacketsProcessed = totalPackets
                                 });

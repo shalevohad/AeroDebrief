@@ -233,4 +233,47 @@ namespace AeroDebrief.UI.Helpers
             throw new NotImplementedException();
         }
     }
+
+    /// <summary>
+    /// Phase 5.1: Converts a boolean to Cursor
+    /// Used for pan cursor feedback (true = Hand cursor, false = Arrow)
+    /// </summary>
+    public class BoolToCursorConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            if (value is bool isPanning && isPanning)
+            {
+                return System.Windows.Input.Cursors.Hand;
+            }
+            return System.Windows.Input.Cursors.Arrow;
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            throw new NotImplementedException();
+        }
+    }
+
+    /// <summary>
+    /// Phase 5.1: Converts zoom level to Visibility
+    /// Shows zoom badge when zoom level > 1.1x (not showing full recording)
+    /// </summary>
+    public class ZoomLevelToVisibilityConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            if (value is double zoomLevel)
+            {
+                // Show badge when zoomed in more than 10%
+                return zoomLevel > 1.1 ? Visibility.Visible : Visibility.Collapsed;
+            }
+            return Visibility.Collapsed;
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            throw new NotImplementedException();
+        }
+    }
 }

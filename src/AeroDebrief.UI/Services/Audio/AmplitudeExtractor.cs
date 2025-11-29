@@ -1,4 +1,6 @@
 using AeroDebrief.Core.Interfaces.Audio;
+using AeroDebrief.Core.Storage;
+using AeroDebrief.Core.Storage.Abstractions;
 using System;
 using System.Collections.Generic;
 using AeroDebrief.Core;
@@ -61,6 +63,129 @@ namespace AeroDebrief.UI.Services.Audio
             // Enable caching in the audio engine for performance
             _audioEngine.EnableAmplitudeCache();
             Logger.Info("Amplitude caching enabled in audio engine");
+        }
+        
+        /// <summary>
+        /// Phase 2.1: Extract amplitude envelope from RadioPacket with pre-computed amplitude support.
+        /// Fast path: Uses pre-computed amplitude_data if available.
+        /// Fallback: Decodes audio on-demand for legacy recordings.
+        /// </summary>
+        /// <param name="packet">Radio packet (potentially with pre-computed amplitude)</param>
+        /// <param name="recordingStart">Recording start time for offset calculation</param>
+        /// <returns>Sequence of amplitude points (time offset in seconds, amplitude)</returns>
+        public IEnumerable<ObservablePoint> ExtractEnvelopeFromRadioPacket(RadioPacket packet, DateTime recordingStart)
+        {
+            if (packet == null)
+            {
+                Logger.Warn("Null packet received");
+                yield break;
+            }
+            
+            // FAST PATH: Use pre-computed amplitude data if available
+            if (packet.AmplitudeData != null && packet.AmplitudeData.Length > 0)
+            {
+                Logger.Trace($"Using pre-computed amplitude data for packet at {packet.Timestamp:HH:mm:ss}");
+                
+                var points = ExtractFromPrecomputedData(packet, recordingStart);
+                foreach (var point in points)
+                {
+                    yield return point;
+                }
+                yield break;
+            }
+            
+            // SLOW PATH: Fall back to on-demand computation for legacy recordings
+            Logger.Trace($"No pre-computed amplitude, decoding audio on-demand for packet at {packet.Timestamp:HH:mm:ss}");
+            
+            // Convert RadioPacket to AudioPacketMetadata for existing extractor
+            var audioMetadata = ConvertToAudioPacketMetadata(packet);
+            
+            var points2 = ProcessPacket(audioMetadata, recordingStart);
+            foreach (var point in points2)
+            {
+                yield return point;
+            }
+        }
+        
+        /// <summary>
+        /// Phase 2.1: Extract amplitude from pre-computed data (FAST PATH).
+        /// </summary>
+        private List<ObservablePoint> ExtractFromPrecomputedData(RadioPacket packet, DateTime recordingStart)
+        {
+            try
+            {
+                // Deserialize amplitude data
+                var amplitudes = AmplitudePrecomputationService.DeserializeAmplitudeData(packet.AmplitudeData);
+                
+                if (amplitudes == null || amplitudes.Length == 0)
+                {
+                    Logger.Warn("Failed to deserialize pre-computed amplitude data");
+                    return CreateSilencePoint(packet.Timestamp, recordingStart);
+                }
+                
+                // Calculate base time offset
+                var baseTimeOffset = (packet.Timestamp - recordingStart).TotalSeconds;
+                
+                // Resolution in milliseconds (default 5ms if not specified)
+                var resolutionMs = packet.AmplitudeResolutionMs ?? 5;
+                
+                var points = new List<ObservablePoint>(amplitudes.Length);
+                
+                for (int i = 0; i < amplitudes.Length; i++)
+                {
+                    var linearAmplitude = amplitudes[i];
+                    
+                    // Convert to appropriate scale (dBFS or linear)
+                    var amplitudeValue = _useDbScale 
+                        ? DbFSConverter.LinearToDbFS(linearAmplitude)
+                        : linearAmplitude;
+                    
+                    // Calculate time offset for this point
+                    var pointOffsetMs = i * resolutionMs;
+                    var timeOffsetSeconds = baseTimeOffset + (pointOffsetMs / 1000.0);
+                    
+                    points.Add(new ObservablePoint(timeOffsetSeconds, amplitudeValue));
+                }
+                
+                Logger.Trace($"Extracted {points.Count} pre-computed amplitude points (resolution: {resolutionMs}ms)");
+                return points;
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, "Error extracting pre-computed amplitude data");
+                return CreateSilencePoint(packet.Timestamp, recordingStart);
+            }
+        }
+        
+        /// <summary>
+        /// Phase 2.1: Convert RadioPacket to AudioPacketMetadata for fallback processing.
+        /// </summary>
+        private AudioPacketMetadata ConvertToAudioPacketMetadata(RadioPacket packet)
+        {
+            return new AudioPacketMetadata(
+                Timestamp: packet.Timestamp,
+                Frequency: packet.Frequency,
+                Modulation: packet.Modulation,
+                Encryption: packet.Encryption,
+                TransmitterUnitId: packet.TransmitterUnitId,
+                PacketId: packet.PacketId,
+                TransmitterGuid: packet.TransmitterGuid,
+                PlayerData: packet.PlayerData ?? new PlayerInfo { Name = packet.PlayerName },
+                SampleRate: packet.SampleRate,
+                ChannelCount: packet.ChannelCount,
+                Coalition: packet.Coalition,
+                AudioPayload: packet.AudioPayload
+            );
+        }
+        
+        /// <summary>
+        /// Helper to create a silence point.
+        /// </summary>
+        private List<ObservablePoint> CreateSilencePoint(DateTime timestamp, DateTime recordingStart)
+        {
+            var timeOffset = timestamp - recordingStart;
+            var silenceValue = _useDbScale ? DbFSConverter.MinDbFS : 0.0;
+            return new List<ObservablePoint> { new ObservablePoint(timeOffset.TotalSeconds, silenceValue) };
         }
         
         /// <summary>

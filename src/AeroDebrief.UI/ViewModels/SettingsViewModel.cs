@@ -26,6 +26,9 @@ namespace AeroDebrief.UI.ViewModels
         
         // Visualization Settings
         private bool _useDbScale;
+        
+        // Cache Settings
+        private int _tempCacheExpirationDays;
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -127,6 +130,15 @@ namespace AeroDebrief.UI.ViewModels
             get => _useDbScale;
             set => SetProperty(ref _useDbScale, value);
         }
+        
+        /// <summary>
+        /// Number of days before cached temp files are automatically deleted (0 = disabled)
+        /// </summary>
+        public int TempCacheExpirationDays
+        {
+            get => _tempCacheExpirationDays;
+            set => SetProperty(ref _tempCacheExpirationDays, value);
+        }
 
         /// <summary>
         /// Path to configuration file (read-only)
@@ -158,6 +170,9 @@ namespace AeroDebrief.UI.ViewModels
             
             // Visualization Defaults
             _useDbScale = false; // Linear amplitude scale by default
+            
+            // Cache Defaults
+            _tempCacheExpirationDays = 7; // 7 days by default
         }
 
         /// <summary>
@@ -182,6 +197,9 @@ namespace AeroDebrief.UI.ViewModels
             
             // Load Visualization settings
             UseDbScale = store.GetUseDbScale();
+            
+            // Load Cache settings
+            TempCacheExpirationDays = store.GetPlayerSettingInt(PlayerSettingKeys.TempCacheExpirationDays);
         }
 
         /// <summary>
@@ -203,6 +221,9 @@ namespace AeroDebrief.UI.ViewModels
             
             // Save Visualization settings
             store.SetUseDbScale(UseDbScale);
+            
+            // Save Cache settings
+            store.SetPlayerSetting(PlayerSettingKeys.TempCacheExpirationDays, TempCacheExpirationDays);
         }
 
         /// <summary>
@@ -222,8 +243,11 @@ namespace AeroDebrief.UI.ViewModels
             
             // Reset Visualization settings to defaults
             UseDbScale = false; // Linear amplitude scale by default
+            
+            // Reset Cache settings to defaults
+            TempCacheExpirationDays = 7; // 7 days by default
         }
-        
+
         /// <summary>
         /// Reset AGC settings to default values
         /// </summary>

@@ -30,11 +30,25 @@ namespace AeroDebrief.Core.Storage.Sqlite
         private DateTime _recordingStart;
         private bool _isLive;
         private bool _disposed;
+        
+        // Phase 2.1: Optional amplitude precomputation during recording
+        private AmplitudePrecomputationService? _amplitudeService;
 
         public SqlitePacketRepository(IDbConnection connection, string filePath)
         {
             _connection = connection ?? throw new ArgumentNullException(nameof(connection));
             _filePath = filePath;
+        }
+        
+        /// <summary>
+        /// Phase 2.1: Enable amplitude precomputation for this repository.
+        /// Should be called during recording initialization.
+        /// Optional - if not called, amplitude will be computed on-demand during playback.
+        /// </summary>
+        public void EnableAmplitudePrecomputation()
+        {
+            _amplitudeService = new AmplitudePrecomputationService();
+            Logger.Info("? Amplitude precomputation enabled for recording");
         }
 
         public DateTime RecordingStart => _recordingStart;
@@ -95,6 +109,7 @@ namespace AeroDebrief.Core.Storage.Sqlite
         /// <summary>
         /// Insert a batch of packets with optimized bulk insert.
         /// Uses a single transaction for the entire batch.
+        /// Phase 2.1: Optionally pre-computes amplitude data if service is enabled.
         /// </summary>
         public async Task InsertBatchAsync(IEnumerable<AudioPacketMetadata> packets, CancellationToken ct = default)
         {
@@ -106,36 +121,60 @@ namespace AeroDebrief.Core.Storage.Sqlite
             try
             {
                 // Bulk insert with Dapper - single SQL, multiple parameter sets
+                // Phase 2.1: Now includes amplitude_data and amplitude_resolution_ms
                 await _connection.ExecuteAsync(@"
                     INSERT INTO packets 
                     (timestamp_utc, relative_ms, frequency, modulation, player_name, 
                      transmitter_guid, coalition, unit_type, unit_id, audio_data, 
-                     sample_rate, encryption, channel_count)
+                     sample_rate, encryption, channel_count, amplitude_data, amplitude_resolution_ms)
                     VALUES 
                     (@TimestampUtc, @RelativeMs, @Frequency, @Modulation, @PlayerName, 
                      @TransmitterGuid, @Coalition, @UnitType, @UnitId, @AudioData, 
-                     @SampleRate, @Encryption, @ChannelCount)",
-                    packetList.Select(p => new
+                     @SampleRate, @Encryption, @ChannelCount, @AmplitudeData, @AmplitudeResolutionMs)",
+                    packetList.Select(p =>
                     {
-                        TimestampUtc = p.Timestamp.ToString("O"),
-                        RelativeMs = (long)(p.Timestamp - _recordingStart).TotalMilliseconds,
-                        Frequency = p.Frequency,
-                        Modulation = (int)p.Modulation,
-                        PlayerName = p.PlayerData?.Name ?? "Unknown",
-                        TransmitterGuid = p.TransmitterGuid ?? string.Empty,
-                        Coalition = (int)p.Coalition,
-                        UnitType = p.PlayerData?.AircraftInfo?.UnitType,
-                        UnitId = p.PlayerData?.AircraftInfo?.UnitId,
-                        AudioData = p.AudioPayload ?? Array.Empty<byte>(),
-                        SampleRate = p.SampleRate,
-                        Encryption = (int)p.Encryption,
-                        ChannelCount = (int)p.ChannelCount
+                        // Phase 2.1: Compute amplitude data if service is enabled
+                        byte[]? amplitudeData = null;
+                        int? amplitudeResolution = null;
+                        
+                        if (_amplitudeService != null && p.AudioPayload != null && p.AudioPayload.Length > 0)
+                        {
+                            amplitudeData = _amplitudeService.ComputeAmplitudeData(
+                                p.AudioPayload, 
+                                p.SampleRate,
+                                AmplitudePrecomputationService.GetDefaultResolutionMs());
+                            
+                            if (amplitudeData != null)
+                            {
+                                amplitudeResolution = AmplitudePrecomputationService.GetDefaultResolutionMs();
+                            }
+                        }
+                        
+                        return new
+                        {
+                            TimestampUtc = p.Timestamp.ToString("O"),
+                            RelativeMs = (long)(p.Timestamp - _recordingStart).TotalMilliseconds,
+                            Frequency = p.Frequency,
+                            Modulation = (int)p.Modulation,
+                            PlayerName = p.PlayerData?.Name ?? "Unknown",
+                            TransmitterGuid = p.TransmitterGuid ?? string.Empty,
+                            Coalition = (int)p.Coalition,
+                            UnitType = p.PlayerData?.AircraftInfo?.UnitType,
+                            UnitId = p.PlayerData?.AircraftInfo?.UnitId,
+                            AudioData = p.AudioPayload ?? Array.Empty<byte>(),
+                            SampleRate = p.SampleRate,
+                            Encryption = (int)p.Encryption,
+                            ChannelCount = (int)p.ChannelCount,
+                            AmplitudeData = amplitudeData,
+                            AmplitudeResolutionMs = amplitudeResolution
+                        };
                     }),
                     transaction);
 
                 transaction.Commit();
 
-                Logger.Debug($"Inserted {packetList.Count} packets in batch");
+                var withAmplitude = packetList.Count(p => _amplitudeService != null && p.AudioPayload != null && p.AudioPayload.Length > 0);
+                Logger.Debug($"Inserted {packetList.Count} packets in batch ({withAmplitude} with amplitude data)");
             }
             catch
             {
@@ -160,7 +199,8 @@ namespace AeroDebrief.Core.Storage.Sqlite
         {
             var sql = @"
                 SELECT id, timestamp_utc, frequency, modulation, player_name, 
-                       transmitter_guid, coalition, unit_type, audio_data, sample_rate
+                       transmitter_guid, coalition, unit_type, audio_data, sample_rate,
+                       amplitude_data, amplitude_resolution_ms
                 FROM packets 
                 WHERE relative_ms >= @FromMs";
 
@@ -226,7 +266,10 @@ namespace AeroDebrief.Core.Storage.Sqlite
                         Coalition = (byte)(long)row.coalition,
                         UnitType = row.unit_type as string,
                         AudioPayload = row.audio_data as byte[] ?? Array.Empty<byte>(),
-                        SampleRate = (int)(long)row.sample_rate
+                        SampleRate = (int)(long)row.sample_rate,
+                        // Phase 2.1: Include pre-computed amplitude data
+                        AmplitudeData = row.amplitude_data as byte[],
+                        AmplitudeResolutionMs = row.amplitude_resolution_ms != null ? (int?)(long)row.amplitude_resolution_ms : null
                     };
                 }
 
@@ -240,7 +283,8 @@ namespace AeroDebrief.Core.Storage.Sqlite
         {
             var row = await _connection.QuerySingleOrDefaultAsync<dynamic>(@"
                 SELECT id, timestamp_utc, frequency, modulation, player_name, 
-                       transmitter_guid, coalition, unit_type, audio_data, sample_rate
+                       transmitter_guid, coalition, unit_type, audio_data, sample_rate,
+                       amplitude_data, amplitude_resolution_ms
                 FROM packets 
                 WHERE id = @Id",
                 new { Id = packetId });
@@ -259,7 +303,10 @@ namespace AeroDebrief.Core.Storage.Sqlite
                 Coalition = (byte)(long)row.coalition,
                 UnitType = row.unit_type as string,
                 AudioPayload = (byte[])row.audio_data,
-                SampleRate = (int)(long)row.sample_rate
+                SampleRate = (int)(long)row.sample_rate,
+                // Phase 2.1: Include pre-computed amplitude data
+                AmplitudeData = row.amplitude_data as byte[],
+                AmplitudeResolutionMs = row.amplitude_resolution_ms != null ? (int?)(long)row.amplitude_resolution_ms : null
             };
         }
 

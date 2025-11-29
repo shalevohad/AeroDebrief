@@ -225,6 +225,11 @@ namespace AeroDebrief.Core{
 
                 _recordingUnitOfWork = _repositoryFactory.CreateRecording(_tempDatabasePath, metadata);
                 await _recordingUnitOfWork.InitializeAsync(metadata);
+                
+                // Phase 2.1: Enable amplitude precomputation for faster playback loading
+                Logger.Info("Enabling amplitude precomputation for recording...");
+                _recordingUnitOfWork.Packets.EnableAmplitudePrecomputation();
+                Logger.Info("? Amplitude precomputation enabled");
 
                 Logger.Info($"? Recording database created successfully");
                 Logger.Info($"   Server: {ipForName}:{portForName}");

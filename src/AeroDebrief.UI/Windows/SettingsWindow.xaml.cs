@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using AeroDebrief.Core.Settings;
+using AeroDebrief.Core.Storage;
 using AeroDebrief.UI.ViewModels;
 
 namespace AeroDebrief.UI.Windows
@@ -164,6 +165,38 @@ namespace AeroDebrief.UI.Windows
                     "AGC Reset",
                     MessageBoxButton.OK,
                     MessageBoxImage.Information);
+            }
+        }
+        
+        private void ClearCache_Click(object sender, RoutedEventArgs e)
+        {
+            var result = MessageBox.Show(
+                "This will delete all cached decompressed/converted recording files from the temp directory.\n\n" +
+                "These files will be recreated automatically when you open recordings again.\n\n" +
+                "Do you want to continue?",
+                "Clear Cache",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+
+            if (result == MessageBoxResult.Yes)
+            {
+                try
+                {
+                    RecordingFileLoader.ClearCache();
+                    MessageBox.Show(
+                        "Cache has been cleared successfully.",
+                        "Cache Cleared",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(
+                        $"Failed to clear cache:\n\n{ex.Message}",
+                        "Error",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Error);
+                }
             }
         }
 

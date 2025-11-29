@@ -19,6 +19,8 @@ xmlns:converters="clr-namespace:AeroDebrief.UI.Converters">
             <helpers:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
             <helpers:FileNameConverter x:Key="FileNameConverter"/>
             <helpers:FilePathConverter x:Key="FilePathConverter"/>
+            <helpers:BoolToCursorConverter x:Key="BoolToCursorConverter"/>
+            <helpers:ZoomLevelToVisibilityConverter x:Key="ZoomLevelToVisibilityConverter"/>
             <converters:ModeColorConverter x:Key="ModeColorConverter"/>
             <converters:StringToVisibilityConverter x:Key="StringToVisibilityConverter"/>
         </ResourceDictionary>

@@ -177,12 +177,6 @@ namespace AeroDebrief.Core{
         public const bool USE_LAYERED_WAVEFORM_RENDERING = true;
         
         /// <summary>
-        /// Enable GPU compositor for final layer blending (Phase 3).
-        /// Set to false to use CPU compositor fallback.
-        /// </summary>
-        public const bool USE_GPU_COMPOSITOR = true;
-        
-        /// <summary>
         /// Enable adaptive resolution switching based on zoom level (Phase 3).
         /// Set to false to use fixed resolution.
         /// </summary>

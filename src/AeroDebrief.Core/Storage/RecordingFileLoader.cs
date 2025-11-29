@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using AeroDebrief.Core.Interfaces.Storage;
 using AeroDebrief.Core.Storage.Sqlite;
+using Dapper;
 using NLog;
 
 namespace AeroDebrief.Core.Storage
@@ -60,32 +61,44 @@ namespace AeroDebrief.Core.Storage
                 }
                 else if (CvrFormat.IsAdbFile(filePath))
                 {
-                    // ADB: Check for existing .db conversion
-                    var existingDb = Path.ChangeExtension(filePath, ".db");
+                    // ADB: Check cache in temp directory, then convert to temporary directory
+                    var cachedPath = FindCachedTempFile(filePath);
                     
-                    if (File.Exists(existingDb))
+                    if (cachedPath != null)
                     {
-                        // Check if DB is newer than ADB
-                        var adbTime = File.GetLastWriteTimeUtc(filePath);
-                        var dbTime = File.GetLastWriteTimeUtc(existingDb);
+                        Logger.Info($"Using cached converted ADB: {cachedPath}");
                         
-                        if (dbTime >= adbTime)
-                        {
-                            Logger.Info("Using existing DB conversion");
-                            progress?.Report("Opening converted database...");
-                            dbPath = existingDb;
-                        }
-                        else
-                        {
-                            Logger.Info("Existing DB is outdated, re-converting...");
-                            dbPath = await ConvertAdbAsync(filePath, existingDb, progress, ct);
-                        }
+                        // Check if cached DB has precomputed amplitude data
+                        await ValidateCachedAmplitudeData(cachedPath);
+                        
+                        progress?.Report("Using cached ADB conversion...");
+                        tempPath = cachedPath;
+                        dbPath = cachedPath;
                     }
                     else
                     {
-                        // Convert ADB to DB
-                        Logger.Info("Converting ADB to database...");
-                        dbPath = await ConvertAdbAsync(filePath, existingDb, progress, ct);
+                        // Clean up any outdated cache for this file
+                        CleanupOutdatedCache(filePath);
+                        
+                        progress?.Report("Converting ADB to database (temp)...");
+
+                        // Create a temp directory with the same prefix used by CvrFormat cleanup so it can be removed later
+                        var tempDir = Path.Combine(Path.GetTempPath(), $"AeroDebrief_{Guid.NewGuid():N}");
+                        Directory.CreateDirectory(tempDir);
+
+                        // Use filename without extension to avoid extremely long paths
+                        var tempDbPath = Path.Combine(tempDir, Path.GetFileNameWithoutExtension(filePath) + ".db");
+
+                        Logger.Info("Converting ADB to temporary database...");
+                        Logger.Debug($"Temp DB path: {tempDbPath}");
+
+                        dbPath = await ConvertAdbAsync(filePath, tempDbPath, progress, ct);
+
+                        // Mark cache with source file timestamp
+                        MarkCachedFile(tempDbPath, filePath);
+
+                        // Remember temp path for cleanup
+                        tempPath = tempDbPath;
                     }
                 }
                 else if (filePath.EndsWith(".db", StringComparison.OrdinalIgnoreCase) || 
@@ -165,6 +178,264 @@ namespace AeroDebrief.Core.Storage
             if (tempPath != null)
             {
                 CvrFormat.CleanupTempFile(tempPath);
+            }
+        }
+
+        /// <summary>
+        /// Find a cached temp file for the given source file.
+        /// Returns path to cached .db file if found and still valid, otherwise null.
+        /// Cache validity is based on matching source filename and last write time.
+        /// </summary>
+        private static string? FindCachedTempFile(string sourceFilePath)
+        {
+            try
+            {
+                var sourceFileName = Path.GetFileNameWithoutExtension(sourceFilePath);
+                var sourceLastWriteTime = File.GetLastWriteTimeUtc(sourceFilePath);
+                var tempRoot = Path.GetTempPath();
+
+                Logger.Debug($"Looking for cached file: sourceFile={Path.GetFileName(sourceFilePath)}, timestamp={sourceLastWriteTime:O}");
+                Logger.Debug($"Source file name (without ext): {sourceFileName}");
+
+                // Search all AeroDebrief temp directories
+                var tempDirs = Directory.GetDirectories(tempRoot, "AeroDebrief_*");
+                
+                Logger.Debug($"Found {tempDirs.Length} temp directories to search");
+
+                foreach (var tempDir in tempDirs)
+                {
+                    Logger.Debug($"Searching in: {tempDir}");
+                    
+                    // Look for .db file with matching name
+                    var dbPath = Path.Combine(tempDir, sourceFileName + ".db");
+                    
+                    Logger.Debug($"Looking for DB at: {dbPath}");
+                    Logger.Debug($"DB exists: {File.Exists(dbPath)}");
+                    
+                    if (File.Exists(dbPath))
+                    {
+                        Logger.Debug($"Found DB file: {dbPath}");
+                        
+                        // Check if cache marker exists and matches source file timestamp
+                        var markerPath = dbPath + ".cache";
+                        
+                        Logger.Debug($"Looking for marker at: {markerPath}");
+                        Logger.Debug($"Marker exists: {File.Exists(markerPath)}");
+                        
+                        if (File.Exists(markerPath))
+                        {
+                            var markerContent = File.ReadAllText(markerPath);
+                            var parts = markerContent.Split('|');
+                            
+                            Logger.Debug($"Cache marker content: {markerContent}");
+                            Logger.Debug($"Parts count: {parts.Length}");
+                            if (parts.Length >= 1) Logger.Debug($"Part[0] (filename): '{parts[0]}'");
+                            if (parts.Length >= 2) Logger.Debug($"Part[1] (timestamp): '{parts[1]}'");
+                            Logger.Debug($"Expected filename: '{Path.GetFileName(sourceFilePath)}'");
+                            Logger.Debug($"Expected timestamp: '{sourceLastWriteTime:O}'");
+                            
+                            if (parts.Length == 2 &&
+                                parts[0] == Path.GetFileName(sourceFilePath) &&
+                                DateTime.TryParse(parts[1], null, System.Globalization.DateTimeStyles.RoundtripKind, out var cachedTimestamp) &&
+                                cachedTimestamp.ToUniversalTime() == sourceLastWriteTime)
+                            {
+                                Logger.Info($"? Found valid cached file: {dbPath}");
+                                return dbPath;
+                            }
+                            else
+                            {
+                                // Log why it's invalid
+                                if (parts.Length != 2)
+                                    Logger.Debug($"  Invalid: marker has {parts.Length} parts (expected 2)");
+                                else if (parts[0] != Path.GetFileName(sourceFilePath))
+                                    Logger.Debug($"  Invalid: filename mismatch ('{parts[0]}' != '{Path.GetFileName(sourceFilePath)}')");
+                                else if (!DateTime.TryParse(parts[1], null, System.Globalization.DateTimeStyles.RoundtripKind, out cachedTimestamp))
+                                    Logger.Debug($"  Invalid: could not parse timestamp '{parts[1]}'");
+                                else if (cachedTimestamp.ToUniversalTime() != sourceLastWriteTime)
+                                {
+                                    Logger.Debug($"  Invalid: timestamp mismatch");
+                                    Logger.Debug($"    Cached:   {cachedTimestamp:O} ({cachedTimestamp.Kind})");
+                                    Logger.Debug($"    Expected: {sourceLastWriteTime:O} ({sourceLastWriteTime.Kind})");
+                                    Logger.Debug($"    Difference: {(cachedTimestamp - sourceLastWriteTime).TotalMilliseconds} ms");
+                                }
+                                
+                                Logger.Debug($"Found outdated cached file: {dbPath}");
+                            }
+                        }
+                        else
+                        {
+                            Logger.Debug($"No cache marker found at: {markerPath}");
+                        }
+                    }
+                }
+                
+                Logger.Debug("No valid cached file found");
+                return null;
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn(ex, "Failed to search for cached temp file");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Clean up outdated cache files for the given source file.
+        /// Removes temp directories containing cached files with matching name but outdated timestamps.
+        /// </summary>
+        private static void CleanupOutdatedCache(string sourceFilePath)
+        {
+            try
+            {
+                var sourceFileName = Path.GetFileNameWithoutExtension(sourceFilePath);
+                var sourceLastWriteTime = File.GetLastWriteTimeUtc(sourceFilePath);
+                var tempRoot = Path.GetTempPath();
+
+                var tempDirs = Directory.GetDirectories(tempRoot, "AeroDebrief_*");
+
+                foreach (var tempDir in tempDirs)
+                {
+                    var dbPath = Path.Combine(tempDir, sourceFileName + ".db");
+                    var markerPath = dbPath + ".cache";
+
+                    if (File.Exists(dbPath) && File.Exists(markerPath))
+                    {
+                        var markerContent = File.ReadAllText(markerPath);
+                        var parts = markerContent.Split('|');
+
+                        // If this is our file but timestamp is outdated, delete it
+                        if (parts.Length == 2 && parts[0] == Path.GetFileName(sourceFilePath))
+                        {
+                            if (DateTime.TryParse(parts[1], null, System.Globalization.DateTimeStyles.RoundtripKind, out var cachedTimestamp) &&
+                                cachedTimestamp.ToUniversalTime() != sourceLastWriteTime)
+                            {
+                                try
+                                {
+                                    Logger.Info($"Cleaning up outdated cache: {tempDir}");
+                                    Directory.Delete(tempDir, true);
+                                    Logger.Debug($"Deleted outdated cache directory: {tempDir}");
+                                }
+                                catch (Exception ex)
+                                {
+                                    Logger.Warn(ex, $"Failed to delete outdated cache directory: {tempDir}");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn(ex, "Failed to cleanup outdated cache");
+            }
+        }
+
+        /// <summary>
+        /// Mark a cached file with source file information for validation.
+        /// Creates a .cache marker file containing source filename and timestamp.
+        /// </summary>
+        private static void MarkCachedFile(string cachedDbPath, string sourceFilePath)
+        {
+            try
+            {
+                var markerPath = cachedDbPath + ".cache";
+                var sourceFileName = Path.GetFileName(sourceFilePath);
+                var sourceTimestamp = File.GetLastWriteTimeUtc(sourceFilePath);
+
+                // Format: "filename|timestamp"
+                var markerContent = $"{sourceFileName}|{sourceTimestamp:O}";
+                File.WriteAllText(markerPath, markerContent);
+
+                Logger.Debug($"Created cache marker: {markerPath}");
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn(ex, "Failed to create cache marker file");
+            }
+        }
+
+        /// <summary>
+        /// Clear all cached temp files (ADB conversions and CVR decompressions).
+        /// Called from settings window when user wants to clear cache.
+        /// </summary>
+        public static void ClearCache()
+        {
+            try
+            {
+                var tempRoot = Path.GetTempPath();
+                var tempDirs = Directory.GetDirectories(tempRoot, "AeroDebrief_*");
+
+                Logger.Info($"Clearing cache: found {tempDirs.Length} temp directories");
+
+                foreach (var tempDir in tempDirs)
+                {
+                    try
+                    {
+                        Directory.Delete(tempDir, true);
+                        Logger.Debug($"Deleted cache directory: {tempDir}");
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Warn(ex, $"Failed to delete cache directory: {tempDir}");
+                    }
+                }
+
+                Logger.Info($"Cache cleared: deleted {tempDirs.Length} directories");
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, "Failed to clear cache");
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Validate that the cached database has precomputed amplitude data.
+        /// Logs statistics about amplitude data availability.
+        /// </summary>
+        private static async Task ValidateCachedAmplitudeData(string cachedDbPath)
+        {
+            try
+            {
+                using var connection = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={cachedDbPath}");
+                await connection.OpenAsync();
+
+                // Check total packet count
+                var totalPackets = await connection.QuerySingleAsync<int>(
+                    "SELECT COUNT(*) FROM packets");
+
+                // Check packets with amplitude data
+                var packetsWithAmplitude = await connection.QuerySingleAsync<int>(
+                    "SELECT COUNT(*) FROM packets WHERE amplitude_data IS NOT NULL");
+
+                // Check packets with non-empty audio data
+                var packetsWithAudio = await connection.QuerySingleAsync<int>(
+                    "SELECT COUNT(*) FROM packets WHERE LENGTH(audio_data) > 0");
+
+                var amplitudePercentage = totalPackets > 0 ? (packetsWithAmplitude * 100.0) / totalPackets : 0;
+
+                Logger.Info($"Cached DB amplitude data status:");
+                Logger.Info($"  Total packets: {totalPackets:N0}");
+                Logger.Info($"  Packets with audio: {packetsWithAudio:N0}");
+                Logger.Info($"  Packets with precomputed amplitude: {packetsWithAmplitude:N0} ({amplitudePercentage:F1}%)");
+
+                if (packetsWithAmplitude == 0 && packetsWithAudio > 0)
+                {
+                    Logger.Warn("??  Cached database has no precomputed amplitude data - will use on-demand computation");
+                    Logger.Warn("   Consider clearing cache to regenerate with amplitude precomputation");
+                }
+                else if (amplitudePercentage < 50)
+                {
+                    Logger.Warn($"??  Only {amplitudePercentage:F1}% of packets have precomputed amplitude data");
+                }
+                else
+                {
+                    Logger.Info($"? Cached database has good amplitude precomputation coverage ({amplitudePercentage:F1}%)");
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn(ex, "Failed to validate cached amplitude data - proceeding anyway");
             }
         }
 
