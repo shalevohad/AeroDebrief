@@ -1399,55 +1399,20 @@ namespace AeroDebrief.UI.ViewModels
                 StatusMessage = "Loading file...";
                 ProgressPercent = 0;
                 
-                Logger.Info($"======== LOADING FILE (Service Architecture): {filePath} ========");
+                Logger.Info($"======== LOADING FILE WITH PROGRESS DIALOG: {filePath} ========");
 
-                // Create progress reporter for status updates - update every 5% of file load
-                int lastProgress = 0;
-                var progress = new Progress<string>(status =>
-                {
-                    // Phase 2.5: Also update FileSourceViewModel's loading display
-                    bool hasPercent = false;
-                    int percent = 0;
-                    
-                    // Parse progress from status messages like "Loading frequencies... 45%"
-                    if (status.Contains("%"))
-                    {
-                        // Extract percentage from message
-                        if (int.TryParse(
-                            System.Text.RegularExpressions.Regex.Match(status, @"\d+").Value, 
-                            out percent))
-                        {
-                            hasPercent = true;
-                            // Only update UI every 5% to reduce dispatcher overhead
-                            if (Math.Abs(percent - lastProgress) >= 5 || percent == 0 || percent == 100)
-                            {
-                                lastProgress = percent;
-                                // Marshal to UI thread
-                                System.Windows.Application.Current?.Dispatcher?.InvokeAsync(() =>
-                                {
-                                    ProgressPercent = percent;
-                                    StatusMessage = status;
-                                    // Phase 2.5: Update FileSourceViewModel
-                                    FileSource?.UpdateLoadingProgress(status, percent, isIndeterminate: false);
-                                }, System.Windows.Threading.DispatcherPriority.Background);
-                            }
-                        }
-                    }
-                    else
-                    {
-                        // Status message without percentage - use indeterminate progress
-                        System.Windows.Application.Current?.Dispatcher?.InvokeAsync(() =>
-                        {
-                            StatusMessage = status;
-                            // Phase 2.5: Update FileSourceViewModel with indeterminate progress
-                            FileSource?.UpdateLoadingProgress(status, 0, isIndeterminate: true);
-                        }, System.Windows.Threading.DispatcherPriority.Background);
-                    }
-                });
+                // Use RecordingLoaderService to show progress dialog during ADB->DB conversion
+                var loadResult = await RecordingLoaderService.LoadWithProgressAsync(filePath);
                 
-                // Load file asynchronously on background thread
-                // This keeps UI responsive while loading
-                await _sessionManager.LoadFileAsync(filePath, progress);
+                if (!loadResult.Success || loadResult.UnitOfWork == null)
+                {
+                    throw new InvalidOperationException(loadResult.ErrorMessage ?? "Failed to load file");
+                }
+                
+                Logger.Info("? File loaded with progress dialog - creating playback session...");
+                
+                // Load the session from the pre-loaded UnitOfWork
+                await _sessionManager.LoadFromUnitOfWorkAsync(loadResult.UnitOfWork, filePath, loadResult.TempDbPath);
                 
                 Logger.Info("? File load completed - session loaded event should have fired");
                 

@@ -204,9 +204,9 @@ namespace AeroDebrief.CLI
                         cleanedUp = true;
 
                         Console.WriteLine();
-                        Console.WriteLine("???????????????????????????????????????????????????");
+                        Console.WriteLine("---------------------------------------------------");
                         Console.WriteLine("??  Stopping recording...");
-                        Console.WriteLine("???????????????????????????????????????????????????");
+                        Console.WriteLine("---------------------------------------------------");
                         
                         recorder.StopRecording();
                         
@@ -230,8 +230,8 @@ namespace AeroDebrief.CLI
 #endif
                         
                         recorder.Disconnect();
-                        Console.WriteLine("?? Disconnected from server");
-                        Console.WriteLine("???????????????????????????????????????????????????");
+                        Console.WriteLine("-- Disconnected from server");
+                        Console.WriteLine("---------------------------------------------------");
                         
                         Logger.Info("Recording stopped and disconnected");
                         Environment.Exit(0);
@@ -433,7 +433,7 @@ namespace AeroDebrief.CLI
                         Console.Write($"\r{p.Stage,-30} [{p.Percent,3}%] {p.PacketsProcessed:N0} packets");
                     });
 
-                    var result = await converter.ConvertAsync(inputPath, outputPath, compressToCvr, progress);
+                    var result = await converter.ConvertAsync(inputPath, outputPath, compressToCvr, progress: progress);
 
                     Console.WriteLine();
                     Console.WriteLine();

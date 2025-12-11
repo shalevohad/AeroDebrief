@@ -28,9 +28,14 @@ namespace AeroDebrief.Core.Storage
         /// - ADB migration
         /// - DB direct open
         /// </summary>
+        /// <param name="filePath">Path to the recording file</param>
+        /// <param name="progress">Progress reporter for simple string messages (legacy)</param>
+        /// <param name="detailedProgress">Detailed progress reporter with percentage, speed, ETA (NEW)</param>
+        /// <param name="ct">Cancellation token</param>
         public static async Task<(IUnitOfWork UnitOfWork, string? TempPath)> OpenAsync(
             string filePath,
             IProgress<string>? progress = null,
+            IProgress<ConversionProgress>? detailedProgress = null,
             CancellationToken ct = default)
         {
             if (!File.Exists(filePath))
@@ -78,14 +83,14 @@ namespace AeroDebrief.Core.Storage
                         else
                         {
                             Logger.Info("Existing DB is outdated, re-converting...");
-                            dbPath = await ConvertAdbAsync(filePath, existingDb, progress, ct);
+                            dbPath = await ConvertAdbAsync(filePath, existingDb, progress, detailedProgress, ct);
                         }
                     }
                     else
                     {
                         // Convert ADB to DB
                         Logger.Info("Converting ADB to database...");
-                        dbPath = await ConvertAdbAsync(filePath, existingDb, progress, ct);
+                        dbPath = await ConvertAdbAsync(filePath, existingDb, progress, detailedProgress, ct);
                     }
                 }
                 else if (filePath.EndsWith(".db", StringComparison.OrdinalIgnoreCase) || 
@@ -139,15 +144,30 @@ namespace AeroDebrief.Core.Storage
             string adbPath,
             string outputDbPath,
             IProgress<string>? progress,
+            IProgress<ConversionProgress>? detailedProgress,
             CancellationToken ct)
         {
             progress?.Report("Converting ADB to database...");
+            detailedProgress?.Report(new ConversionProgress
+            {
+                Stage = "Starting conversion",
+                Percent = 0,
+                Message = "Initializing converter..."
+            });
+            
             var converter = new AdbToDatabaseConverter();
             
+            // Create combined progress reporter
             var conversionProgress = new Progress<ConversionProgress>(p =>
-                progress?.Report($"Converting: {p.Stage} ({p.Percent}%)"));
+            {
+                // Report detailed progress
+                detailedProgress?.Report(p);
+                
+                // Also report simplified message for legacy callers
+                progress?.Report($"Converting: {p.Message ?? p.Stage} ({p.Percent}%)");
+            });
 
-            var result = await converter.ConvertAsync(adbPath, outputDbPath, false, conversionProgress, ct);
+            var result = await converter.ConvertAsync(adbPath, outputDbPath, false, progress: conversionProgress, ct: ct);
 
             if (!result.Success)
                 throw new Exception($"ADB conversion failed: {result.Error}");

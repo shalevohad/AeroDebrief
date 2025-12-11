@@ -69,6 +69,11 @@ namespace AeroDebrief.Core.Interfaces.Storage
         IRecordingRepository Recording { get; }
 
         /// <summary>
+        /// Amplitude repository - pre-computed amplitude cache for waveform rendering (Phase 7)
+        /// </summary>
+        IAmplitudeRepository Amplitudes { get; }
+
+        /// <summary>
         /// Initialize the unit of work (open connection, configure, create schema).
         /// Call after creation but before using repositories.
         /// </summary>

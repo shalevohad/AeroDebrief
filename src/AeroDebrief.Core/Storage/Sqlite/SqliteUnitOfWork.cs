@@ -31,6 +31,7 @@ namespace AeroDebrief.Core.Storage.Sqlite
         private SqliteFrequencyRepository? _frequencies;
         private SqlitePlayerRepository? _players;
         private SqliteRecordingRepository? _recording;
+        private SqliteAmplitudeRepository? _amplitudes; // ? NEW: Amplitude cache repository
 
         public SqliteUnitOfWork(string filePath, bool createNew = false)
         {
@@ -60,6 +61,13 @@ namespace AeroDebrief.Core.Storage.Sqlite
 
         public IRecordingRepository Recording => 
             _recording ??= new SqliteRecordingRepository(_connection);
+
+        /// <summary>
+        /// ? NEW: Amplitude cache repository for instant waveform rendering.
+        /// Provides pre-computed amplitude data without re-decoding audio.
+        /// </summary>
+        public IAmplitudeRepository Amplitudes => 
+            _amplitudes ??= new SqliteAmplitudeRepository(_connection);
 
         /// <summary>
         /// Initialize the Unit of Work (open connection, configure WAL mode, create schema)
@@ -320,6 +328,7 @@ namespace AeroDebrief.Core.Storage.Sqlite
             _frequencies?.Dispose();
             _players?.Dispose();
             _recording?.Dispose();
+            _amplitudes?.Dispose(); // ? NEW: Dispose amplitude repository
 
             // Perform WAL checkpoint to merge WAL file back into main database
             // This ensures all file handles are released

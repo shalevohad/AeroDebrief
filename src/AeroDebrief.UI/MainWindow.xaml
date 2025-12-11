@@ -17,6 +17,8 @@ WindowStartupLocation="CenterScreen">
             <MenuItem Header="_File">
                 <MenuItem Header="_Open Recording..." Click="OpenRecording_Click" InputGestureText="Ctrl+O"/>
                 <Separator/>
+                <MenuItem Header="_Test Progress Dialog" Click="TestProgressDialog_Click"/>
+                <Separator/>
                 <MenuItem Header="E_xit" Click="Exit_Click"/>
             </MenuItem>
             <MenuItem Header="_Help">

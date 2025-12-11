@@ -77,6 +77,80 @@ namespace AeroDebrief.UI.Services
         }
 
         /// <summary>
+        /// Loads a playback session from a pre-loaded UnitOfWork.
+        /// Used when the file has already been loaded with progress dialog (RecordingLoaderService).
+        /// </summary>
+        public async Task LoadFromUnitOfWorkAsync(IUnitOfWork unitOfWork, string filePath, string? tempDbPath = null)
+        {
+            if (unitOfWork == null)
+                throw new ArgumentNullException(nameof(unitOfWork));
+            if (string.IsNullOrWhiteSpace(filePath))
+                throw new ArgumentException("File path cannot be empty", nameof(filePath));
+
+            try
+            {
+                Logger.Info("======== LOADING SESSION FROM PRE-LOADED UNITOFWORK ========");
+                Logger.Info($"File: {System.IO.Path.GetFileName(filePath)}");
+
+                // Unload existing session if any
+                if (IsSessionLoaded)
+                {
+                    Logger.Info("Unloading existing session...");
+                    UnloadSession();
+                }
+
+                // Store UnitOfWork
+                _unitOfWork = unitOfWork;
+                _tempDbPath = tempDbPath;
+                
+                // Get packet count for logging
+                var packetCount = await _unitOfWork.Packets.GetCountAsync();
+                Logger.Info($"Recording loaded: {packetCount:N0} packets");
+
+                // STEP 2: Create PacketSource from the store
+                Logger.Info("Creating PacketSource...");
+                
+                _packetSource = new DatabasePacketSource(_unitOfWork);
+                await _packetSource.OpenAsync(null);
+                
+                Logger.Info($"PacketSource ready: {_packetSource.TotalPackets} packets, {_packetSource.TotalDuration}");
+
+                // STEP 3: Create FilePlaybackPipeline
+                Logger.Info("Creating FilePlaybackPipeline...");
+                
+                _pipeline = new FilePlaybackPipeline(_packetSource);
+                await _pipeline.OpenAsync();
+                
+                Logger.Info($"? FilePlaybackPipeline initialized");
+
+                _currentFilePath = filePath;
+
+                Logger.Info($"? Session loaded successfully");
+                Logger.Info($"   Packets: {_packetSource.TotalPackets:N0}");
+                Logger.Info($"   Duration: {_packetSource.TotalDuration}");
+
+                // Raise event
+                SessionLoaded?.Invoke(this, new SessionLoadedEventArgs(
+                    _packetSource,
+                    _pipeline,
+                    filePath,
+                    _packetSource.TotalDuration,
+                    (int)_packetSource.TotalPackets));
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, $"Failed to load session from UnitOfWork: {filePath}");
+
+                // Clean up on failure
+                CleanupResources();
+
+                SessionError?.Invoke(this, new SessionErrorEventArgs(ex, filePath));
+
+                throw;
+            }
+        }
+
+        /// <summary>
         /// Loads a file and creates a playback session.
         /// Uses unified SQLite architecture: CVR/ADB/DB ? RecordingFileLoader ? PacketSource ? FilePlaybackPipeline
         /// </summary>

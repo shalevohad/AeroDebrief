@@ -307,5 +307,22 @@ namespace AeroDebrief.Core{
         // Layer3 is used for zoom < ZOOM_THRESHOLD_LAYER2
         
         #endregion
+        
+        #region Amplitude Cache Constants (Phase 7)
+        
+        /// <summary>
+        /// Enable pre-computation of amplitude cache during ADB file conversion.
+        /// When true: Conversion is slower (10-15 min) but waveforms render instantly.
+        /// When false: Conversion is faster (2-3 min) but waveforms computed on-demand.
+        /// 
+        /// Performance impact:
+        /// - With cache: ~400 packets/sec during conversion, instant waveform loading
+        /// - Without cache: ~2,000 packets/sec during conversion, waveform loading takes 1-2s per minute of audio
+        /// 
+        /// Recommended: true for production, false for quick testing/preview
+        /// </summary>
+        public const bool COMPUTE_AMPLITUDE_CACHE_ON_CONVERSION = true;
+        
+        #endregion
     }
 }

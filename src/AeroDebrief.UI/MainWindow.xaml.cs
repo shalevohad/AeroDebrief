@@ -22,6 +22,12 @@ namespace AeroDebrief.UI
             // This will show the file dialog with updated CVR filters
             _viewModel?.FileSource?.BrowseCommand?.Execute(null);
         }
+        
+        private async void TestProgressDialog_Click(object sender, RoutedEventArgs e)
+        {
+            // Test the progress dialog with simulated progress
+            await Tests.ProgressDialogTest.TestProgressDialog();
+        }
 
         private void Exit_Click(object sender, RoutedEventArgs e)
         {

@@ -35,10 +35,17 @@ namespace AeroDebrief.Core.Storage
         /// <summary>
         /// Convert an ADB file to database format
         /// </summary>
+        /// <param name="adbPath">Path to source ADB file</param>
+        /// <param name="outputDbPath">Path to output database (optional, defaults to .db extension)</param>
+        /// <param name="compressToCvr">Compress to CVR format after conversion</param>
+        /// <param name="computeAmplitudeCache">Pre-compute amplitude cache during conversion (slower but instant waveforms later). Defaults to Constants.COMPUTE_AMPLITUDE_CACHE_ON_CONVERSION</param>
+        /// <param name="progress">Progress reporter</param>
+        /// <param name="ct">Cancellation token</param>
         public async Task<ConversionResult> ConvertAsync(
             string adbPath,
             string? outputDbPath = null,
             bool compressToCvr = false,
+            bool computeAmplitudeCache = Constants.COMPUTE_AMPLITUDE_CACHE_ON_CONVERSION,
             IProgress<ConversionProgress>? progress = null,
             CancellationToken ct = default)
         {
@@ -59,6 +66,7 @@ namespace AeroDebrief.Core.Storage
                 Logger.Info($"Starting ADB ? Database conversion:");
                 Logger.Info($"  Source: {adbPath}");
                 Logger.Info($"  Output: {outputDbPath}");
+                Logger.Info($"  Amplitude cache: {(computeAmplitudeCache ? "Enabled (slower, instant waveforms)" : "Disabled (faster, waveforms computed on-demand)")}");
                 if (compressToCvr)
                 {
                     Logger.Info($"  CVR compression: Enabled");
@@ -67,7 +75,8 @@ namespace AeroDebrief.Core.Storage
                 progress?.Report(new ConversionProgress
                 {
                     Stage = "Opening source file",
-                    Percent = 0
+                    Percent = 0,
+                    Message = "Reading ADB file header..."
                 });
 
                 // Open source ADB file
@@ -91,16 +100,27 @@ namespace AeroDebrief.Core.Storage
                 progress?.Report(new ConversionProgress
                 {
                     Stage = "Creating database",
-                    Percent = 5
+                    Percent = 5,
+                    Message = "Initializing SQLite database..."
                 });
 
                 // Create database using repository pattern
                 using (var uow = _repositoryFactory.CreateRecording(outputDbPath, metadata))
                 {
+                    // ? NEW: Set amplitude computation flag in repository
+                    if (uow is SqliteUnitOfWork sqliteUow && 
+                        sqliteUow.Packets is SqlitePacketRepository sqlitePackets)
+                    {
+                        sqlitePackets.SetComputeAmplitudeCache(computeAmplitudeCache);
+                    }
+
                     progress?.Report(new ConversionProgress
                     {
                         Stage = "Converting packets",
-                        Percent = 10
+                        Percent = 10,
+                        Message = computeAmplitudeCache 
+                            ? "Converting packets with amplitude computation (slower)..." 
+                            : "Converting packets (fast mode)..."
                     });
 
                     // Convert packets in batches (optimized for performance)
@@ -108,6 +128,8 @@ namespace AeroDebrief.Core.Storage
                     var batch = new List<AudioPacketMetadata>(batchSize);
                     var totalPackets = 0L;
                     var lastProgress = DateTime.UtcNow;
+                    var lastGcCheck = DateTime.UtcNow;
+                    var conversionStartTime = DateTime.UtcNow;
 
                     Logger.Info("Starting packet conversion loop...");
 
@@ -142,15 +164,44 @@ namespace AeroDebrief.Core.Storage
                             Logger.Info($"Inserted batch of {batch.Count} packets (total: {totalPackets})");
                             batch.Clear();
 
-                            // Report progress every 500ms
+                            // MEMORY OPTIMIZATION: Force GC every 10 seconds
+                            // This prevents memory from accumulating during long conversions
+                            if ((DateTime.UtcNow - lastGcCheck).TotalSeconds >= 10)
+                            {
+                                GC.Collect(1, GCCollectionMode.Optimized, false);
+                                lastGcCheck = DateTime.UtcNow;
+                                Logger.Debug($"GC: Gen0={GC.CollectionCount(0)}, Gen1={GC.CollectionCount(1)}, Gen2={GC.CollectionCount(2)}");
+                            }
+
+                            // Report detailed progress every 500ms
                             if ((DateTime.UtcNow - lastProgress).TotalMilliseconds >= 500)
                             {
+                                var elapsed = DateTime.UtcNow - conversionStartTime;
+                                var packetsPerSecond = totalPackets / elapsed.TotalSeconds;
+                                
+                                // Estimate remaining time (rough estimate)
+                                // Assume average file has ~100k packets (adjust based on file size if available)
+                                var estimatedTotalPackets = Math.Max(totalPackets * 1.2, 10000); // At least 10k
+                                var remainingPackets = estimatedTotalPackets - totalPackets;
+                                var etaSeconds = remainingPackets / Math.Max(1, packetsPerSecond);
+                                
                                 var progressPercent = 10 + (int)(70 * totalPackets / Math.Max(1, totalPackets + 1000));
+                                
                                 progress?.Report(new ConversionProgress
                                 {
                                     Stage = "Converting packets",
                                     Percent = Math.Min(80, progressPercent),
-                                    PacketsProcessed = totalPackets
+                                    PacketsProcessed = totalPackets,
+                                    
+                                    // ? NEW: Set PacketsPerSecond for progress reporting
+                                    PacketsPerSecond = packetsPerSecond,
+                                    
+                                    // ? NEW: Estimate time remaining (ETA)
+                                    EstimatedTimeRemaining = etaSeconds > 0 && etaSeconds < 3600 
+                                        ? TimeSpan.FromSeconds(etaSeconds) 
+                                        : (TimeSpan?)null,
+                                    
+                                    Message = $"Processing: {totalPackets:N0} packets ({packetsPerSecond:F0} pkt/sec){(computeAmplitudeCache ? " + amplitude cache" : "")}"
                                 });
                                 lastProgress = DateTime.UtcNow;
                             }
@@ -170,7 +221,8 @@ namespace AeroDebrief.Core.Storage
                     {
                         Stage = "Finalizing database",
                         Percent = 85,
-                        PacketsProcessed = totalPackets
+                        PacketsProcessed = totalPackets,
+                        Message = "Building indexes and statistics..."
                     });
 
                     // Finalize: rebuild statistics and optimize
@@ -201,11 +253,20 @@ namespace AeroDebrief.Core.Storage
                     Logger.Info($"   Source size: {sourceSize / 1024.0 / 1024.0:F1} MB");
                     Logger.Info($"   Output size: {outputSize / 1024.0 / 1024.0:F1} MB");
                     Logger.Info($"   Compression: {compressionRatio:F1}% smaller");
+                    Logger.Info($"   Amplitude cache: {(computeAmplitudeCache ? "Computed" : "Skipped (compute on-demand)")}");
                 } // Close the using block here - this disposes UnitOfWork and closes SQLite connection
 
                 // Optional CVR compression (AFTER database is closed)
                 if (compressToCvr)
                 {
+                    progress?.Report(new ConversionProgress
+                    {
+                        Stage = "Compressing to CVR",
+                        Percent = 90,
+                        PacketsProcessed = result.TotalPackets,
+                        Message = "Compressing database to CVR format..."
+                    });
+
                     // Give SQLite/Windows significant time to release ALL file handles
                     // WAL checkpoint helps, but Windows can still hold handles briefly
                     Logger.Info("Waiting for file handles to be released...");
@@ -218,13 +279,6 @@ namespace AeroDebrief.Core.Storage
                     
                     // Additional delay after GC
                     await Task.Delay(200, ct);
-                    
-                    progress?.Report(new ConversionProgress
-                    {
-                        Stage = "Compressing to CVR format",
-                        Percent = 90,
-                        PacketsProcessed = result.TotalPackets
-                    });
 
                     Logger.Info("Compressing to CVR format...");
                     
@@ -333,7 +387,8 @@ namespace AeroDebrief.Core.Storage
                 {
                     Stage = "Complete",
                     Percent = 100,
-                    PacketsProcessed = result.TotalPackets
+                    PacketsProcessed = result.TotalPackets,
+                    Message = $"Conversion complete! {result.TotalPackets:N0} packets in {sw.Elapsed.TotalSeconds:F1}s"
                 });
 
                 return result;
@@ -343,6 +398,14 @@ namespace AeroDebrief.Core.Storage
                 Logger.Error(ex, "Conversion failed");
                 result.Success = false;
                 result.Error = ex.Message;
+                
+                progress?.Report(new ConversionProgress
+                {
+                    Stage = "Failed",
+                    Percent = 0,
+                    Message = $"? Error: {ex.Message}"
+                });
+                
                 return result;
             }
         }
@@ -380,7 +443,7 @@ namespace AeroDebrief.Core.Storage
                     });
                 });
 
-                var result = await ConvertAsync(adbPath, null, false, fileProgress, ct);
+                var result = await ConvertAsync(adbPath, null, false, progress: fileProgress, ct: ct);
                 results.Add(result);
 
                 completedFiles++;
@@ -409,6 +472,21 @@ namespace AeroDebrief.Core.Storage
         public string Stage { get; set; } = string.Empty;
         public int Percent { get; set; }
         public long PacketsProcessed { get; set; }
+        
+        /// <summary>
+        /// ? NEW: Human-readable progress message
+        /// </summary>
+        public string Message { get; set; } = string.Empty;
+        
+        /// <summary>
+        /// ? NEW: Current processing speed (packets per second)
+        /// </summary>
+        public double PacketsPerSecond { get; set; }
+        
+        /// <summary>
+        /// ? NEW: Estimated time remaining (null if unknown)
+        /// </summary>
+        public TimeSpan? EstimatedTimeRemaining { get; set; }
     }
 
     /// <summary>

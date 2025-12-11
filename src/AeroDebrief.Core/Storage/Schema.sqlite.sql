@@ -1,6 +1,6 @@
 -- =============================================================================
 -- SQLite Schema for AeroDebrief Recordings
--- Version: 2.0 (Repository Pattern + Dapper + Single Connection)
+-- Version: 2.1 (Added Amplitude Cache for instant waveform rendering)
 -- =============================================================================
 
 -- =============================================================================
@@ -44,6 +44,36 @@ CREATE INDEX IF NOT EXISTS idx_frequency ON packets(frequency);
 CREATE INDEX IF NOT EXISTS idx_player ON packets(player_name);
 CREATE INDEX IF NOT EXISTS idx_freq_time ON packets(frequency, relative_ms);
 CREATE INDEX IF NOT EXISTS idx_coalition ON packets(coalition);
+
+-- =============================================================================
+-- ? NEW: Amplitude cache for instant waveform rendering (Phase 7)
+-- Stores pre-computed RAW amplitude data (before volume/gain/pan adjustments).
+-- CRITICAL: Volume/gain/pan are applied at QUERY time, not storage time!
+-- This ensures cached data remains valid regardless of mixer settings.
+--
+-- Performance benefit: 10-100x faster graph loading by eliminating re-decoding.
+-- Memory footprint: ~100-200 bytes per packet (vs. 10-50 KB for raw audio).
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS amplitude_cache (
+    packet_id INTEGER PRIMARY KEY,
+    
+    -- RAW amplitude values (0.0-1.0 range, before volume adjustment)
+    max_amplitude REAL NOT NULL,      -- Peak amplitude in packet
+    rms_amplitude REAL NOT NULL,      -- Root mean square amplitude
+    
+    -- Peak envelope for detailed waveform rendering (BLOB: float array)
+    -- Each point represents peak amplitude in a 10ms window (480 samples @ 48kHz)
+    peak_envelope BLOB,               
+    envelope_points INTEGER DEFAULT 0, -- Number of points in envelope
+    
+    -- Metadata for cache management
+    computed_at TEXT NOT NULL,        -- UTC timestamp when computed
+    
+    FOREIGN KEY (packet_id) REFERENCES packets(id) ON DELETE CASCADE
+);
+
+-- Index for fast amplitude queries (critical for graph rendering)
+CREATE INDEX IF NOT EXISTS idx_amplitude_packet ON amplitude_cache(packet_id);
 
 -- =============================================================================
 -- Recording metadata table (SINGLE ROW - one file = one recording)

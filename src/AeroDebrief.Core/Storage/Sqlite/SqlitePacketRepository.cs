@@ -30,6 +30,7 @@ namespace AeroDebrief.Core.Storage.Sqlite
         private DateTime _recordingStart;
         private bool _isLive;
         private bool _disposed;
+        private bool _computeAmplitudeCache = true; // ? NEW: Default to true for backward compatibility
 
         public SqlitePacketRepository(IDbConnection connection, string filePath)
         {
@@ -39,6 +40,16 @@ namespace AeroDebrief.Core.Storage.Sqlite
 
         public DateTime RecordingStart => _recordingStart;
         public bool IsLiveRecording => _isLive;
+
+        /// <summary>
+        /// ? NEW: Set whether to compute amplitude cache during packet insertion.
+        /// Default is true. Set to false for faster conversion (amplitude computed on-demand later).
+        /// </summary>
+        public void SetComputeAmplitudeCache(bool compute)
+        {
+            _computeAmplitudeCache = compute;
+            Logger.Info($"Amplitude cache computation: {(compute ? "Enabled" : "Disabled")}");
+        }
 
         public async Task InitializeAsync(RecordingMetadata metadata, CancellationToken ct = default)
         {
@@ -95,6 +106,7 @@ namespace AeroDebrief.Core.Storage.Sqlite
         /// <summary>
         /// Insert a batch of packets with optimized bulk insert.
         /// Uses a single transaction for the entire batch.
+        /// ? Phase 7: Now computes and caches amplitude data during insertion.
         /// </summary>
         public async Task InsertBatchAsync(IEnumerable<AudioPacketMetadata> packets, CancellationToken ct = default)
         {
@@ -133,15 +145,164 @@ namespace AeroDebrief.Core.Storage.Sqlite
                     }),
                     transaction);
 
+                // ? Phase 7: Compute and cache amplitude data (if enabled)
+                if (_computeAmplitudeCache)
+                {
+                    await ComputeAndCacheAmplitudesAsync(packetList, transaction, ct);
+                }
+
                 transaction.Commit();
 
-                Logger.Debug($"Inserted {packetList.Count} packets in batch");
+                Logger.Debug($"Inserted {packetList.Count} packets in batch{(_computeAmplitudeCache ? " with amplitude cache" : "")}");
             }
             catch
             {
                 transaction.Rollback();
                 throw;
             }
+        }
+
+        /// <summary>
+        /// ? Phase 7: Pre-compute amplitude data during recording.
+        /// This is the KEY optimization - decode ONCE during recording, cache forever!
+        /// 
+        /// CRITICAL: Stores RAW amplitude (before volume/gain/pan adjustments).
+        /// Volume controls are applied at query time, not storage time.
+        /// 
+        /// MEMORY OPTIMIZED: Processes packets one at a time and disposes decoded audio immediately.
+        /// </summary>
+        private async Task ComputeAndCacheAmplitudesAsync(
+            IList<AudioPacketMetadata> packets,
+            IDbTransaction transaction,
+            CancellationToken ct)
+        {
+            // OPTIMIZATION: Reuse single AudioProcessingEngine for batch
+            using var processingEngine = new Audio.AudioProcessingEngine();
+            processingEngine.Initialize();
+
+            // OPTIMIZATION: Reuse timestamp string for entire batch
+            var computedAt = DateTime.UtcNow.ToString("O");
+
+            // Get first packet ID from this batch
+            var firstPacketId = await _connection.ExecuteScalarAsync<long>(
+                "SELECT last_insert_rowid() - @Count + 1",
+                new { Count = packets.Count },
+                transaction);
+
+            // OPTIMIZATION: Pre-allocate list with exact capacity to avoid resizing
+            var amplitudeEntries = new List<AmplitudeCacheEntry>(packets.Count);
+
+            for (int i = 0; i < packets.Count; i++)
+            {
+                var packet = packets[i];
+                var packetId = firstPacketId + i;
+
+                if (packet.AudioPayload == null || packet.AudioPayload.Length == 0)
+                    continue;
+
+                try
+                {
+                    // Decode audio ONCE (this is the expensive operation we're caching!)
+                    var decoded = processingEngine.DecodePacketToFloat(packet);
+                    if (decoded == null || decoded.Length == 0)
+                        continue;
+
+                    // Calculate max amplitude using Math.Abs for better performance
+                    var maxAmplitude = 0f;
+                    var sumSquares = 0.0;
+                    
+                    // OPTIMIZATION: Single loop for both max and RMS calculation
+                    foreach (var sample in decoded)
+                    {
+                        var absSample = Math.Abs(sample);
+                        if (absSample > maxAmplitude)
+                            maxAmplitude = absSample;
+                        sumSquares += sample * sample;
+                    }
+                    
+                    var rmsAmplitude = (float)Math.Sqrt(sumSquares / decoded.Length);
+
+                    // Extract peak envelope (10ms windows at 48kHz = 480 samples per window)
+                    var peakEnvelope = ExtractPeakEnvelope(decoded, 480);
+
+                    amplitudeEntries.Add(new AmplitudeCacheEntry
+                    {
+                        PacketId = packetId,
+                        MaxAmplitude = maxAmplitude,
+                        RmsAmplitude = rmsAmplitude,
+                        PeakEnvelope = peakEnvelope
+                    });
+                    
+                    // CRITICAL: Decoded audio is now eligible for GC after this iteration
+                    // Peak envelope is small (~48 floats = 192 bytes vs. decoded ~7680 floats = 30KB)
+                }
+                catch (Exception ex)
+                {
+                    Logger.Warn(ex, $"Failed to compute amplitude for packet {packetId}");
+                    // Continue with other packets - don't let one failure break the batch
+                }
+            }
+
+            // Batch insert all amplitude data
+            if (amplitudeEntries.Any())
+            {
+                // OPTIMIZATION: Pre-serialize envelopes to avoid repeated allocations in Select()
+                var parameters = new List<object>(amplitudeEntries.Count);
+                
+                foreach (var entry in amplitudeEntries)
+                {
+                    parameters.Add(new
+                    {
+                        entry.PacketId,
+                        entry.MaxAmplitude,
+                        entry.RmsAmplitude,
+                        PeakEnvelope = SerializeFloatArray(entry.PeakEnvelope),
+                        EnvelopePoints = entry.PeakEnvelope.Length,
+                        ComputedAt = computedAt // Reuse same string for entire batch
+                    });
+                }
+                
+                await _connection.ExecuteAsync(@"
+                    INSERT INTO amplitude_cache 
+                    (packet_id, max_amplitude, rms_amplitude, peak_envelope, envelope_points, computed_at)
+                    VALUES (@PacketId, @MaxAmplitude, @RmsAmplitude, @PeakEnvelope, @EnvelopePoints, @ComputedAt)",
+                    parameters,
+                    transaction);
+
+                Logger.Debug($"?? Cached amplitude data for {amplitudeEntries.Count}/{packets.Count} packets");
+            }
+            
+            // AudioProcessingEngine is disposed by 'using' statement
+        }
+
+        /// <summary>
+        /// Extract peak envelope from decoded samples using sliding window.
+        /// Each window represents 10ms of audio for smooth waveform rendering.
+        /// </summary>
+        private static float[] ExtractPeakEnvelope(float[] samples, int windowSize)
+        {
+            var envelope = new List<float>();
+            for (int i = 0; i < samples.Length; i += windowSize)
+            {
+                var end = Math.Min(i + windowSize, samples.Length);
+                var peak = 0f;
+                for (int j = i; j < end; j++)
+                    peak = Math.Max(peak, Math.Abs(samples[j]));
+                envelope.Add(peak);
+            }
+            return envelope.ToArray();
+        }
+
+        /// <summary>
+        /// Serialize float array to BLOB for database storage.
+        /// </summary>
+        private static byte[] SerializeFloatArray(float[] data)
+        {
+            if (data == null || data.Length == 0)
+                return Array.Empty<byte>();
+            var bytes = new byte[data.Length * sizeof(float)];
+            Buffer.BlockCopy(data, 0, bytes, 0, bytes.Length);
+            return bytes;
         }
 
         /// <summary>

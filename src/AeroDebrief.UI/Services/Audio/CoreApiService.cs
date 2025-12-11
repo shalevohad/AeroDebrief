@@ -124,11 +124,28 @@ namespace AeroDebrief.UI.Services.Audio
                 logger.Info("Step 1: Loading recording file...");
                 progress?.Report("Opening file...");
                 
-                // RecordingFileLoader handles:
-                // - CVR: Decompress to temp SQLite DB
-                // - ADB: Convert to SQLite DB (cached)
-                // - DB: Direct open
-                var (store, tempPath) = await RecordingFileLoader.OpenAsync(filePath, progress, cancellationToken);
+                logger.Info("🔴 CALLING RecordingLoaderService.LoadWithProgressAsync");
+                
+                // ✨ NEW: Use RecordingLoaderService to show modal progress dialog
+                // This automatically handles:
+                // - CVR: Decompress with progress
+                // - ADB: Convert with detailed progress (packet count, speed, ETA)
+                // - DB: Direct open (fast, no progress needed)
+                var loadResult = await AeroDebrief.UI.Services.RecordingLoaderService.LoadWithProgressAsync(
+                    filePath, 
+                    System.Windows.Application.Current.MainWindow);
+                
+                logger.Info("🔴 RecordingLoaderService.LoadWithProgressAsync RETURNED");
+                
+                if (loadResult == null)
+                {
+                    // User cancelled or error occurred (already shown to user)
+                    logger.Info("File load cancelled or failed");
+                    progress?.Report("Load cancelled");
+                    return false;
+                }
+                
+                var (store, tempPath) = loadResult.Value;
                 _unitOfWork = store;
                 _tempDbPath = tempPath;
                 
